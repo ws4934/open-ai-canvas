@@ -38,6 +38,30 @@ docker compose --env-file .env -f docker-compose.deploy.yml logs --tail=100 back
 
 使用 Cloudflare 时，`CANVAS_CORS_ORIGINS` 仍填写浏览器访问的站点来源，例如 `https://canvas.example.com`；可信代理填写直接连接应用的反代来源，不因为域名托管在 Cloudflare 就填入 Cloudflare 网段。
 
+### 画布实时连接
+
+`/api/canvas-projects/:id/realtime` 使用 WebSocket，与页面和 API 共用同一 Go 端口。外部代理只对该路径启用 HTTP/1.1、转发 `Upgrade` 和 `Connection: upgrade`、关闭缓冲，并设置至少 60 秒的读取超时。登录 Cookie、原始 Origin、Host 及可信转发头必须保留，握手仍执行业务来源与画布归属校验。
+
+以下示例要求请求实际命中该 `location`。若宝塔等已有 `location ^~ /`，直接新增此正则规则会被跳过；部署者应在实际命中的代理规则开启 Upgrade 透传，或调整匹配后使用本例。上游地址按实际应用端口修改，程序不会自动修改代理配置：
+
+```nginx
+location ~ ^/api/canvas-projects/[^/]+/realtime$ {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_buffering off;
+    proxy_read_timeout 60s;
+}
+```
+
+这不是额外监听端口，也不需要独立前端或实时服务容器。代理暂不支持 Upgrade 时，实时光标与拖拽预览不可用，客户端继续通过 HTTP 轮询校准状态；原有 operations 保存、并发校验和持久化确认仍正常工作。协议见[画布操作同步](/docs/backend/canvas-operations-sync)。
+
+### 文本与 Agent 事件流
+
 对文本与 Agent 事件流关闭缓冲、缓存和 gzip，并设置适合长连接的超时：
 
 - `/api/tasks/:id/text-events`
