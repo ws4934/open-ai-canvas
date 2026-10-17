@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 
 	"yingce/backend/internal/service"
@@ -28,7 +31,22 @@ func RegisterAdminUpdateRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		status, err := svc.AdminCheckUpdate(c.Request.Context(), actor)
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
+		var request struct {
+			Force *bool `json:"force"`
+		}
+		decoder := json.NewDecoder(c.Request.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&request); err != nil && !errors.Is(err, io.EOF) {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+			fail(c, http.StatusBadRequest, errors.New("请求必须只包含一个 JSON 对象"))
+			return
+		}
+		force := request.Force == nil || *request.Force
+		status, err := svc.AdminCheckUpdate(c.Request.Context(), actor, force)
 		if err != nil {
 			failService(c, err)
 			return

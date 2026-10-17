@@ -32,6 +32,11 @@ func (s *Service) taskLifecycle() *taskLifecycleCoordinator {
 
 func (w *taskLifecycleCoordinator) retryTask(userID string, id string) (*model.Task, error) {
 	s := w.service
+	release, intakeErr := s.AcquireProgramUpdateIntake()
+	if intakeErr != nil {
+		return nil, intakeErr
+	}
+	defer release()
 	if s.IsDraining() {
 		return nil, &AppError{Status: 503, Code: 503, Message: "服务正在维护，暂不接受任务重试", Retryable: true}
 	}

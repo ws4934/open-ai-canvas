@@ -4,10 +4,10 @@
 
 ## 部署与更新入口
 
-用户要求部署服务器时，默认使用官方 Release 镜像、`docker-compose.deploy.yml` 和 Host Updater。本地 SQLite 构建与自定义 Compose 不属于后台在线更新管理范围。
+服务器使用官方统一应用镜像与 `docker-compose.deploy.yml`（backend、PostgreSQL、Redis）。Go 内嵌前端，Agent 在应用内运行；网页从 GitHub Release 下载并替换持久化程序，不需要宿主更新器。外部反代由部署者管理。
 
-- [Docker 部署](content/docs/overview/docker.mdx)：默认服务器方案、Compose 选择与已有部署核对。
-- [在线更新与安全回退](content/docs/backend/system-update.mdx)：受管部署条件、安装、备份、迁移和回退。
+- [Docker 部署](content/docs/overview/docker.mdx)：服务器安装、单端口反代与持久化程序。
+- [网页更新与程序回退](content/docs/backend/system-update.mdx)：Actions 发布、程序下载替换、重启和回退。
 - [本地开发](content/docs/backend/local-development.mdx)：宿主机与热更新开发环境。
 
 ## 设计沉淀

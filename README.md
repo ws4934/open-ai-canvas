@@ -7,7 +7,7 @@
 <p align="center">让一个故事，从文字走向银幕</p>
 
 <p align="center">
-  <a href="https://github.com/ddcat-ai/open-ai-canvas">GitHub</a> ·
+  <a href="https://github.com/ws4934/open-ai-canvas">GitHub</a> ·
   <a href="docs/content/docs/overview/features.mdx">功能</a> ·
   <a href="docs/content/docs/overview/quick-start.mdx">文档</a> ·
   <a href="SECURITY.md">安全策略</a>
@@ -83,21 +83,42 @@ GitHub 用户：[@TripsCoder](https://github.com/TripsCoder) · [@sugtex](https:
 
 - [Bun](https://bun.sh/)：前端和文档站
 - [Go 1.25](https://go.dev/)：后端
+- Node.js 22.19 或更新版本：本地 Agent 运行时（官方 Docker 已提供）
 - Docker Compose：仅在使用容器开发或部署时需要
 
-### 宿主机启动
+### Docker 启动（默认 PostgreSQL）
 
 ```bash
-git clone https://github.com/ddcat-ai/open-ai-canvas.git
+git clone https://github.com/ws4934/open-ai-canvas.git
+cd open-ai-canvas
+cp .env.example .env
+```
+
+在 `.env` 中填写 `POSTGRES_PASSWORD`（可用 `openssl rand -hex 32` 生成），然后启动：
+
+```bash
+docker compose up -d --build
+```
+
+默认运行统一应用、PostgreSQL 和 Redis，访问 <http://localhost:3000>。数据库和 Redis 仅在容器网络内可用，数据保存在持久卷中。
+
+### 宿主机调试（可选 SQLite）
+
+```bash
+git clone https://github.com/ws4934/open-ai-canvas.git
 cd open-ai-canvas
 
 # 使用 Git 忽略的目录保存本地开发数据和缓存
 mkdir -p .local/project-workbench-debug .local/cache/go-build .local/cache/go-mod
 
+# Agent 专用依赖，不在 web/ 中使用 npm
+cd backend/agent-runtime/pi && npm ci && cd ../../..
+
 # 终端一：后端
 cd backend
 CANVAS_BACKEND_ADDR=127.0.0.1:8080 \
 CANVAS_BACKEND_DATA_DIR=../.local/project-workbench-debug \
+CANVAS_DATABASE_DRIVER=sqlite \
 GOCACHE=../.local/cache/go-build \
 GOMODCACHE=../.local/cache/go-mod \
 go run ./cmd/server
@@ -118,22 +139,23 @@ Windows PowerShell 用户可在仓库根目录执行：
 
 ### Docker 开发与本地构建
 
-以下命令用于本地开发或试运行。部署服务器并使用后台在线更新，请使用下文的官方 Release 镜像部署。
+以下入口同样使用 PostgreSQL 与 Redis 容器。先按上文配置 `.env`。部署服务器请使用下文的 Release 镜像安装脚本。
 
 源码热更新：
 
 ```bash
+mkdir -p .local/project-workbench-debug .local/cache/go-build .local/cache/go-mod
 LOCAL_UID=$(id -u) LOCAL_GID=$(id -g) \
   docker compose -f docker-compose.dev.yml up --build
 ```
 
-本地构建并运行 release 镜像：
+本地构建统一应用，与默认 `docker compose up` 相同：
 
 ```bash
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
-热更新开发默认前端端口为 `3000`、后端端口为 `8080`；端口冲突时可通过 `CANVAS_WEB_HOST_PORT` 和 `CANVAS_BACKEND_HOST_PORT` 覆盖。本地构建编排只暴露 web 的 `3000`，后端留在容器网络内，不安装 Host Updater。
+热更新开发默认前端端口为 `3000`、后端端口为 `8080`；端口冲突时可通过 `CANVAS_WEB_HOST_PORT` 和 `CANVAS_BACKEND_HOST_PORT` 覆盖。正式构建将前端嵌入 Go，默认只发布应用的 `3000` 端口，页面和 API 使用同一入口。
 
 更多本地开发说明（包括时间线字幕转写）见[本地开发文档](docs/content/docs/backend/local-development.mdx)。
 
@@ -148,26 +170,26 @@ docker compose -f docker-compose.local.yml up -d --build
           ▼
 后端（backend/）
   ├─ Gin handler -> service -> repository/model
-  ├─ SQLite（本地）或 PostgreSQL + Redis（部署）
+  ├─ PostgreSQL + Redis（默认容器部署）
   ├─ 异步任务 worker、权限、资源存储和模型中转
   └─ provider / outbound -> 外部模型渠道
 ```
 
-前端业务 API 统一经 `web/src/services/api/request.ts` 调用。生产环境由 Nginx 托管前端并代理后端，公网只需暴露 web 入口；SSE 仅在明确的流式路径关闭代理缓冲。
+前端业务 API 统一经 `web/src/services/api/request.ts` 调用。生产 Go 程序内嵌前端、Agent 运行资源和官方插件，直接提供页面、API、资源及 SSE；Node Agent 作为内部子进程运行。外部 Nginx/Caddy 只需反代应用端口，程序不安装或修改反代配置。
 
 ## 服务器部署
 
 ### 官方 Release 镜像（推荐，支持后台在线更新）
 
-适用于使用 systemd 的 Linux 服务器。先从 [GitHub Releases](https://github.com/ddcat-ai/open-ai-canvas/releases) 选择包含镜像、Host Updater 二进制和 `SHA256SUMS` 的已发布版本，将下方 `vX.Y.Z` 替换为该版本：
+适用于 Linux Docker 服务器。先从[本仓库 Releases](https://github.com/ws4934/open-ai-canvas/releases) 选择包含统一应用镜像、对应架构程序包和 `SHA256SUMS` 的已发布版本，将下方 `vX.Y.Z` 替换为该版本：
 
 ```bash
 CANVAS_RELEASE=vX.Y.Z
-curl -fsSL "https://raw.githubusercontent.com/ddcat-ai/open-ai-canvas/${CANVAS_RELEASE}/scripts/install-server-image.sh" \
-  | sudo env CANVAS_IMAGE_TAG="${CANVAS_RELEASE}" REPOSITORY_REF="${CANVAS_RELEASE}" bash
+curl -fsSL "https://raw.githubusercontent.com/ws4934/open-ai-canvas/${CANVAS_RELEASE}/scripts/install-server-image.sh" \
+  | sudo env CANVAS_IMAGE_TAG="${CANVAS_RELEASE}" bash
 ```
 
-脚本使用 `docker-compose.deploy.yml`，启动 PostgreSQL、Redis、独立 `yingce-agent`、backend 和 web，由一次性 `migrate` 服务迁移数据库，并安装宿主机 Host Updater。backend、web、Agent 镜像会固定为对应 GHCR digest。默认访问 `http://服务器IP:3000`，安装完成后在“系统配置 → 系统更新”检查后续版本。
+脚本使用 `docker-compose.deploy.yml`，只启动 backend、PostgreSQL 和 Redis，默认绑定 `127.0.0.1:3000` 供同机反代访问；直接远程访问需显式设置 `CANVAS_HTTP_BIND` 并限制访问来源。管理员在“系统配置 → 系统更新”检查 GitHub Release、下载新版程序并自动重启，无需宿主更新器或 Docker Socket。运行程序保存在数据卷中，重建容器不会覆盖网页更新结果。
 
 查看状态和日志：
 
@@ -177,17 +199,17 @@ sudo docker compose --env-file .env -f docker-compose.deploy.yml ps
 sudo docker compose --env-file .env -f docker-compose.deploy.yml logs -f --tail=200
 ```
 
-### 源码构建与已有部署
+### 源码构建
 
 需要运行自行修改的源码时，可以使用源码安装脚本：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ddcat-ai/open-ai-canvas/main/scripts/install-server.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/ws4934/open-ai-canvas/main/scripts/install-server.sh | sudo bash
 ```
 
-脚本使用 PostgreSQL、Redis、独立 Agent 和源码构建叠加层，但不安装 Host Updater；该部署不属于后台在线更新管理范围，需自行构建、备份和升级。根目录的 `docker-compose.yml`、`docker-compose.local.yml` 和自行编写的两容器 SQLite 编排用于本地试运行，不作为默认服务器部署方案。
+脚本使用 PostgreSQL、Redis 和统一应用的源码构建叠加层。网页更新安装本仓库的 Release。根目录的 `docker-compose.yml` 和 `docker-compose.local.yml` 用于本地试运行。
 
-已有 SQLite 或自定义 Compose 部署，不能只替换 Compose 文件或补装更新器就获得在线更新；应先核对原数据卷、完成备份和数据迁移。方案选择见 [Docker 部署](docs/content/docs/overview/docker.mdx)，更新约束、备份和回退见[系统更新文档](docs/content/docs/backend/system-update.mdx)。
+安装步骤见 [Docker 部署](docs/content/docs/overview/docker.mdx)，发布、网页更新和程序回退见[系统更新文档](docs/content/docs/backend/system-update.mdx)。
 
 ## 安全边界
 
@@ -195,7 +217,7 @@ curl -fsSL https://raw.githubusercontent.com/ddcat-ai/open-ai-canvas/main/script
 - 设置准确的 `CANVAS_CORS_ORIGINS`，不要在公网使用 `*`；使用 HTTPS 并正确转发代理头。
 - 后端默认拒绝本机、私网和链路本地模型地址。开发时只通过 `CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS` 精确放行可信主机，不要使用全量放行开关。
 - 用户 API Key 不应出现在 URL、日志、错误上报或服务端长期明文存储中；只在可信部署和 HTTPS 链路中使用真实密钥。
-- 后端 `8080` 应留在 Compose 网络内，不要直接暴露到公网；限制 `.env`、数据库、上传目录、备份和 `.settings-key` 的权限。
+- 只发布统一应用端口，不公开数据库或 Redis；使用外部反代时设置准确的 `CANVAS_TRUSTED_PROXIES`。限制 `.env`、数据库、上传目录、备份和 `.settings-key` 的权限。
 - 媒体资源可使用后端数据目录、阿里云 OSS 或腾讯云 COS；删除素材前会检查业务引用。
 
 安全问题请按 [`SECURITY.md`](SECURITY.md) 报告，不要在公开 Issue 中粘贴密钥、Cookie、数据库或生产日志。

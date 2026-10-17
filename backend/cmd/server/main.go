@@ -16,12 +16,15 @@ import (
 	"syscall"
 	"time"
 
+	"yingce/backend/internal/buildinfo"
+	"yingce/backend/internal/bundled"
 	"yingce/backend/internal/database"
 	"yingce/backend/internal/handler"
 	"yingce/backend/internal/logging"
+	"yingce/backend/internal/programupdate"
 	"yingce/backend/internal/repository"
 	"yingce/backend/internal/service"
-	"yingce/backend/internal/updaterclient"
+	"yingce/backend/internal/webui"
 
 	"github.com/gin-gonic/gin"
 )
@@ -34,14 +37,57 @@ func main() {
 	logging.Setup(logConfig)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if handled, err := runCommand(ctx, os.Args[1:], os.Stdout); handled {
+		if err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if err := run(ctx); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(ctx context.Context) error {
+func run(ctx context.Context) (runErr error) {
+	ctx, requestRestart := context.WithCancel(ctx)
+	defer requestRestart()
 	dataDir := env("CANVAS_BACKEND_DATA_DIR", "data")
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return err
+	}
+	var svc *service.Service
+	updates, err := programupdate.NewManager(programupdate.Config{
+		DataDir:           dataDir,
+		ManagedBinaryPath: strings.TrimSpace(os.Getenv("CANVAS_MANAGED_BINARY_PATH")),
+		CurrentVersion:    buildinfo.Current().Version,
+		RequestRestart:    func() error { requestRestart(); return nil },
+		Drain: func(ctx context.Context) error {
+			if svc == nil {
+				return errors.New("服务仍在启动")
+			}
+			return svc.DrainForProgramUpdate(ctx)
+		},
+		Resume: func() {
+			if svc != nil {
+				svc.ResumeAfterProgramUpdate()
+			}
+		},
+	})
+	if err != nil {
+		return err
+	}
+	defer updates.Close()
+	defer func() {
+		if runErr != nil {
+			if err := updates.FailStartup(runErr); err != nil {
+				slog.Error("program update startup recovery failed", "error", err)
+			}
+		}
+	}()
+	if err := bundled.Prepare(dataDir); err != nil {
+		return err
+	}
+	if err := bundled.ValidateRuntime(ctx); err != nil {
 		return err
 	}
 	db, err := database.Open(database.Config{
@@ -75,10 +121,8 @@ func run(ctx context.Context) error {
 
 	repo := repository.New(db)
 	addr := env("CANVAS_BACKEND_ADDR", ":8080")
-	svc := service.New(repo, dataDir)
-	if updaterToken := strings.TrimSpace(os.Getenv("CANVAS_UPDATER_TOKEN")); updaterToken != "" {
-		svc.ConfigureUpdateManager(updaterclient.New(env("CANVAS_UPDATER_SOCKET", "/run/open-ai-canvas-updater/updater.sock"), updaterToken))
-	}
+	svc = service.New(repo, dataDir)
+	svc.ConfigureUpdateManager(updates)
 	defer svc.Close()
 	if err := svc.ValidateRuntime(); err != nil {
 		return err
@@ -110,6 +154,11 @@ func run(ctx context.Context) error {
 		slog.Info("storage migration completed", "tasks", summary.Tasks, "assets", summary.Assets, "projects", summary.Projects, "backup", summary.Backup)
 	}
 	r := gin.New()
+	proxyMiddleware, err := configureTrustedProxies(r, os.Getenv("CANVAS_TRUSTED_PROXIES"))
+	if err != nil {
+		return err
+	}
+	r.Use(proxyMiddleware)
 	// 访问日志：成功的查询类请求只在 debug 级别输出，避免轮询和列表查询把日志打爆。
 	r.Use(logging.AccessLog(redactCanvasSharePath), logging.Recovery())
 	r.Use(handler.RequestCorrelationMiddleware())
@@ -118,13 +167,18 @@ func run(ctx context.Context) error {
 		return err
 	}
 	r.Use(corsMiddleware)
+	r.Use(handler.ProgramUpdateIntakeMiddleware(svc))
 	handler.ConfigureRuntime(svc)
 	api := r.Group("/api")
 	status := newSystemStatus(db, svc)
 	registerSystemStatusRoutes(api, status)
 	handler.RegisterOAuthCallbackRoutes(r, svc)
 	handler.RegisterCanvasAPI(api, svc)
-	r.NoRoute(handler.SystemProxyNoRouteHandler(svc))
+	pages, err := webui.NewHandler(dataDir, handler.SystemProxyNoRouteHandler(svc))
+	if err != nil {
+		return err
+	}
+	r.NoRoute(pages)
 
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -140,6 +194,10 @@ func run(ctx context.Context) error {
 	// 启动后回填存量视频的播放副本转码（幂等，无待处理项即退出）。
 	go svc.BackfillPlaybackTranscodes()
 	status.markStarted()
+	if err := updates.ConfirmStarted(); err != nil {
+		_ = listener.Close()
+		return err
+	}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- httpServer.Serve(listener) }()
 	slog.Info("backend listening", "addr", addr)
@@ -181,15 +239,17 @@ func ensureBuiltinWorkbenchCatalog(svc *service.Service) error {
 }
 
 func redactCanvasSharePath(path string) string {
-	const prefix = "/api/public/canvas-shares/"
-	if !strings.HasPrefix(path, prefix) {
-		return path
+	for _, prefix := range []string{"/api/public/canvas-shares/", "/share/canvas/"} {
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+		remainder := strings.TrimPrefix(path, prefix)
+		if index := strings.IndexByte(remainder, '/'); index >= 0 {
+			return prefix + ":token" + remainder[index:]
+		}
+		return prefix + ":token"
 	}
-	remainder := strings.TrimPrefix(path, prefix)
-	if index := strings.IndexByte(remainder, '/'); index >= 0 {
-		return prefix + ":token" + remainder[index:]
-	}
-	return prefix + ":token"
+	return path
 }
 
 func env(key string, fallback string) string {
@@ -317,7 +377,7 @@ func allowedOriginWithPolicy(c *gin.Context, origin string, policy corsPolicy) b
 	if forwardedHost := strings.TrimSpace(c.GetHeader("X-Forwarded-Host")); forwardedHost != "" {
 		requestHost = strings.TrimSpace(strings.Split(forwardedHost, ",")[0])
 	}
-	if strings.EqualFold(parsed.Host, strings.TrimSpace(requestHost)) {
+	if strings.EqualFold(parsed.Host, strings.TrimSpace(requestHost)) && parsed.Scheme == requestScheme(c.Request) {
 		return true
 	}
 	if policy.allowAny {

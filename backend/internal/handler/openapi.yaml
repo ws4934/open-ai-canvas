@@ -28,6 +28,73 @@ tags:
   - name: skills
   - name: workbench
 paths:
+  /admin/system-update:
+    get:
+      tags: [admin]
+      summary: 读取程序更新状态（管理员）
+      responses:
+        "200": {$ref: "#/components/responses/ProgramUpdate"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/system-update/check:
+    post:
+      tags: [admin]
+      summary: 检查 GitHub 稳定版 Release（管理员）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force: {type: boolean, default: true, description: false 使用 20 分钟缓存}
+      responses:
+        "200": {$ref: "#/components/responses/ProgramUpdate"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+  /admin/system-update/start:
+    post:
+      tags: [admin]
+      summary: 异步下载、替换并重启程序（管理员）
+      description: 返回 operation.id；浏览器断开不取消更新，同一目标重复提交返回当前操作。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetVersion]
+              properties:
+                targetVersion: {type: string, example: v1.6.9.1}
+      responses:
+        "200": {$ref: "#/components/responses/ProgramUpdate"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /admin/system-update/rollback:
+    post:
+      tags: [admin]
+      summary: 检查数据库兼容性后恢复上一版程序（管理员）
+      description: 不恢复数据库，不删除创作数据。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: {type: string, minLength: 1}
+      responses:
+        "200": {$ref: "#/components/responses/ProgramUpdate"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
   /projects/{id}/assets/{assetId}/image:
     put:
       tags: [projects, assets]
@@ -1771,6 +1838,46 @@ components:
       in: cookie
       name: open_ai_canvas_session
   schemas:
+    ProgramUpdateStatus:
+      type: object
+      required: [supported, repository, currentVersion, updateAvailable, canRollback, operation]
+      properties:
+        supported: {type: boolean}
+        unsupportedReason: {type: string}
+        repository: {type: string}
+        currentVersion: {type: string}
+        updateAvailable: {type: boolean}
+        checkedAt: {type: string, format: date-time}
+        canRollback: {type: boolean}
+        rollbackVersion: {type: string}
+        latestRelease:
+          type: object
+          properties:
+            version: {type: string}
+            name: {type: string}
+            body: {type: string}
+            url: {type: string, format: uri}
+            publishedAt: {type: string, format: date-time}
+        operation:
+          type: object
+          properties:
+            id: {type: string}
+            kind: {type: string, enum: [update, rollback]}
+            phase: {type: string, enum: [idle, downloading, validating, draining, switching, restarting, succeeded, rolled_back, failed, manual_intervention]}
+            fromVersion: {type: string}
+            targetVersion: {type: string}
+            startedAt: {type: string, format: date-time}
+            finishedAt: {type: string, format: date-time}
+            error: {type: string}
+            automaticRollback: {type: boolean}
+            logs:
+              type: array
+              items:
+                type: object
+                properties:
+                  at: {type: string, format: date-time}
+                  phase: {type: string}
+                  message: {type: string}
     LoginLog:
       type: object
       properties:
@@ -2044,6 +2151,16 @@ components:
                 - model_catalog_mismatch
                 - invalid_model_selection
   responses:
+    ProgramUpdate:
+      description: 程序更新状态业务信封
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Envelope"
+              - type: object
+                properties:
+                  data: {$ref: "#/components/schemas/ProgramUpdateStatus"}
     ModelQuote:
       description: 当前参数对应的费用报价，位于信封 data.quote
       content:

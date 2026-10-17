@@ -20,6 +20,10 @@ web/.next
 web/dist
 web/node_modules
 web/out
+dist
+!dist/yingce-backend
+backend/internal/bundled/runtime.tar.gz
+backend/agent-runtime/pi/node_modules
 *.log
 *.db
 *.sqlite

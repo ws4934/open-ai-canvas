@@ -110,7 +110,7 @@ const adminNavigation: Array<{ label: string; items: AdminNavigationItem[] }> = 
             { path: "/admin/settings/ark-private-assets", label: "方舟素材库", description: "Seedance 可信参考素材", icon: <CloudUpload className="size-4" /> },
             { path: "/admin/settings/response-interception", label: "模型响应拦截", description: "先启用策略，再配置替换规则", icon: <ShieldAlert className="size-4" /> },
             { path: "/admin/settings/third-party", label: "第三方参数配置", description: "先配置凭据，再开放用户入口", icon: <KeyRound className="size-4" /> },
-            { path: "/admin/settings/system-update", label: "系统更新", description: "检查版本、备份与安全更新", icon: <RefreshCw className="size-4" /> },
+            { path: "/admin/settings/system-update", label: "系统更新", description: "检查版本、一键更新与程序回退", icon: <RefreshCw className="size-4" /> },
         ],
     },
 ];

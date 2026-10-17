@@ -1,0 +1,93 @@
+---
+title: Docker 部署与升级
+description: 单应用端口、网页程序更新与持久化程序恢复
+---
+
+# Docker 部署与升级
+
+默认、本地构建和服务器 Docker 部署都使用 `backend`、PostgreSQL 和 Redis。Go 程序内嵌前端、Agent 代码与锁定依赖、官方插件；Agent 由 Go 启动本容器内的 Node 子进程。
+
+应用监听 `8080`，默认映射宿主机 `3000`。外部 Nginx、Caddy 或负载均衡器直接代理这个端口。安装和更新不会安装、生成或修改 Nginx，不负责域名与 HTTPS 证书。
+
+## 新服务器安装
+
+准备 Linux amd64/arm64、Docker Engine、Docker Compose v2，以及 `curl`、`openssl`、`python3`、`sha256sum`。下载已发布版本对应的安装脚本，指定同一 Release：
+
+```bash
+# 替换为 Releases 页面实际发布的版本。
+VERSION=vX.Y.Z
+curl -fsSL "https://raw.githubusercontent.com/ws4934/open-ai-canvas/${VERSION}/scripts/install-server-image.sh" -o install-server-image.sh
+sudo env CANVAS_IMAGE_TAG="$VERSION" bash install-server-image.sh
+```
+
+脚本校验 Release 的 Compose 和程序包清单、确认镜像可运行，再生成随机数据库密码并启动服务。默认安装目录为 `/opt/open-ai-canvas`，绑定 `127.0.0.1:3000`。外部代理不在同一主机时，安装时显式设置 `CANVAS_HTTP_BIND=0.0.0.0`，并用防火墙限制访问。
+
+`.env` 的 `POSTGRES_DB`、`POSTGRES_USER`、`POSTGRES_PASSWORD` 同时配置数据库与应用，无需另外填写连接串。设置 `CANVAS_PUBLIC_BASE_URL` 为上游可访问的 HTTPS 地址；`CANVAS_CORS_ORIGINS` 填写真实站点来源。不要公开 `.env`、备份目录或 `/data/.settings-key`。
+
+```bash
+cd /opt/open-ai-canvas
+docker compose --env-file .env -f docker-compose.deploy.yml ps
+docker compose --env-file .env -f docker-compose.deploy.yml logs --tail=100 backend
+```
+
+首次启动超时后，保留已生成的配置与数据，用上面的命令排查，再执行同一 Compose 的 `up -d --wait`；不要删除数据或重新生成数据库密码。
+
+## 外部反向代理只转发应用端口
+
+页面、静态文件、API、OAuth 回调和模型代理都走同一个上游，代理不需要认识前端文件目录，也不需要 SPA 的 `try_files`。外层代理保留 `Host`，正确设置 `X-Forwarded-Proto`、`X-Forwarded-For`；在 `.env` 的 `CANVAS_TRUSTED_PROXIES` 中填写应用实际看到的代理源 IP/CIDR。宿主机代理经过 Docker 端口转发后通常呈现为桥接网关地址，不应直接假设为 `127.0.0.1`。留空时应用忽略转发头，不使用任意来源伪造的协议与地址。
+
+对文本与 Agent 事件流关闭缓冲、缓存和 gzip，并设置适合长连接的超时：
+
+- `/api/tasks/:id/text-events`
+- `/api/agent/runs/:id/events`
+- `/api/ai/system/:id/responses`
+- `/api/ai/system/:id/chat/completions`
+- `/api/ai/system/:id/models/:model:streamGenerateContent`
+
+自定义模型中转还需尊重后端的 `X-Accel-Buffering: no`。不要把关闭缓冲、长超时配置套到所有 API。代理上传上限应覆盖业务允许的上传体积。
+
+## 在网页更新程序
+
+管理员进入系统更新页，检查版本、阅读更新内容并安装。程序从官方 GitHub Release 下载与当前架构匹配的文件，验证 SHA-256 和运行环境，等待既有任务结束后替换程序并退出。Docker 的 `restart: unless-stopped` 启动新版，页面自动重连。
+
+持久程序位于 `/data/system/bin/yingce-backend`，上一版位于同目录的 `yingce-backend.backup`。启动脚本只在首次空目录时复制镜像种子；容器重启或重建不会把已更新程序降回镜像中的旧版。Agent 与插件资源由当前程序释放到自己的版本目录，不在服务器运行 npm 安装。
+
+**网页回退只恢复上一版程序，不恢复数据库。** 回退前必须通过上一版的数据库兼容检查。schema 不兼容时保持当前数据，按错误信息修复或由运维选择备份恢复，不能强行替换。
+
+### 程序无法启动时
+
+停止应用容器，使用同一数据卷与运行配置执行恢复命令：
+
+```bash
+docker compose --env-file .env -f docker-compose.deploy.yml stop backend
+docker compose --env-file .env -f docker-compose.deploy.yml run --rm --no-deps \
+  --user app --entrypoint /opt/canvas/yingce-backend backend --restore-program
+docker compose --env-file .env -f docker-compose.deploy.yml up -d backend
+```
+
+恢复命令校验备份程序与当前数据库，失败时保留现场。若程序和备份都丢失但仍存在更新状态，启动脚本拒绝按首次安装覆盖；从已校验的 Release 或备份恢复程序后再启动。不要删除整个 `/data`。
+
+Node 或系统库要求变化时，需要更新基础 Docker 镜像；网页程序更新不修改 Docker、宿主机或 Nginx。先按目标版本说明更新镜像并重建容器，已有持久程序保持不变，再完成网页升级。
+
+## 本地构建与发布
+
+源码构建使用同一个根 `Dockerfile`。首次启动先复制配置，并在 `.env` 中填写 `POSTGRES_PASSWORD`（可用 `openssl rand -hex 32` 生成）：
+
+```bash
+cp .env.example .env
+# 填好 PostgreSQL 密码后启动。
+docker compose up -d --build
+```
+
+默认入口与 `docker-compose.local.yml` 相同，启动应用、PostgreSQL 和 Redis，业务端口绑定 `127.0.0.1:3000`。数据库和 Redis 不发布宿主机端口，使用独立持久卷。服务器源码部署使用 `docker-compose.deploy.yml` 叠加 `docker-compose.build.yml`。源码热更新的 `docker-compose.dev.yml` 也使用 PostgreSQL 与 Redis，前端继续由 Vite 提供。
+
+GitHub Actions 在质量检查后构建一次前端，两种架构共享相同静态资源。每个架构先导出 Go 程序，再用该文件同时生成镜像与 Release 压缩包：
+
+```text
+open-ai-canvas_vX.Y.Z_linux_amd64.tar.gz
+open-ai-canvas_vX.Y.Z_linux_arm64.tar.gz
+SHA256SUMS
+docker-compose.deploy.yml
+```
+
+压缩包只含 `yingce-backend`。推送版本 tag 或手动输入版本均可发布，版本必须与该提交的 `VERSION`、`CHANGELOG.md` 一致。手动发布将 tag 固定到选定提交，同一工作流完成构建，不移动已有 tag。资产全部上传并核对后才公开草稿；正式 Release 不覆盖。普通 `main` 推送只生成提交镜像，不公开 Release。

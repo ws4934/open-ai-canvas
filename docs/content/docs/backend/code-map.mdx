@@ -153,6 +153,8 @@ HTTP 请求 -> handler -> service（稳定导入面 / 别名）-> app（组合�
 | 用户和管理员 | `handler/auth.go` | `internal/auth`、`internal/app/admin.go`（经 `service` 别名） |
 | 管理后台批量操作 | `handler/auth.go` | `internal/app/admin.go`、`repository/admin_audit.go`、`repository/analytics.go` |
 | 管理后台存储资源 | `handler/admin_storage.go` | `internal/app/admin_storage.go`、`repository/admin_storage.go` |
+| 网页程序更新 | `handler/admin_update.go`、`handler/program_update_intake.go` | `internal/programupdate` 负责 Release、校验、文件替换与重启状态；`app/program_update_drain.go` 协调任务排空 |
+| 统一页面与内置资源 | `cmd/server/main.go` | `internal/webui` 提供内嵌 SPA 和旧哈希缓存；`internal/bundled` 释放 Agent 与官方插件；`internal/agent/runtime` 管理本地 Node |
 | 资源与请求策略 | `handler/auth.go`、`handler/security.go` | `internal/platform`、`internal/app/upload_quota.go`、`storage_quota.go`、`coordination.go` |
 | 模型响应拦截 | `handler/response_interception.go`、`handler/custom_proxy.go` | `internal/app/response_interception.go`、`repository/repository.go` |
 | 异步任务、文本 SSE 与 Agent | `handler/routes.go` | `internal/app` 组合根（`provider_*` 仍在此）+ `internal/generation` + `internal/outbound` + `task_text_stream.go`、`text_replay.go` |
@@ -172,7 +174,7 @@ HTTP 请求 -> handler -> service（稳定导入面 / 别名）-> app（组合�
 
 - 旧版 `canvas-agent/` 和 Codex App/MCP 插件已删除；Agent 运行统一由后端云端控制面承载。
 - `docs/content/docs/`：产品、操作、开发和进度文档。
-- `docker-compose.local.yml`：本地前后端编排；`nginx.conf`：生产静态资源和 API 代理。
+- 根 `Dockerfile`：前端/Agent/插件内嵌的统一应用构建；`docker-compose.deploy.yml`：应用、PostgreSQL、Redis；外部 Nginx/Caddy 由部署者管理。
 
 ## 修改原则
 

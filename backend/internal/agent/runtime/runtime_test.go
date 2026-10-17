@@ -100,3 +100,73 @@ if (process.env.DATABASE_URL) {
 		t.Fatal(err)
 	}
 }
+
+func TestConfiguredRuntimeDoesNotFallbackToSource(t *testing.T) {
+	t.Setenv("CANVAS_PI_RUNTIME_DIR", t.TempDir())
+	if _, err := RuntimeDir(); err == nil {
+		t.Fatal("invalid selected runtime fell back to the source checkout")
+	}
+}
+
+func TestQueuedProcessCancellationReleasesQueueCount(t *testing.T) {
+	t.Cleanup(func() { SetProcessLimit(defaultAgentProcessLimit) })
+	SetProcessLimit(1)
+	release, err := acquireAgentProcess(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		release, err := acquireAgentProcess(ctx)
+		if release != nil {
+			release()
+		}
+		result <- err
+	}()
+	deadline := time.Now().Add(time.Second)
+	for {
+		_, _, queued := ProcessStatus()
+		if queued == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("process did not enter queue")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	if err := <-result; err != context.Canceled {
+		t.Fatalf("cancel error: %v", err)
+	}
+	active, limit, queued := ProcessStatus()
+	if active != 1 || limit != 1 || queued != 0 {
+		t.Fatalf("usage = %d/%d, queued = %d", active, limit, queued)
+	}
+}
+
+func TestRunCancellationReapsProcessAndReleasesCapacity(t *testing.T) {
+	fakeRuntime(t, `setInterval(() => {}, 1000);`)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := Run(ctx, ProcessRequest{}, noopBridge()); err != context.DeadlineExceeded {
+		t.Fatalf("cancel error: %v", err)
+	}
+	if active, _ := ProcessUsage(); active != 0 {
+		t.Fatalf("process capacity leaked: %d", active)
+	}
+}
+
+func TestRunOversizedOutputDoesNotWaitOnBlockedWriter(t *testing.T) {
+	fakeRuntime(t, `process.stdout.write("x".repeat(8 * 1024 * 1024)); setInterval(() => {}, 1000);`)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := Run(ctx, ProcessRequest{}, noopBridge()); err == nil || !strings.Contains(err.Error(), "read Agent runtime output") {
+		t.Fatalf("output error: %v", err)
+	}
+	if ctx.Err() != nil {
+		t.Fatal("output failure waited for process timeout")
+	}
+}

@@ -52,8 +52,7 @@ type ProcessRequest struct {
 }
 
 // BridgeServer is the per-run callback endpoint. The Node runtime calls it for
-// model, tool, and event steps. Authorization is the bearer token; binding can
-// be loopback for the embedded process or the container network for yingce-agent.
+// model, tool, and event steps over loopback using a per-run bearer token.
 type BridgeServer struct {
 	URL   string
 	Token string
@@ -73,7 +72,7 @@ func Run(ctx context.Context, request ProcessRequest, bridge Bridge) error {
 	if err != nil {
 		return err
 	}
-	server, err := StartBridge("127.0.0.1:0", "127.0.0.1", bridge)
+	server, err := startBridge(bridge)
 	if err != nil {
 		return err
 	}
@@ -85,6 +84,12 @@ func Run(ctx context.Context, request ProcessRequest, bridge Bridge) error {
 		return fmt.Errorf("encode Agent runtime request: %w", err)
 	}
 	cmd := exec.CommandContext(ctx, "node", "--max-old-space-size="+nodeMemoryMB(), filepath.Join(runtimeDir, "agent-runtime.mjs"))
+	process, err := prepareProcess(cmd)
+	if err != nil {
+		return fmt.Errorf("prepare Agent process isolation: %w", err)
+	}
+	defer process.close()
+	cmd.WaitDelay = 5 * time.Second
 	cmd.Dir = runtimeDir
 	cmd.Stdin = strings.NewReader(string(payload))
 	// 环境变量白名单：只传 Node 运行所需的最少变量。HOME 与会话、工作目录
@@ -98,40 +103,55 @@ func Run(ctx context.Context, request ProcessRequest, bridge Bridge) error {
 	if err != nil {
 		return fmt.Errorf("open Agent runtime output: %w", err)
 	}
+	cmd.Cancel = func() error {
+		err := process.kill()
+		_ = stdout.Close()
+		return err
+	}
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start Agent runtime: %w", err)
 	}
+	if err := process.started(); err != nil {
+		_ = process.kill()
+		_ = stdout.Close()
+		_ = cmd.Wait()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("isolate Agent runtime: %w", err)
+	}
 	// StdoutPipe 的读取必须在 Wait 之前结束。Wait 会关闭管道，提前调用会把
 	// 正常退出误报为 "file already closed"。
 	lineErr := ReadOutput(stdout)
+	if lineErr != nil {
+		// A malformed or oversized output can stop the reader while Node is still
+		// writing. Reap that owned process instead of waiting on a full pipe.
+		_ = process.kill()
+	}
 	waitErr := cmd.Wait()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if lineErr != nil {
 		return lineErr
 	}
 	if waitErr != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
 		return fmt.Errorf("Agent runtime exited: %w", waitErr)
 	}
 	return nil
 }
 
-func StartBridge(listenAddr, advertiseHost string, bridge Bridge) (*BridgeServer, error) {
+func startBridge(bridge Bridge) (*BridgeServer, error) {
 	if bridge.Model == nil || bridge.Tool == nil || bridge.Event == nil {
 		return nil, errors.New("Agent bridge handlers are incomplete")
-	}
-	advertiseHost = strings.TrimSpace(advertiseHost)
-	if advertiseHost == "" || strings.ContainsAny(advertiseHost, `:/\\ `) {
-		return nil, errors.New("Agent bridge host must be a hostname or IP without a scheme or port")
 	}
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return nil, fmt.Errorf("create Agent bridge credential: %w", err)
 	}
 	token := hex.EncodeToString(tokenBytes)
-	listener, err := net.Listen("tcp", listenAddr)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, fmt.Errorf("listen for Agent bridge: %w", err)
 	}
@@ -147,9 +167,15 @@ func StartBridge(listenAddr, advertiseHost string, bridge Bridge) (*BridgeServer
 	server := &http.Server{Handler: mux, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 2 * time.Minute}
 	go func() { _ = server.Serve(listener) }()
 	return &BridgeServer{
-		URL:   fmt.Sprintf("http://%s:%d", advertiseHost, tcpAddr.Port),
+		URL:   fmt.Sprintf("http://127.0.0.1:%d", tcpAddr.Port),
 		Token: token,
-		Close: func() { _ = server.Shutdown(context.Background()) },
+		Close: func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := server.Shutdown(ctx); err != nil {
+				_ = server.Close()
+			}
+		},
 	}, nil
 }
 
@@ -202,7 +228,14 @@ func BridgeCall(w http.ResponseWriter, r *http.Request, expectedToken string, ha
 }
 
 func RuntimeDir() (string, error) {
-	candidates := []string{os.Getenv("CANVAS_PI_RUNTIME_DIR"), "/app/backend/agent-runtime/pi"}
+	if configured := strings.TrimSpace(os.Getenv("CANVAS_PI_RUNTIME_DIR")); configured != "" {
+		info, err := os.Stat(filepath.Join(configured, "agent-runtime.mjs"))
+		if err != nil || !info.Mode().IsRegular() {
+			return "", errors.New("configured Agent runtime files are missing")
+		}
+		return configured, nil
+	}
+	var candidates []string
 	if _, source, _, ok := runtime.Caller(0); ok {
 		candidates = append(candidates, filepath.Clean(filepath.Join(filepath.Dir(source), "../../../agent-runtime/pi")))
 	}
@@ -226,6 +259,7 @@ type agentProcessGate struct {
 	mu     sync.Mutex
 	limit  int
 	active int
+	queued int
 	wake   chan struct{}
 }
 
@@ -263,18 +297,39 @@ func SetProcessLimit(value int) (active int, limit int) {
 }
 
 func ProcessUsage() (active int, limit int) {
+	active, limit, _ = ProcessStatus()
+	return active, limit
+}
+
+func ProcessStatus() (active int, limit int, queued int) {
 	processGate.mu.Lock()
 	defer processGate.mu.Unlock()
-	return processGate.active, processGate.limit
+	return processGate.active, processGate.limit, processGate.queued
 }
 
 func acquireAgentProcess(ctx context.Context) (func(), error) {
+	queued := false
+	defer func() {
+		if queued {
+			processGate.mu.Lock()
+			processGate.queued--
+			processGate.mu.Unlock()
+		}
+	}()
 	for {
 		processGate.mu.Lock()
+		if err := ctx.Err(); err != nil {
+			processGate.mu.Unlock()
+			return nil, err
+		}
 		if processGate.active < processGate.limit {
 			processGate.active++
 			processGate.mu.Unlock()
 			return releaseAgentProcess, nil
+		}
+		if !queued {
+			processGate.queued++
+			queued = true
 		}
 		wake := processGate.wake
 		processGate.mu.Unlock()
@@ -297,7 +352,7 @@ func releaseAgentProcess() {
 }
 
 func nodeMemoryMB() string {
-	raw := strings.TrimSpace(os.Getenv("YINGCE_AGENT_NODE_MEMORY_MB"))
+	raw := strings.TrimSpace(os.Getenv("CANVAS_AGENT_NODE_MEMORY_MB"))
 	if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 128 && parsed <= 8192 {
 		return strconv.Itoa(parsed)
 	}

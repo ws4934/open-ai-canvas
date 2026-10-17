@@ -1,12 +1,39 @@
 name: open-ai-canvas-dev
 
 services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-open_ai_canvas}
+      POSTGRES_USER: ${POSTGRES_USER:-open_ai_canvas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
+    volumes:
+      - ${CANVAS_POSTGRES_DATA_PATH:-postgres-data}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - ${CANVAS_REDIS_DATA_PATH:-redis-data}:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   backend:
     build:
       context: .
       dockerfile: backend/Dockerfile.dev
       args:
-        GO_IMAGE: ${GO_IMAGE:-golang:1.25-alpine}
+        GO_IMAGE: ${GO_IMAGE:-golang:1.25-alpine3.22}
         GOPROXY: ${GOPROXY:-https://goproxy.cn,direct}
         ALPINE_MIRROR: ${ALPINE_MIRROR:-}
     working_dir: /workspace/backend
@@ -17,11 +44,16 @@ services:
       GOMODCACHE: /tmp/go-mod
       CANVAS_BACKEND_ADDR: ":8080"
       CANVAS_BACKEND_DATA_DIR: /data
-      CANVAS_DATABASE_DRIVER: ${CANVAS_DATABASE_DRIVER:-sqlite}
-      DATABASE_URL: ${DATABASE_URL:-}
-      REDIS_URL: ${REDIS_URL:-}
+      CANVAS_DATABASE_DRIVER: postgres
+      DATABASE_URL: "postgresql://postgres:5432/?sslmode=disable"
+      PGDATABASE: ${POSTGRES_DB:-open_ai_canvas}
+      PGUSER: ${POSTGRES_USER:-open_ai_canvas}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
+      REDIS_URL: redis://redis:6379/0
       CANVAS_WORKER_CONCURRENCY: ${CANVAS_WORKER_CONCURRENCY:-3}
       CANVAS_CHANNEL_CONCURRENCY: ${CANVAS_CHANNEL_CONCURRENCY:-3}
+      CANVAS_AGENT_MAX_PROCESSES: ${CANVAS_AGENT_MAX_PROCESSES:-30}
+      CANVAS_AGENT_NODE_MEMORY_MB: ${CANVAS_AGENT_NODE_MEMORY_MB:-512}
       CANVAS_REGISTRATION_ENABLED: ${CANVAS_REGISTRATION_ENABLED:-false}
       CANVAS_ALLOW_PRIVATE_UPSTREAMS: ${CANVAS_ALLOW_PRIVATE_UPSTREAMS:-false}
       CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS: ${CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS:-}
@@ -34,6 +66,10 @@ services:
       - type: bind
         source: .
         target: /workspace
+      - type: bind
+        source: ./backend/agent-runtime/pi/agent-runtime.mjs
+        target: /opt/canvas-agent/agent-runtime.mjs
+        read_only: true
       # 禁止 Compose 静默创建新数据目录，避免开发时误用另一套账号数据。
       - type: bind
         source: ./.local/project-workbench-debug
@@ -53,6 +89,11 @@ services:
           create_host_path: false
     ports:
       - "127.0.0.1:${CANVAS_BACKEND_HOST_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     init: true
 
   web:
@@ -75,5 +116,7 @@ services:
     init: true
 
 volumes:
+  postgres-data:
+  redis-data:
   web-node-modules:
   web-bun-cache:

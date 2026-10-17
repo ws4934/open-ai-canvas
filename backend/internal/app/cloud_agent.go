@@ -341,6 +341,11 @@ func (s *Service) CloudAgentRunIfChanged(userID, id string, revision int64, opti
 // is deterministic per user/key. Competing requests may race, but task creation
 // and credit reservation share a transaction: only one can commit.
 func (s *Service) CreateCloudAgentRun(userID string, req CloudAgentRequest, parentID string) (*CloudAgentRun, error) {
+	release, intakeErr := s.AcquireProgramUpdateIntake()
+	if intakeErr != nil {
+		return nil, intakeErr
+	}
+	defer release()
 	if err := validateCloudAgentRequest(&req); err != nil {
 		return nil, err
 	}

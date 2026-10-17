@@ -5,6 +5,12 @@ description: 信封、错误码与 OpenAPI
 
 # HTTP API 合同
 
+## 程序更新
+
+管理员通过 `GET /api/admin/system-update` 读取实际版本、操作日志及程序回退状态；`POST /api/admin/system-update/check` 接受可选 `{force}`（默认 `true`），`false` 使用 20 分钟检查缓存；`POST /api/admin/system-update/start` 接受 `{targetVersion}`；`POST /api/admin/system-update/rollback` 接受必填 `{reason}`。更新和回退立即返回操作 ID，浏览器断开不取消操作。
+
+更新阶段为 `downloading → validating → draining → switching → restarting → succeeded`；回退成功为 `rolled_back`。失败和需要人工恢复分别为 `failed`、`manual_intervention`。`supported` 表示当前程序能否被受管路径安全替换；不支持时通过 `unsupportedReason` 解释，仍可检查 Release。程序回退不恢复整库。详情见[网页更新与程序回退](/docs/backend/system-update)。
+
 ## 视频工作台的生成模式
 
 `POST /api/workbench/tasks` 的视频任务根据已校验的 `references` 推导操作类型，客户端不需要提交泛化的 `video` 操作：

@@ -100,7 +100,7 @@ jobs:
         env:
           PAYMENT_PLUGIN_SMOKE_TEST: "1"
         run: sh plugin-packages/verify-payment-packages.sh --all linux amd64
-      # 发布时 backend/Dockerfile 会在两种架构的原生 Runner 上执行 smoke。
+      # 发布时根 Dockerfile 会在两种架构的原生 Runner 上执行 smoke。
       # PR 仍独立验证双架构，不能因没有发布任务而遗漏 ARM64 验收。
       - uses: docker/setup-qemu-action@v3
         if: github.event_name == 'pull_request'
@@ -113,7 +113,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           target: payment-package-smoke
-          file: backend/Dockerfile
+          file: Dockerfile
           cache-from: type=gha,scope=payment-smoke
           cache-to: type=gha,mode=max,scope=payment-smoke
 
@@ -157,6 +157,9 @@ jobs:
         run: bun run lint
       - name: Run tests
         run: bun run test
+      - name: Check Docker PostgreSQL defaults
+        working-directory: .
+        run: node --test .github/scripts/compose-config.test.mjs
       # ubuntu-latest 预装 google-chrome；脚本的解析顺序已覆盖该路径，
       # 因此不引入第三方 setup action，也不需要任何 secret。
       - name: Previs P0 Chrome E2E

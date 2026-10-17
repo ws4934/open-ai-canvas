@@ -4,7 +4,7 @@
 
 ## 1. 项目边界
 
-织影（`ddcat-ai/open-ai-canvas`）是面向 AI 影视与短剧创作的工作台，当前仍在快速开发。公开接口、数据结构和部署配置可能直接调整；除非任务明确要求，不为旧字段、旧 API 或旧数据增加兼容层。
+织影（`ws4934/open-ai-canvas`）是面向 AI 影视与短剧创作的工作台，当前仍在快速开发。本 fork 按全新部署开发，不维护上游旧部署转换或旧更新体系兼容。公开接口、数据结构和部署配置可能直接调整；除非任务明确要求，不为旧字段、旧 API 或旧数据增加兼容层。
 
 仓库由几个边界清晰但可独立运行的单元组成：
 
@@ -14,31 +14,31 @@
 | `backend/` | Go 1.25、Gin、GORM、SQLite/PostgreSQL、Redis 协调 | `backend/cmd/server/main.go` | 登录、权限、业务 API、任务队列、资源、模型中转和后台管理 |
 | `docs/` | Next.js、Fumadocs、MDX | `docs/content/docs/` | 面向用户和开发者的专题文档；构建配置见 `docs/source.config.ts` |
 
-根目录的 `Dockerfile` 构建前端静态镜像；`nginx.conf` 托管 SPA 并代理后端。`docker-compose.dev.yml` 是源码热更新开发编排，根 `docker-compose.yml` 和 `docker-compose.local.yml` 是本地构建运行。服务器默认使用官方 Release 镜像、`docker-compose.deploy.yml`（PostgreSQL、Redis、独立 Agent、迁移服务）和宿主机 Host Updater，详细说明见 [Docker 部署](docs/content/docs/overview/docker.mdx)。
+根目录的 `Dockerfile` 构建统一应用镜像：Go 内嵌 Vite 前端、Agent 运行资源和官方插件，页面与 API 共用 8080 端口。所有 Compose 入口默认使用 PostgreSQL 和 Redis 容器；`docker-compose.dev.yml` 保留 Vite 热更新，服务器使用官方 Release 和 `docker-compose.deploy.yml`，业务端口默认发布 3000。外部 Nginx/Caddy 由部署者管理，程序不安装或修改反代。详见 [Docker 部署](docs/content/docs/overview/docker.mdx)。
 
 ## 2. 开始工作前
 
 ### Agent 本地开发
 
-详细说明请参考 [docs/AGENT_LOCAL_DEVELOPMENT.md](docs/AGENT_LOCAL_DEVELOPMENT.md)。
+详细说明请参考 [本地开发](docs/content/docs/backend/local-development.mdx)。
 
-**快速启动**：
+**默认开发入口**：复制 `.env.example` 为 `.env` 并填写 `POSTGRES_PASSWORD`，准备开发目录后运行 `docker compose -f docker-compose.dev.yml up --build`。数据库与 Redis 在容器网络内运行，不发布宿主端口。
+
+**可选宿主机调试**：
 
 ```bash
 # 1. 安装 Agent runtime 依赖
-cd backend/agent-runtime/pi && npm install && cd ../../..
+cd backend/agent-runtime/pi && npm ci && cd ../../..
 
 # 2. 启动后端（自动使用嵌入模式）
 cd backend
-CANVAS_BACKEND_DATA_DIR=../.local/project-workbench-debug go run ./cmd/server
+CANVAS_DATABASE_DRIVER=sqlite CANVAS_BACKEND_DATA_DIR=../.local/project-workbench-debug go run ./cmd/server
 
 # 3. 启动前端
 cd web && bun run dev
 ```
 
-本地开发不设置 `YINGCE_AGENT_URL` 时，后端在本进程内启动 Node，无需单独启动 yingce-agent。
-
-生产 Compose 设置 `YINGCE_AGENT_URL` 后只调用 yingce-agent 容器。远程服务失败时不要回退到内嵌进程，否则同一步可能执行两次。不要删除 `yingce-agent/` 或把它从发布流程里撤掉。
+开发与生产都由 Go 启动本地 Node Agent 子进程，不再部署独立 Agent。正式构建使用 `embedweb` 标签，内嵌 CI 按锁文件准备的 Agent 依赖和完整官方插件；启动时释放到版本目录。开发仍可使用源码运行目录。不要在生产启动或网页更新中执行 npm 安装。
 
 ---
 
@@ -137,10 +137,10 @@ cd web && bun run dev
 
 - 先阅读 `.env.example` 和对应 Compose 文件。宿主机后端开发必须使用 Git 忽略的 `.local/project-workbench-debug`，通过 `CANVAS_BACKEND_DATA_DIR` 显式指定；不要把 `backend/data` 当作开发账号数据库。
 - 本地缓存放 `.local/cache`；不要提交数据库、上传文件、`.env`、真实密钥、构建产物或编辑器配置。
-- 宿主机开发：`backend/` 运行 `CANVAS_BACKEND_DATA_DIR=../.local/project-workbench-debug go run ./cmd/server`，`web/` 使用 Bun 和 Vite；不要用 pnpm/npm 覆盖同一套 `node_modules`，也不要提交 `pnpm-lock.yaml` 或 `package-lock.json`。Docker 热更新使用 `docker-compose.dev.yml`；本地构建运行使用 `docker-compose.local.yml`。
-- 用户要求“部署到服务器/云服务器/生产环境”且未指定方式时，默认采用 `scripts/install-server-image.sh` + 官方已发布 Release + `docker-compose.deploy.yml` + Host Updater；先确认该 Release 的镜像、更新器二进制和 `SHA256SUMS` 可用，按同一 Release 固定 `CANVAS_IMAGE_TAG` 和 `REPOSITORY_REF`。不要自行简化成 `web/backend` 两容器 SQLite 编排或生成替代 `compose.yml`；用户明确要求源码构建或轻量试运行时才选择对应方案，并说明在线更新边界。GHCR 拉取失败应排查网络、包可见性和认证，不静默切换为不受管源码部署。
-- 生产 Compose 使用 `docker-compose.deploy.yml`（PostgreSQL、Redis、migrate、yingce-agent、backend、web）。源码构建可叠加 `docker-compose.build.yml`，但本地镜像不由 Host Updater 管理；`scripts/install-server.sh` 不安装更新器，不能当作在线更新安装入口。公网只暴露 web 的 `CANVAS_HTTP_PORT`（默认 `3000`），backend `8080` 留在 Compose 网络内。
-- 诊断已有部署时，依据实际 Compose 文件、容器镜像、数据库驱动、数据挂载和 Host Updater 状态分别报告。源码构建不等于 local，SQLite 不证明使用了 `docker-compose.local.yml`，自定义文件名也不证明采用了任何仓库编排。已有 SQLite/自定义部署须先备份、迁移和验证，再转为受管部署；不要直接覆盖原 Compose 或数据卷。
+- Compose 默认使用 PostgreSQL 与 Redis 容器，不回落 SQLite。Docker 热更新使用 `docker-compose.dev.yml`；本地构建使用默认 `docker-compose.yml` 或 `docker-compose.local.yml`。可选宿主机调试显式指定 `CANVAS_DATABASE_DRIVER=sqlite` 和 `CANVAS_BACKEND_DATA_DIR=../.local/project-workbench-debug`，`web/` 使用 Bun/Vite；不要用 pnpm/npm 覆盖同一套 `node_modules`，也不要提交 `pnpm-lock.yaml` 或 `package-lock.json`。
+- 用户要求部署服务器且未指定方式时，使用 `scripts/install-server-image.sh`、官方已发布 Release 与 `docker-compose.deploy.yml`。先确认统一镜像、对应架构程序包和 `SHA256SUMS` 可用；GHCR 失败先排查网络、可见性和认证，不静默切换为源码部署。
+- 生产只运行 backend、PostgreSQL、Redis；数据库迁移由应用启动执行，Node Agent 是应用子进程。只发布 `CANVAS_HTTP_PORT`（默认 `3000`）到 Go 的 8080。不安装 Host Updater、不挂载 Docker Socket、不接管外部反代。
+- 网页更新从 `ws4934/open-ai-canvas` Release 下载程序，替换 `CANVAS_MANAGED_BINARY_PATH`，保留 `.backup`；容器重建不得用镜像种子覆盖它。回退必须检查数据库兼容性，不自动回滚整库。源码构建可叠加 `docker-compose.build.yml`。
 - 默认不启动 dev server；只有用户明确要求浏览器预览或联调时才启动，并先确认端口、数据目录和现有进程。
 - 健康检查只能证明入口可用，不能替代登录、SSE、任务生成和资源访问验证。
 

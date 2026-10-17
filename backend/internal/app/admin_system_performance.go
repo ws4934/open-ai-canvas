@@ -11,7 +11,6 @@ import (
 	"time"
 
 	agentruntime "yingce/backend/internal/agent/runtime"
-	"yingce/backend/internal/agent/yingceagent"
 	"yingce/backend/internal/buildinfo"
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/platform"
@@ -208,46 +207,22 @@ func (s *Service) UpdateAgentSessionLimit(ctx context.Context, actor *model.User
 	return &agents[0], nil
 }
 
-func (s *Service) applyAgentSessionLimit(ctx context.Context, maxSessions int) error {
+func (s *Service) applyAgentSessionLimit(_ context.Context, maxSessions int) error {
 	agentruntime.SetProcessLimit(maxSessions)
-	endpoint := strings.TrimSpace(os.Getenv("YINGCE_AGENT_URL"))
-	if endpoint == "" {
-		return nil
-	}
-	return yingceagent.SetLimit(ctx, endpoint, os.Getenv("YINGCE_AGENT_TOKEN"), maxSessions)
+	return nil
 }
 
-func (s *Service) collectAgentServices(ctx context.Context) []SystemPerformanceAgent {
+func (s *Service) collectAgentServices(_ context.Context) []SystemPerformanceAgent {
 	configured := platform.DefaultRuntimeAgentSessions
 	if policy, err := s.RuntimePolicy(); err == nil && policy.Task.AgentMaxSessions > 0 {
 		configured = policy.Task.AgentMaxSessions
 	}
-	endpoint := strings.TrimSpace(os.Getenv("YINGCE_AGENT_URL"))
-	if endpoint == "" {
-		active, limit := agentruntime.ProcessUsage()
-		return []SystemPerformanceAgent{{
-			ID: "embedded", Name: "画布 Agent", Mode: "embedded", Endpoint: "本进程",
-			Healthy: true, Active: active, Limit: limit, ConfiguredLimit: configured,
-			StatusMessage: "本地开发由后端进程直接启动，不单独占用容器。",
-		}}
-	}
-	service := SystemPerformanceAgent{
-		ID: "yingce-agent", Name: "画布 Agent", Mode: "remote", Endpoint: endpoint,
-		ConfiguredLimit: configured,
-	}
-	status, err := yingceagent.Inspect(ctx, endpoint)
-	if err != nil {
-		service.StatusMessage = "独立 Agent 服务不可达。正在进行的对话会失败，不会自动改回本进程执行。"
-		return []SystemPerformanceAgent{service}
-	}
-	service.Healthy = status.OK
-	service.Active = status.Active
-	service.Limit = status.Limit
-	service.Queued = status.Queued
-	if status.Limit != configured {
-		service.StatusMessage = "运行中的上限与已保存配置不一致，重新保存一次即可应用。"
-	}
-	return []SystemPerformanceAgent{service}
+	active, limit, queued := agentruntime.ProcessStatus()
+	return []SystemPerformanceAgent{{
+		ID: "embedded", Name: "画布 Agent", Mode: "embedded", Endpoint: "本进程",
+		Healthy: true, Active: active, Limit: limit, Queued: queued, ConfiguredLimit: configured,
+		StatusMessage: "由后端管理本地 Node 进程，与应用版本一起更新。",
+	}}
 }
 
 func agentServicesDegraded(agents []SystemPerformanceAgent) bool {

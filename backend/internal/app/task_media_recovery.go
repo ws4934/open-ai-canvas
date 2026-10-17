@@ -308,6 +308,11 @@ func (s *Service) handleMediaRecoveryFailure(task *model.Task, cause error) erro
 }
 
 func (s *Service) RecoverTaskMedia(userID, id string) (*model.Task, error) {
+	release, intakeErr := s.AcquireProgramUpdateIntake()
+	if intakeErr != nil {
+		return nil, intakeErr
+	}
+	defer release()
 	if s.IsDraining() {
 		return nil, BadAuthRequest("服务正在维护，请稍后重试保存")
 	}

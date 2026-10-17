@@ -32,6 +32,7 @@ docs/content/docs/backend/*
 !docs/content/docs/overview/
 docs/content/docs/overview/*
 !docs/content/docs/overview/creative-agent-design.mdx
+!docs/content/docs/overview/docker.mdx
 .env*
 !.env.example
 data/
@@ -73,6 +74,8 @@ camera_language_guide.md
 
 # Local backend executable; never commit build output.
 backend/cmd/server/server
+/backend/internal/webui/dist/
+/backend/internal/bundled/runtime.tar.gz
 # One-off local probe scripts and their compiled output.
 backend/tmp_*
 # Keep the runtime in source control; its optional debug map is not deployed.

@@ -1,9 +1,25 @@
 ---
 title: 本地开发
-description: 在宿主机启动影策前后端开发服务
+description: 使用 PostgreSQL 容器开发，或选择宿主机调试
 ---
 
 # 本地开发
+
+## 默认使用 PostgreSQL 容器
+
+根 `docker-compose.yml`、本地构建和热更新编排都使用 PostgreSQL 与 Redis，不默认创建 SQLite 数据库。首次运行先准备配置：
+
+```bash
+cp .env.example .env
+```
+
+在 `.env` 中填写 `POSTGRES_PASSWORD`（可用 `openssl rand -hex 32` 生成）。完整产品用 `docker compose up -d --build` 启动，访问 `http://localhost:3000`；热更新启动方式见下文。PostgreSQL 和 Redis 的持久卷独立于应用数据目录，只在容器网络中访问。
+
+## Agent 与统一发布程序
+
+开发和生产均由 Go 启动本地 Node Agent。宿主机开发前在 `backend/agent-runtime/pi` 执行 `npm ci` 准备专用依赖；不要在 `web/` 中使用 npm。Docker 开发镜像提供 Node 与按锁文件安装的 Linux Agent 依赖，运行时代码保持热更新；依赖锁文件变动后需要重建开发镜像。前端继续使用 Bun/Vite，Go 无 `embedweb` 标签时只提供 API。
+
+正式发布使用 `embedweb` 嵌入前端、Agent 锁定依赖和官方插件，由统一应用端口提供页面与 API。内置资源释放到数据目录的版本子目录，不从旧镜像目录加载插件。Agent 并发由运行时策略管理，Node 内存可通过 `CANVAS_AGENT_NODE_MEMORY_MB` 设置。不再配置独立 Agent URL 或 Token。
 
 ## SMTP 邮件故障日志
 
@@ -25,7 +41,11 @@ docker compose -f docker-compose.deploy.yml logs --since=15m -f backend
 
 修改后需要重新创建后端容器，单纯重启旧容器不会更新环境变量。未配置时保持空值并由资源请求强校验，不会自动采用容器内网地址；这项设置不放宽出站 SSRF 校验，也不应为此开放数据库或后端端口。只做本地界面开发且不向模型提交资源时可以不设置。部署后仍需验证真实资源 URL 能被目标供应商读取，健康检查不能替代该验证。
 
-## 一键启动（Windows PowerShell）
+## 宿主机调试（可选 SQLite）
+
+不使用容器、只调试 Go/Vite 时可显式选择 SQLite。以下宿主机命令不改变 Compose 的 PostgreSQL 默认配置。
+
+### Windows PowerShell
 
 在仓库根目录执行：
 
@@ -52,7 +72,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\start-local.ps1
 ```
 
-## 手工启动
+### 手工启动
 
 后端：
 
@@ -61,6 +81,7 @@ mkdir -p .local/project-workbench-debug .local/cache/go-build .local/cache/go-mo
 cd backend
 CANVAS_BACKEND_ADDR=127.0.0.1:8080 \
 CANVAS_BACKEND_DATA_DIR=../.local/project-workbench-debug \
+CANVAS_DATABASE_DRIVER=sqlite \
 GOCACHE=../.local/cache/go-build \
 GOMODCACHE=../.local/cache/go-mod \
 go run ./cmd/server
@@ -129,11 +150,12 @@ curl -s -X POST http://127.0.0.1:8082/inference \
 
 ## Docker 开发
 
-需要容器化热更新时，在仓库根目录执行：
+按前文配置 `.env` 后，在仓库根目录执行：
 
 ```bash
+mkdir -p .local/project-workbench-debug .local/cache/go-build .local/cache/go-mod
 LOCAL_UID=$(id -u) LOCAL_GID=$(id -g) \
   docker compose -f docker-compose.dev.yml up --build
 ```
 
-Docker 开发编排也使用 `.local/project-workbench-debug`，并默认暴露前端 `3000` 和后端 `8080`。端口冲突时，可通过 `CANVAS_WEB_HOST_PORT` 和 `CANVAS_BACKEND_HOST_PORT` 调整宿主机端口。
+Docker 开发编排使用 PostgreSQL 和 Redis 持久卷，`.local/project-workbench-debug` 仅保存应用文件。开发前端与 API 分别使用 `3000` 和 `8080`；端口冲突时可通过 `CANVAS_WEB_HOST_PORT` 和 `CANVAS_BACKEND_HOST_PORT` 调整。数据库和 Redis 等待健康检查通过后才启动后端，不向宿主机发布端口。
