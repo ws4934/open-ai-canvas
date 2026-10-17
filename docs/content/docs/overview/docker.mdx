@@ -22,7 +22,7 @@ sudo env CANVAS_IMAGE_TAG="$VERSION" bash install-server-image.sh
 
 脚本校验 Release 的 Compose 和程序包清单、确认镜像可运行，再生成随机数据库密码并启动服务。默认安装目录为 `/opt/open-ai-canvas`，绑定 `127.0.0.1:3000`。外部代理不在同一主机时，安装时显式设置 `CANVAS_HTTP_BIND=0.0.0.0`，并用防火墙限制访问。
 
-`.env` 的 `POSTGRES_DB`、`POSTGRES_USER`、`POSTGRES_PASSWORD` 同时配置数据库与应用，无需另外填写连接串。设置 `CANVAS_PUBLIC_BASE_URL` 为上游可访问的 HTTPS 地址；`CANVAS_CORS_ORIGINS` 填写真实站点来源。不要公开 `.env`、备份目录或 `/data/.settings-key`。
+`.env` 的 `POSTGRES_DB`、`POSTGRES_USER`、`POSTGRES_PASSWORD` 同时配置数据库与应用，无需另外填写连接串。设置 `CANVAS_PUBLIC_BASE_URL` 为上游可访问的 HTTPS 地址；`CANVAS_CORS_ORIGINS` 填写允许访问业务 API 的站点来源。公开前端静态文件和 SPA 页面不做 CORS 来源校验，不依赖这份白名单加载。不要公开 `.env`、备份目录或 `/data/.settings-key`。
 
 ```bash
 cd /opt/open-ai-canvas
@@ -35,6 +35,8 @@ docker compose --env-file .env -f docker-compose.deploy.yml logs --tail=100 back
 ## 外部反向代理只转发应用端口
 
 页面、静态文件、API、OAuth 回调和模型代理都走同一个上游，代理不需要认识前端文件目录，也不需要 SPA 的 `try_files`。外层代理保留 `Host`，正确设置 `X-Forwarded-Proto`、`X-Forwarded-For`；在 `.env` 的 `CANVAS_TRUSTED_PROXIES` 中填写应用实际看到的代理源 IP/CIDR。宿主机代理经过 Docker 端口转发后通常呈现为桥接网关地址，不应直接假设为 `127.0.0.1`。留空时应用忽略转发头，不使用任意来源伪造的协议与地址。
+
+使用 Cloudflare 时，`CANVAS_CORS_ORIGINS` 仍填写浏览器访问的站点来源，例如 `https://canvas.example.com`；可信代理填写直接连接应用的反代来源，不因为域名托管在 Cloudflare 就填入 Cloudflare 网段。
 
 对文本与 Agent 事件流关闭缓冲、缓存和 gzip，并设置适合长连接的超时：
 

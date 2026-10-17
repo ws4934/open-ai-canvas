@@ -17,6 +17,7 @@ func frontend(version string) fstest.MapFS {
 	return fstest.MapFS{
 		"index.html":                         {Data: []byte("<!doctype html>" + version)},
 		"assets/app-" + version + ".js":      {Data: []byte("version=" + version)},
+		"assets/app-" + version + ".css":     {Data: []byte("body { margin: 0 }")},
 		"assets/engine-" + version + ".wasm": {Data: []byte("0123456789")},
 		"canvas/models/face.tflite":          {Data: []byte("model")},
 		"welcome/cover.png":                  {Data: []byte("cover")},
@@ -141,5 +142,32 @@ func TestFrontendPublicationRejectsIncompleteBuild(t *testing.T) {
 	files = frontend("A")
 	if _, err := newHandler(files, t.TempDir(), "../escape", nil, time.Now()); err == nil {
 		t.Fatal("invalid cache identity accepted")
+	}
+}
+
+func TestPublicFrontendDoesNotRejectUnauthorizedOrigin(t *testing.T) {
+	directory := t.TempDir()
+	handler, err := newHandler(frontend("A"), directory, "A", func(c *gin.Context) {
+		c.AbortWithStatus(http.StatusForbidden)
+	}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := gin.New()
+	router.NoRoute(handler)
+	for _, route := range []string{"/", "/canvas/project-1", "/admin/settings/system-update", "/share/canvas/token", "/assets/app-A.js", "/assets/app-A.css", "/assets/engine-A.wasm", "/canvas/models/face.tflite"} {
+		response := get(router, "GET", route, map[string]string{"Origin": "https://untrusted.example"})
+		if response.Code != http.StatusOK {
+			t.Errorf("public frontend %s: %d", route, response.Code)
+		}
+		if response.Header().Get("Access-Control-Allow-Origin") != "" {
+			t.Errorf("public frontend %s unexpectedly reflects an Origin", route)
+		}
+	}
+	for _, route := range []string{"/api", "/api/resources/asset/file", "/api/private.js", "/api/channel/chat/completions", "/oauth/linuxdo/callback"} {
+		response := get(router, "GET", route, map[string]string{"Origin": "https://untrusted.example"})
+		if response.Code != http.StatusForbidden {
+			t.Errorf("protected namespace %s bypassed its fallback: %d", route, response.Code)
+		}
 	}
 }

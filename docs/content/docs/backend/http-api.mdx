@@ -5,6 +5,12 @@ description: 信封、错误码与 OpenAPI
 
 # HTTP API 合同
 
+## API 跨域与公开前端资源
+
+业务 API 保留 CORS 来源校验：同源请求或 `CANVAS_CORS_ORIGINS` 白名单中的来源通过来源校验，其他带 `Origin` 的请求返回 403；预检请求沿用相同校验。经过 HTTPS 反向代理时，使用 `CANVAS_TRUSTED_PROXIES` 配置实际代理来源，让应用正确识别转发协议与主机。
+
+公开前端静态文件及 SPA 页面不经过业务 API 的 CORS 中间件。此规则不改变资源 API、OAuth 或其他业务端点的来源校验与鉴权。
+
 ## 程序更新
 
 管理员通过 `GET /api/admin/system-update` 读取实际版本、操作日志及程序回退状态；`POST /api/admin/system-update/check` 接受可选 `{force}`（默认 `true`），`false` 使用 20 分钟检查缓存；`POST /api/admin/system-update/start` 接受 `{targetVersion}`；`POST /api/admin/system-update/rollback` 接受必填 `{reason}`。更新和回退立即返回操作 ID，浏览器断开不取消操作。

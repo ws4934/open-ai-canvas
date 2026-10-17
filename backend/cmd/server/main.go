@@ -166,15 +166,16 @@ func run(ctx context.Context) (runErr error) {
 	if err != nil {
 		return err
 	}
-	r.Use(corsMiddleware)
 	r.Use(handler.ProgramUpdateIntakeMiddleware(svc))
 	handler.ConfigureRuntime(svc)
-	api := r.Group("/api")
+	// Public embedded pages/assets stay outside the business API origin policy.
+	business := r.Group("", corsMiddleware)
+	api := business.Group("/api")
 	status := newSystemStatus(db, svc)
 	registerSystemStatusRoutes(api, status)
-	handler.RegisterOAuthCallbackRoutes(r, svc)
+	handler.RegisterOAuthCallbackRoutes(business, svc)
 	handler.RegisterCanvasAPI(api, svc)
-	pages, err := webui.NewHandler(dataDir, handler.SystemProxyNoRouteHandler(svc))
+	pages, err := webui.NewHandler(dataDir, corsFallback(corsMiddleware, handler.SystemProxyNoRouteHandler(svc)))
 	if err != nil {
 		return err
 	}
@@ -291,6 +292,17 @@ const corsAllowedMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 type corsPolicy struct {
 	origins  map[string]struct{}
 	allowAny bool
+}
+
+// NoRoute also handles API preflight and short model-proxy paths that do not
+// match a registered business route. Keep their policy behind the SPA dispatcher.
+func corsFallback(middleware, next gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		middleware(c)
+		if !c.IsAborted() {
+			next(c)
+		}
+	}
 }
 
 func cors() (gin.HandlerFunc, error) {
