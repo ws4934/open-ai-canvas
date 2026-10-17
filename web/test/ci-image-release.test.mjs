@@ -44,7 +44,7 @@ function fixture(overrides = {}) {
             'with open(os.environ["MOCK_LOG"],"a") as f: f.write("gh "+" ".join(args)+"\\n")',
             'if args[:1]==["api"] and "/releases/tags/" in args[1]:',
             '    mode=os.environ.get("MOCK_RELEASE","missing")',
-            '    if mode=="missing": print("gh: Not Found (HTTP 404)",file=sys.stderr); sys.exit(1)',
+            '    if mode=="missing": print(json.dumps({"message":"Not Found","status":"404"})); print("gh: Not Found (HTTP 404)",file=sys.stderr); sys.exit(1)',
             '    if mode=="error": print("gh: Forbidden (HTTP 403)",file=sys.stderr); sys.exit(1)',
             '    print(json.dumps({"draft":mode=="draft","target_commitish":os.environ["GITHUB_SHA"]}))',
             'elif args[:2]==["release","view"]:',
@@ -117,10 +117,12 @@ describe("release preparation", () => {
 });
 
 describe("public release boundary", () => {
-    test("uploads and verifies all assets in draft before publishing", () => {
+    test("creates a draft after a JSON 404, then verifies all assets before publishing", () => {
         const repo = fixture();
         expect(repo.run("publish-release.sh").status).toBe(0);
         const log = repo.log();
+        expect(log).toContain("gh release create v1.2.3");
+        expect(log.indexOf("release create")).toBeLessThan(log.indexOf("release upload"));
         expect(log).toContain("--draft");
         expect(log.indexOf("release upload")).toBeLessThan(log.indexOf("release edit"));
         expect(log.indexOf("release view")).toBeLessThan(log.indexOf("imagetools create"));

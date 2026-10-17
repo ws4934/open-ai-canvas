@@ -13,6 +13,9 @@ if existing=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_VERSION" 2
   [[ "$(jq -r .target_commitish <<<"$existing")" == "$GITHUB_SHA" ]] || { echo "Draft belongs to a different commit" >&2; exit 1; }
 elif ! grep -q 'HTTP 404' "$error_file"; then
   cat "$error_file" >&2; exit 1
+else
+  # gh api writes the 404 JSON body to stdout even when it exits with an error.
+  existing=''
 fi
 assets=()
 for arch in amd64 arm64; do
