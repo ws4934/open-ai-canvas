@@ -97,11 +97,6 @@ body:has(.welcome-page) {
     height: 26px;
     object-fit: contain;
 }
-.welcome-brand-logo.is-fallback {
-    background: currentColor;
-    mask: url("/logo.svg") center / contain no-repeat;
-    -webkit-mask: url("/logo.svg") center / contain no-repeat;
-}
 .welcome-nav {
     margin-left: auto;
     display: flex;

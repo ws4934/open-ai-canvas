@@ -37,7 +37,7 @@ func TestPasswordResetChangesPasswordConsumesCodeAndRevokesSessions(t *testing.T
 
 	var deliveredCode string
 	svc.SetMailSender(func(_ EmailSettingValue, recipient string, subject string, body string) error {
-		if recipient != user.Email || subject != "影策密码重置验证码" {
+		if recipient != user.Email || subject != "织影密码重置验证码" {
 			t.Fatalf("unexpected reset email: recipient=%q subject=%q", recipient, subject)
 		}
 		deliveredCode = codeFromEmailBody(body)
@@ -196,6 +196,7 @@ func TestSenderNameBrandsRegistrationAndPasswordResetEmails(t *testing.T) {
 		wantName string
 	}{
 		{name: "default inherits appearance", fromName: DefaultBrandName, wantName: "HIMA Studio"},
+		{name: "previous built-in inherits appearance", fromName: "影策", wantName: "HIMA Studio"},
 		{name: "empty inherits appearance", fromName: "", wantName: "HIMA Studio"},
 		{name: "custom sender overrides appearance", fromName: "Custom Canvas", wantName: "Custom Canvas"},
 		{name: "custom sender is trimmed", fromName: "  自定义工作台  ", wantName: "自定义工作台"},
@@ -277,7 +278,7 @@ func newPasswordResetTestService(t *testing.T) (*Service, *gorm.DB) {
 	if err := db.AutoMigrate(&model.User{}, &model.AuthSession{}, &model.LoginLog{}, &model.EmailVerificationCode{}, &model.SystemSetting{}); err != nil {
 		t.Fatal(err)
 	}
-	settingJSON, err := json.Marshal(EmailSettingValue{Enabled: true, Host: "smtp.example.com", Port: 587, Encryption: "starttls", FromEmail: "noreply@example.com", FromName: "影策", RegistrationAllowedDomains: []string{"example.com"}})
+	settingJSON, err := json.Marshal(EmailSettingValue{Enabled: true, Host: "smtp.example.com", Port: 587, Encryption: "starttls", FromEmail: "noreply@example.com", FromName: "织影", RegistrationAllowedDomains: []string{"example.com"}})
 	if err != nil {
 		t.Fatal(err)
 	}

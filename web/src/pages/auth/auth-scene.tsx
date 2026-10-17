@@ -1,6 +1,6 @@
 import { motion, useReducedMotion } from "motion/react";
 import { Tabs } from "antd";
-import { ArrowLeft, Play } from "lucide-react";
+import { ArrowLeft, Clapperboard, Play } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router";
 
@@ -83,7 +83,7 @@ export function AuthScene() {
                     <div aria-hidden className="auth-scene-video-blend absolute inset-y-0 right-0 hidden w-[clamp(120px,14vw,240px)] lg:block" />
                     <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-4 p-5 sm:p-7 lg:p-9">
                         <Link to="/" className="auth-scene-brand inline-flex items-center gap-2.5 text-sm font-semibold drop-shadow-sm transition-opacity hover:opacity-80">
-                            <BrandLogo theme={theme} className="size-7" alt="" fallback={<span className="size-7 bg-current" style={{ mask: "url(/logo.svg) center / contain no-repeat", WebkitMask: "url(/logo.svg) center / contain no-repeat" }} />} />
+                            <BrandLogo theme={theme} className="size-7" alt="" fallback={<Clapperboard className="size-7" aria-hidden="true" />} />
                             {appearance.brandName}
                         </Link>
                         <button type="button" className="auth-scene-hero-control inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[var(--fs-label)] backdrop-blur-xl transition disabled:cursor-default" onClick={playVideo} disabled={videoPlaying || !appearance.authVideoUrl} aria-pressed={videoPlaying}>

@@ -13,9 +13,9 @@ describe("sidebar checkin offer", () => {
     });
 
     test("uses the configured brand name instead of Buddy", () => {
-        expect(sidebarCheckinTitle("影策")).toBe("影策加油站");
+        expect(sidebarCheckinTitle("织影")).toBe("织影加油站");
         expect(sidebarCheckinTitle(" 本地工作室 ")).toBe("本地工作室加油站");
-        expect(sidebarCheckinTitle("")).toBe("影策加油站");
+        expect(sidebarCheckinTitle("")).toBe("织影加油站");
     });
 });
 

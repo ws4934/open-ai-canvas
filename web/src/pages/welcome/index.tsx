@@ -1,6 +1,6 @@
 import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, ConfigProvider, Tabs } from "antd";
-import { ArrowDown, ArrowRight, ArrowUpRight, Code2, Menu, Pause, Play, X } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUpRight, Clapperboard, Code2, Menu, Pause, Play, X } from "lucide-react";
 
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { IconButton } from "@/components/ui/base/buttons";
@@ -101,7 +101,7 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
             <a className="welcome-skip" href="#workbench">前往工作台介绍</a>
             <header className="welcome-header">
                 <a className="welcome-brand" href="/welcome" aria-label={`${brandName}首页`}>
-                    <BrandLogo theme="dark" className="welcome-brand-logo" alt="" fallback={<span className="welcome-brand-logo is-fallback" />} />
+                    <BrandLogo theme="dark" className="welcome-brand-logo" alt="" fallback={<Clapperboard className="welcome-brand-logo" aria-hidden="true" />} />
                     {brandName}
                 </a>
                 <nav className={menu ? "welcome-nav is-open" : "welcome-nav"} aria-label="首页导航">
@@ -118,7 +118,7 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
             </aside>
 
             <main>
-                <section ref={storyRef} id="story" className="welcome-story" aria-label="影策创作之旅">
+                <section ref={storyRef} id="story" className="welcome-story" aria-label="织影创作之旅">
                     <div className={`welcome-stage chapter-${chapter}${staticScene ? " is-static" : ""}`}>
                         <div className={`welcome-poster${ready && !staticScene ? " is-ready" : ""}`} aria-hidden="true"><img src={look.frames[staticScene ? chapter * 2 : 0]} alt="" fetchPriority="high" /></div>
                         {!staticScene && <SceneBoundary onError={() => setFailed(true)}><Suspense fallback={null}><StoryReel look={look} progress={progressRef} paused={paused} onReady={() => setReady(true)} onError={() => setFailed(true)} /></Suspense></SceneBoundary>}
