@@ -1360,6 +1360,7 @@ func TestRunOpenAIImageTaskUsesMultipartEditContract(t *testing.T) {
 	defer server.Close()
 
 	profile := DefaultImageCapabilityConfig("openai-image", "gpt-image-2-high")
+	profile.ResponseFormat.Default = "b64_json"
 	result, err := runImageTask(context.Background(), canvasGenerationInput{
 		Mode:            "image",
 		Prompt:          "make the reference clearer",
@@ -1378,16 +1379,19 @@ func TestRunOpenAIImageTaskUsesMultipartEditContract(t *testing.T) {
 
 func TestRunGrokImageTaskUsesJSONEditContract(t *testing.T) {
 	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
-	// response_format 开关（#692）：支持时请求 b64_json，关闭时回落 url。
+	// 只发送明确配置的格式；关闭或 auto 均交由上游决定默认返回格式。
 	for _, tc := range []struct {
 		name           string
 		responseFormat bool
+		defaultFormat  string
 		wantFormat     string
 		reply          string
 		wantDataURL    string
 	}{
-		{name: "b64_json", responseFormat: true, wantFormat: "b64_json", reply: `{"data":[{"b64_json":"aGVsbG8="}]}`, wantDataURL: "data:image/png;base64,aGVsbG8="},
-		{name: "url", responseFormat: false, wantFormat: "url", reply: `{"data":[{"url":"https://example.com/result.png"}]}`, wantDataURL: "https://example.com/result.png"},
+		{name: "b64_json", responseFormat: true, defaultFormat: "b64_json", wantFormat: "b64_json", reply: `{"data":[{"b64_json":"aGVsbG8="}]}`, wantDataURL: "data:image/png;base64,aGVsbG8="},
+		{name: "unsupported", responseFormat: false, reply: `{"data":[{"url":"https://example.com/result.png"}]}`, wantDataURL: "https://example.com/result.png"},
+		{name: "auto", responseFormat: true, defaultFormat: "auto", reply: `{"data":[{"url":"https://example.com/result.png"}]}`, wantDataURL: "https://example.com/result.png"},
+		{name: "explicit_url", responseFormat: true, defaultFormat: "url", wantFormat: "url", reply: `{"data":[{"url":"https://example.com/result.png"}]}`, wantDataURL: "https://example.com/result.png"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1414,6 +1418,7 @@ func TestRunGrokImageTaskUsesJSONEditContract(t *testing.T) {
 
 			profile := DefaultImageCapabilityConfig("grok-image", "grok-imagine-image-quality")
 			profile.ResponseFormat.Supported = tc.responseFormat
+			profile.ResponseFormat.Default = tc.defaultFormat
 			result, err := runImageTask(context.Background(), canvasGenerationInput{
 				Mode:            "image",
 				Prompt:          "edit the reference",

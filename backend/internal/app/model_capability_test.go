@@ -6,6 +6,35 @@ import (
 	"testing"
 )
 
+func TestValidateImageResponseFormatConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		supported bool
+		value     string
+		want      string
+		wantError bool
+	}{
+		{name: "default_auto", supported: true, want: "auto"},
+		{name: "auto", supported: true, value: "auto", want: "auto"},
+		{name: "base64", supported: true, value: "b64_json", want: "b64_json"},
+		{name: "url_normalized", supported: true, value: " URL ", want: "url"},
+		{name: "unsupported", value: "b64_json", want: "auto"},
+		{name: "invalid", supported: true, value: "raw", wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			profile := DefaultImageCapabilityConfig("grok-image", "grok-imagine-image")
+			profile.ResponseFormat = ParameterSupport{Supported: tc.supported, Default: tc.value}
+			err := validateImageCapabilityConfig(profile)
+			if (err != nil) != tc.wantError {
+				t.Fatalf("validation error = %v, wantError %v", err, tc.wantError)
+			}
+			if !tc.wantError && profile.ResponseFormat.Default != tc.want {
+				t.Fatalf("default = %q, want %q", profile.ResponseFormat.Default, tc.want)
+			}
+		})
+	}
+}
+
 func TestValidateImageTaskRejectsOversizedGrokPromptByUTF8Bytes(t *testing.T) {
 	prompt := strings.Repeat("中", 4001)
 	input := canvasGenerationInput{

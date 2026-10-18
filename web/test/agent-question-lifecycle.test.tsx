@@ -20,7 +20,7 @@ for (const [key, value] of Object.entries({
 }
 const { act, Profiler, StrictMode } = await import("react");
 const { createRoot } = await import("react-dom/client");
-const { AgentQuestionBar } = await import("../src/components/canvas/canvas-cloud-agent-chat-ui");
+const { AgentChatMessage, AgentQuestionBar } = await import("../src/components/canvas/canvas-cloud-agent-chat-ui");
 const { canvasThemes } = await import("../src/lib/canvas-theme");
 
 afterAll(() => {
@@ -130,6 +130,157 @@ test("同一表单保留已选值，切换新问题后使用新默认值", async
         await fixture.render({ ...question, questionId: "q2" });
         expect(button("写实").getAttribute("aria-pressed")).toBe("true");
         expect(fixture.errors).toEqual([]);
+    } finally {
+        await fixture.dispose();
+    }
+});
+
+test("视频规格单选可修改，多选字段提交稳定 ID 数组", async () => {
+    const fixture = await questionFixture({
+        kind: "form",
+        questionId: "video-specs",
+        question: "确认视频参数",
+        options: [],
+        fields: [
+            {
+                id: "aspectRatio",
+                title: "画幅",
+                type: "single_select",
+                defaultValue: "9:16",
+                options: [
+                    { id: "9:16", label: "9:16" },
+                    { id: "16:9", label: "16:9" },
+                ],
+            },
+            {
+                id: "resolution",
+                title: "清晰度",
+                type: "segmented",
+                defaultValue: "720P",
+                options: [
+                    { id: "480P", label: "480P" },
+                    { id: "720P", label: "720P" },
+                ],
+            },
+            {
+                id: "outputs",
+                title: "输出",
+                type: "multi_select",
+                defaultValue: ["video", "cover"],
+                options: [
+                    { id: "video", label: "视频" },
+                    { id: "cover", label: "封面" },
+                    { id: "subtitle", label: "字幕" },
+                ],
+            },
+        ],
+    });
+    const button = (label: string) => Array.from(fixture.host.querySelectorAll("button")).find((item) => item.textContent === label)!;
+    try {
+        expect(button("9:16").getAttribute("aria-pressed")).toBe("true");
+        expect(button("视频").getAttribute("aria-pressed")).toBe("true");
+        await act(async () => button("16:9").click());
+        await act(async () => button("480P").click());
+        await act(async () => button("字幕").click());
+        await act(async () => button("确认并继续").click());
+        const answer = JSON.parse(fixture.answers[0]);
+        expect(answer.answers).toEqual({ aspectRatio: "16:9", resolution: "480P", outputs: ["video", "cover", "subtitle"] });
+        expect(answer.displayAnswers).toEqual({ aspectRatio: "16:9", resolution: "480P", outputs: ["视频", "封面", "字幕"] });
+    } finally {
+        await fixture.dispose();
+    }
+});
+
+test("多选显式空默认值不回退推荐项，必选时阻止空提交", async () => {
+    const fixture = await questionFixture({
+        kind: "form",
+        questionId: "empty-selection",
+        question: "选择输出",
+        options: [],
+        fields: [{ id: "outputs", title: "输出", type: "multi_select", defaultValue: [], required: true, options: [{ id: "video", label: "视频", recommended: true }] }],
+    });
+    const button = (label: string) => Array.from(fixture.host.querySelectorAll("button")).find((item) => item.textContent === label)!;
+    try {
+        expect(button("视频").getAttribute("aria-pressed")).toBe("false");
+        await act(async () => button("确认并继续").click());
+        expect(fixture.answers).toEqual([]);
+        expect(fixture.host.textContent).toContain("请填写“输出”");
+        await act(async () => button("视频").click());
+        await act(async () => button("确认并继续").click());
+        expect(JSON.parse(fixture.answers[0]).answers).toEqual({ outputs: ["video"] });
+        await act(async () => button("视频").click());
+        expect(button("视频").getAttribute("aria-pressed")).toBe("false");
+    } finally {
+        await fixture.dispose();
+    }
+});
+
+test("多选答案回显分隔标签，单选保留显示文案", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+        await act(async () =>
+            root.render(
+                <AgentChatMessage
+                    theme={canvasThemes.light}
+                    item={{
+                        id: "answer",
+                        role: "user",
+                        text: JSON.stringify({ type: "form_answer", answers: { outputs: ["video", "cover", "subtitle"], style: "custom_style" }, displayAnswers: { outputs: ["视频", "封面", "字幕"], style: "原始_标签" } }),
+                    }}
+                />,
+            ),
+        );
+        expect(Array.from(host.querySelectorAll(".agent-form-answer-value"), (item) => item.textContent)).toEqual(["视频、封面、字幕", "原始_标签"]);
+    } finally {
+        await act(async () => root.unmount());
+        host.remove();
+    }
+});
+
+test("多选自定义值只提交最终文本，不把 other 或逐字输入当作答案", async () => {
+    const fixture = await questionFixture({
+        kind: "form",
+        questionId: "custom-selection",
+        question: "选择输出",
+        options: [],
+        fields: [
+            {
+                id: "outputs",
+                title: "输出",
+                type: "multi_select",
+                defaultValue: [],
+                required: true,
+                allowCustom: true,
+                options: [
+                    { id: "video", label: "视频" },
+                    { id: "other", label: "其他" },
+                ],
+            },
+        ],
+    });
+    const button = (label: string) => Array.from(fixture.host.querySelectorAll("button")).find((item) => item.textContent === label)!;
+    try {
+        await act(async () => button("其他").click());
+        await act(async () => button("确认并继续").click());
+        expect(fixture.answers).toEqual([]);
+        const input = fixture.host.querySelector("input")!;
+        expect(input.value).toBe("");
+        for (const value of ["海", "海报"]) {
+            await act(async () => {
+                Object.getOwnPropertyDescriptor(dom.HTMLInputElement.prototype, "value")!.set!.call(input, value);
+                input.dispatchEvent(new dom.Event("input", { bubbles: true }));
+            });
+        }
+        await act(async () => button("视频").click());
+        await act(async () => button("确认并继续").click());
+        expect(JSON.parse(fixture.answers[0]).answers).toEqual({ outputs: ["video", "海报"] });
+        expect(JSON.parse(fixture.answers[0]).displayAnswers).toEqual({ outputs: ["视频", "海报"] });
+        await act(async () => button("其他").click());
+        expect(fixture.host.querySelector("input")).toBeNull();
+        await act(async () => button("确认并继续").click());
+        expect(JSON.parse(fixture.answers[1]).answers).toEqual({ outputs: ["video"] });
     } finally {
         await fixture.dispose();
     }

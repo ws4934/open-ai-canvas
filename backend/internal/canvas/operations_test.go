@@ -3,6 +3,7 @@ package canvas
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -55,6 +56,40 @@ func TestApplyCanvasOperationsReplaysSameMutationAndRejectsDifferentPayload(t *t
 	var appError *kernel.AppError
 	if !errors.As(err, &appError) || appError.Status != http.StatusConflict {
 		t.Fatalf("different payload replay error = %v, want conflict", err)
+	}
+}
+
+func TestApplyCanvasOperationsEnforcesBatchLimitAndUserScope(t *testing.T) {
+	svc := newCanvasOperationTestService(t)
+	operations := []CanvasOperation{{Type: "create_canvas", ID: "canvas", Patch: map[string]json.RawMessage{"title": json.RawMessage(`"批量画布"`)}}}
+	for index := 0; index < 500; index++ {
+		operations = append(operations, CanvasOperation{Type: "create_node", Node: json.RawMessage(fmt.Sprintf(`{"id":"node-%d","type":"text"}`, index))})
+	}
+	_, err := svc.ApplyUserCanvasOperations("owner", "canvas", CanvasOperationsRequest{MutationID: "oversized", Operations: operations})
+	var appError *kernel.AppError
+	if !errors.As(err, &appError) || appError.Status != http.StatusBadRequest {
+		t.Fatalf("501 operations error = %v, want bad request", err)
+	}
+	if _, err := svc.repo.CanvasProjectForUser("owner", "canvas"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("oversized batch created a canvas: %v", err)
+	}
+	if _, err := svc.repo.CanvasMutationReceiptForUser("owner", "canvas", "oversized"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("oversized batch retained a receipt: %v", err)
+	}
+	result, err := svc.ApplyUserCanvasOperations("owner", "canvas", CanvasOperationsRequest{MutationID: "full-batch", Operations: operations[:500]})
+	if err != nil {
+		t.Fatalf("500 operations rejected: %v", err)
+	}
+	_, err = svc.ApplyUserCanvasOperations("other", "canvas", CanvasOperationsRequest{MutationID: "foreign-update", Operations: []CanvasOperation{{Type: "patch_canvas", Patch: map[string]json.RawMessage{"title": json.RawMessage(`"不应覆盖"`)}, Before: map[string]json.RawMessage{"title": json.RawMessage(`"批量画布"`)}}}})
+	if !errors.As(err, &appError) || appError.Status != http.StatusNotFound {
+		t.Fatalf("foreign user update error = %v, want not found", err)
+	}
+	stored, err := svc.repo.CanvasProjectForUser("owner", "canvas")
+	if err != nil || stored.Title != "批量画布" || stored.Revision != result.Revision {
+		t.Fatalf("foreign update changed canvas: %#v, %v", stored, err)
+	}
+	if _, err := svc.repo.CanvasMutationReceiptForUser("other", "canvas", "foreign-update"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("foreign update retained a receipt: %v", err)
 	}
 }
 
@@ -492,6 +527,34 @@ func TestApplyCanvasOperationsAcceptsLegacyOmittedOptionalFieldValues(t *testing
 		Type: "set_field", Field: "title", Value: json.RawMessage(`"标题"`),
 	}}}); err == nil {
 		t.Fatal("missing required field precondition was accepted")
+	}
+}
+
+func TestApplyCanvasOperationsRejectsDuplicateCreateWithStructuredConflict(t *testing.T) {
+	svc := newCanvasOperationTestService(t)
+	request := CanvasOperationsRequest{MutationID: "first-create", Operations: []CanvasOperation{{Type: "create_canvas", ID: "canvas", Patch: map[string]json.RawMessage{"title": json.RawMessage(`"已保存"`)}}}}
+	first, err := svc.ApplyUserCanvasOperations("user", "canvas", request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A lost response must remain replayable with its original mutation ID.
+	replayed, err := svc.ApplyUserCanvasOperations("user", "canvas", request)
+	if err != nil || replayed.Revision != first.Revision {
+		t.Fatalf("original creation replay = %#v, %v", replayed, err)
+	}
+	request.MutationID = "stale-create-with-new-id"
+	request.Operations[0].Patch["title"] = json.RawMessage(`"不应覆盖"`)
+	_, err = svc.ApplyUserCanvasOperations("user", "canvas", request)
+	var appError *kernel.AppError
+	if !errors.As(err, &appError) || appError.Status != http.StatusConflict || appError.Reason != "canvas_field_conflict" || appError.Retryable {
+		t.Fatalf("duplicate create error = %#v, want non-retryable field conflict", err)
+	}
+	stored, err := svc.repo.CanvasProjectForUser("user", "canvas")
+	if err != nil || stored.Title != "已保存" || stored.Revision != first.Revision {
+		t.Fatalf("duplicate create changed stored canvas: %#v, %v", stored, err)
+	}
+	if _, err := svc.repo.CanvasMutationReceiptForUser("user", "canvas", request.MutationID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("rejected creation retained a receipt: %v", err)
 	}
 }
 

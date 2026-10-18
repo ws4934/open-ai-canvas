@@ -80,6 +80,14 @@ operations 可携带 `editProofs: [{nodeId, sessionId, token}]`，服务端校�
 
 `baseRevision` 是生成请求时的已确认版本，用于记录和诊断。真正的并发校验在操作本身：字段补丁使用 `before`，对象更新或删除使用 `expected`，顶层字段使用 `beforeValue`。不同字段可以合并；同一字段或同一对象的基线不匹配时返回冲突。可选顶层字段不存在时，客户端必须在 JSON 中将 `value` 或 `beforeValue` 编码为 `null`，不能让 `undefined` 被序列化为缺失属性。服务端仅兼容早期客户端对这些可选字段省略属性的请求，并按 `null` 参与同样的基线校验。
 
+### 超过 500 条操作时顺序分批
+
+服务端每个请求接受 1–500 条 operations。客户端保留原顺序，将当前批的完整请求和 `remainingOperations` 一起写入 journal 后才发送。每批确认后，将该批已提交变化推进到冲突合并基线；下一批使用新的 `mutationId`、上一批返回的 revision 和原有编辑租约证明，并把新基线、下一批请求及剩余操作一起持久化后再发送。后续批次冲突以这份已推进的基线合并，不能再次应用先前已确认的文字或回滚已提交字段；全部批次确认并完成画布回读后，才标记整份快照已保存。
+
+每批是独立事务，后续失败不会回滚此前已确认的批次。响应未知时重放当前批原 ID/正文；当前批明确冲突时停止推进，按本节的冲突规则保留并合并尚未确认的编辑。中途刷新依靠已落盘 journal 接续，账号切换后不再发送旧会话后续批次。任一 checkpoint 落盘失败均不得先发送下一批，部分批次成功不能显示为整份画布已保存。
+
+字段或对象冲突保留原始错误直到事务回滚完成，再对外转换为 `canvas_field_conflict` 或 `canvas_object_missing`。revision 竞争仍为 `canvas_concurrent_write`，不能将其当作已明确回滚的字段冲突改写请求身份。统一应用发布会同时更新前端分批逻辑与后端错误分类，无需独立部署前端。
+
 ## 同任务观察结果的收敛
 
 同一任务可能由多个终端观察并保存。客户端只在原节点和新节点绑定同一非空任务 ID、且写入非空任务时间时，给补丁补充 `before["metadata.taskId"]`；换绑、首次绑定和解绑保留真实旧 ID 的基线，不能用新 ID 覆盖。
@@ -101,7 +109,7 @@ operations 可携带 `editProofs: [{nodeId, sessionId, token}]`，服务端校�
 
 ## 事务与 receipt
 
-服务端事务按以下顺序处理请求：锁定画布写入、创建或读取 receipt、核对请求摘要、读取当前画布、应用 operations、校验媒体引用、递增 revision、写入画布和完成 receipt。画布内容、revision、receipt 的结果 JSON 在同一事务提交，任一步失败都会回滚。
+服务端每批事务按以下顺序处理请求：锁定画布写入、创建或读取 receipt、核对请求摘要、读取当前画布、应用 operations、校验媒体引用、递增 revision、写入画布和完成 receipt。该批画布内容、revision、receipt 的结果 JSON 在同一事务提交，任一步失败都会回滚当前批次。
 
 `canvas_mutation_receipts` 使用 `(user_id, canvas_id, mutation_id)` 唯一约束。相同 ID 和相同摘要返回之前保存的确定性结果，不再次应用操作；相同 ID 和不同摘要返回冲突。receipt 不替代当前画布，也不保存整批版本历史。
 
@@ -113,6 +121,7 @@ operations 可携带 `editProofs: [{nodeId, sessionId, token}]`，服务端校�
 
 - 已确认的画布基线；
 - 原始 operations 请求及 mutationId；
+- 超限分批时尚未提交的 `remainingOperations`；
 - 生成请求时的本地投影；
 - 创建时间。
 

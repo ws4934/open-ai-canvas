@@ -352,8 +352,14 @@ const grokResolution = omit({
 
 add({
   id: "xai-grok-images", providerId: "grok-image", name: "xAI Grok Images", vendor: "xAI", capability: "image",
+  version: "2.1.1",
   baseUrl: "https://api.x.ai", auth: bearer, params: imageParams,
-  notes: "有参考图时改走 /v1/images/edits；resolution 只接受 1k/2k；像素尺寸会换算为 aspect_ratio。",
+  imageParameters: [
+    { name: "size", label: "画幅比例", type: "string", binding: "aspectRatio", encoding: "ratio", values: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "2:1", "1:2"], default: "1:1" },
+    { name: "imageResolution", label: "分辨率", type: "string", binding: "resolution", values: ["1k", "2k"], default: "1k", pricing: true },
+    { name: "count", label: "生成数量", type: "integer", binding: "imageCount", min: 1, max: 10, step: 1, default: 1 }
+  ],
+  notes: "有参考图时改走 /v1/images/edits；resolution 只接受 1k/2k；像素尺寸会换算为 aspect_ratio。response_format 只发送宿主明确指定的 b64_json 或 url；auto、关闭支持或未配置时省略该字段，由上游选择默认返回格式。",
   create: {
     method: "POST",
     path: "/v1/images/generations",
@@ -363,7 +369,7 @@ add({
       model: ref("request.model"), prompt: ref("request.prompt"),
       image: conditional(gt(len(ref("request.images")), 0), { url: firstMediaFieldWithRoles("request.images", ["edit_source", "reference_image", ""], "value") }),
       n: conditional(gt(ref("request.imageCount"), 0), ref("request.imageCount"), 1),
-      response_format: coalesce(ref("request.providerOptions.grok-image.response_format"), "url"),
+      response_format: omit(ref("request.providerOptions.grok-image.response_format")),
       aspect_ratio: grokAspectRatio, resolution: grokResolution,
       user: omit(ref("request.providerOptions.grok-image.user"))
     }
@@ -1258,7 +1264,7 @@ function manifestFor(spec) {
     apiVersion: "yingce.plugin/v2",
     id: spec.id,
     name: spec.name,
-    version: "2.0.0",
+    version: spec.version || "2.0.0",
     author: `${spec.vendor} / 影策`,
     description: `${spec.name} 独立请求协议插件。`,
     documentation: `# ${spec.name}\n\n完整字段、映射、响应、鉴权和兼容边界见包内 README.md 与 docs/interface.md。\n\n## 影策运行时合同\n\n用户只操作统一的文本、图片或视频能力；插件负责把统一请求转换为 ${spec.name} 上游协议。`,
@@ -1273,6 +1279,7 @@ function manifestFor(spec) {
         baseUrl: spec.baseUrl,
         requiresPublicMediaUrls: spec.requiresPublicMediaUrls === true,
         auth: spec.auth,
+        ...(spec.imageParameters ? { imageParameters: spec.imageParameters } : {}),
         parameters: parameters(spec.params),
         ...(spec.validations ? { validations: spec.validations } : {}),
         create: spec.create,
@@ -1354,7 +1361,8 @@ for (const spec of selectedSpecs) {
   await mkdir(join(dir, "docs"), { recursive: true });
   await writeFile(join(dir, "manifest.json"), JSON.stringify(manifestFor(spec), null, 2) + "\n");
   await writeFile(join(dir, "README.md"), `# ${spec.name}\n\n该目录是独立官方协议插件源码。后端从生成的 \`${spec.id}.yingce-plugin\` 包加载，不依赖系统内置 \`host:\` 适配器。\n\n完整接口见 [docs/interface.md](docs/interface.md)。\n`);
-  await writeFile(join(dir, "docs", "interface.md"), docsFor(spec));
+  const imageParameterDocumentation = spec.imageParameters ? "\n## 动态图片参数\n\n`contributes.providers[].imageParameters` 是渠道模型、前台模型与生成界面共用的参数合同。`name` 为稳定身份，`type`、`values`、`min/max/step`、`default` 描述输入；`models` 限定适用上游模型，`enabled` 为初始启用状态。只有 `pricing: true` 的启用字段允许作为价格条件；其他参数仍参与生成。渠道可收窄范围，绑定与计价资格由插件拥有。`binding` 映射到统一请求或插件自己的 `providerOptions` 命名空间。\n" : "";
+  await writeFile(join(dir, "docs", "interface.md"), docsFor(spec) + imageParameterDocumentation);
 }
 
 console.log(`generated ${selectedSpecs.length} protocol packages`);

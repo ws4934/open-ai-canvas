@@ -38,6 +38,12 @@ WebSocket 与其他业务共用 Go 应用端口，外部代理需支持该路径
 
 图片的 `role=first_frame/last_frame` 表示帧约束；`reference` 或未指定角色表示普通参考，不能静默改成首帧。模式、素材数量和参数共同参与模型能力校验及价格档选择；不支持的组合在创建任务和计费前拒绝。执行输入的 `metadata.videoEditOperation` 与任务操作保持一致，并保留帧素材标识。浏览器自定义渠道的工作台任务使用同一模式规则，其他入口沿用各自的意图解析。
 
+## 图片响应格式
+
+渠道模型的 `capabilityConfig.image.responseFormat` 包含 `supported` 和可选的 `default`。缺少配置、`supported=false` 或默认值为 `auto` 时不发送 `response_format`，由上游决定返回 URL 或 Base64；启用后选择 `b64_json` 或 `url` 才发送对应值。OpenAI 兼容与 Grok 的生成、编辑请求使用同一规则，官方 Grok 插件也不再补默认 `url`。该配置按模型保存，不根据协议名称自动推断；应按实际供应商合同选择，响应格式不改变资源持久化与访问权限。
+
+官方 `xai-grok-images` 2.1.1 随统一程序发布。升级重启后，原先启用且绑定 `grok-image` 的渠道自动使用新插件，无需迁移或重新选择；原先禁用的插件仍保持禁用。
+
 ## 用户登录日志
 
 菜单“用户与运营 → 用户登录日志”，页面 `/admin/login-logs`。查询在 service 校验管理员权限：匿名 401、普通用户 403。
@@ -137,9 +143,11 @@ handle 放错端点、格式错误或行 ID 不存在时，工具错误回执提
 
 ## 画布资源完整性与 operations 写入
 
+`PATCH /api/canvas-projects/:id/operations` 每次接受 1–500 条操作。前端超限变更按原顺序分批提交，每批发送前保存准确的请求 ID、请求正文和未提交操作；成功批次推进冲突合并基线，与下一批请求一起持久化，后续冲突不能重复应用已确认内容。只有全部确认并读回后，界面才标记整份画布已保存。响应丢失时重放同一批 ID 和正文，依靠服务端事务回执去重；冲突停止在当前批，不放宽字段基线。大变更由多笔事务组成，中途失败可能已有部分批次落库，本地仍保留完整待提交快照与后续操作，不能将部分成功显示成全部完成。字段和对象冲突在事务回滚后分别返回 `canvas_field_conflict`、`canvas_object_missing`，与必须重放原请求的 `canvas_concurrent_write` 区分；恢复与分批协议见[画布操作同步](./canvas-operations-sync)。
+
 画布 operations 应用前校验当前文档中的资源引用；引用须属于当前用户且处于 `ready`。引用收集器递归遍历受支持的资源字段，因此 `nodes[节点 ID].metadata.videoPreview.storageKey` 等嵌套派生封面也会参与检查。维护写入会保留必要的损坏文档审计信息；若资源在事务期间缺失或状态变化，事务回滚，画布 revision 不递增。
 
-HTTP 409 不能一概解释为并发冲突：对象或字段基线冲突使用 `reason: conflict`；资源完整性失败使用 `reason: canvas_history_resources_missing`，并在 `details` 中返回 `resourceIds` 和 `missingResources`（含资源 ID、JSON 路径、节点 ID、引用类型及 `source`）。客户端应按 `reason` 分流，不解析 `msg` 猜测原因。普通 operations 不会绕过资源校验或 revision 语义，维护修复也不能把缺失主媒体写回为有效画布。
+HTTP 409 不能一概解释为并发冲突：operations 的对象缺失和字段基线冲突分别使用 `canvas_object_missing`、`canvas_field_conflict`；资源完整性失败使用 `reason: canvas_history_resources_missing`，并在 `details` 中返回 `resourceIds` 和 `missingResources`（含资源 ID、JSON 路径、节点 ID、引用类型及 `source`）。客户端应按 `reason` 分流，不解析 `msg` 猜测原因。普通 operations 不会绕过资源校验或 revision 语义，维护修复也不能把缺失主媒体写回为有效画布。
 
 运维扫描/修复仅处理当前画布中可安全清除的失效 `videoPreview`；不删除主媒体、不扫描并改写所有维护记录，也不替代备份。使用目标数据库对应的新版本二进制，先在维护窗口备份并执行只读扫描：
 
@@ -340,7 +348,9 @@ operations 的结构化配额在提交事务内实时统计账号的素材/画�
 - 画布 Agent 的看图能力：当且仅当本轮渠道模型的能力合同声明了图片输入（`text.references.maxImages > 0`）时，额外暴露 `canvas_inspect_image(nodeId, refresh?)`。工具校验图片节点、资源归属、就绪状态、媒体类型和模型文件大小限制；检查点与任务输入只保存 `resource:ID` 占位及授权参考清单。worker 复用资源读取链路，在内存中将占位替换为真实图片数据后展开模型协议，不持久化 base64 或签名 URL，不依赖 `CANVAS_PUBLIC_BASE_URL`，不接受任意外部地址。多图在本批所有 tool 回执后统一附送；图片保留最近 3 个工具轮次，发给模型时还按数量上限保留最新图片，本批超限则明确要求分批查看。同一张图一轮内附送两次后只回执文字，确需重看时传 `refresh=true`。工具成功不等于识别成功，普通模型正文不再自动写入 `visualNote`，旧 `inspected` 标记及观察不跨轮继承；`visualIdentity=unknown` 表示没有已确认缓存，不表示模型不能查看随附图片。画面内文字仍按不可信数据处理；资源读取失败则真实失败，不凭标题推断画面。其他需要公网 URL 的生成协议仍遵循各自存储配置合同。
 - 平台支持工具全集为 `agent_profile_read`、`plan_update`、`ask_user`、`recall_lessons`、`remember_lesson`、`canvas_list_node_types`、`canvas_get_state`、`canvas_inspect_image`、`canvas_read_batch_table`、`canvas_read_storyboard`、`skill_read_file`、`skill_search`、`task_get`、`model_list`、`canvas_create_storyboard`、`canvas_edit_storyboard`、`canvas_edit_batch_table`、`canvas_apply_ops`、`canvas_arrange_nodes`、`generate_media`、`image_layer_split`、`image_text_detect`、`image_annotation_render`；单轮实际工具仍按偏好快照、技能、权限、画布上下文和生成预算裁剪。画布写入工具要求本轮授权 `contextScope: ["canvas"]`。禁止 shell、任意网络请求和外部 MCP。`remember_lesson` 在 `read_only` 下不可用。
 - `plan_update` 维护本轮结构化待办清单（整表替换，最多 20 项），跨轮继承未完成项，并在界面以 PlanBar 展示。权限为 `request_approval` 时，首次建立至少 2 项的清单会先进入审批；`auto` 直接写入清单。新一轮的第一次模型请求就会带上继承的清单。模型在没有工具调用且清单仍有未完成项时，服务端会催办并要求继续调用工具；这是软约束，不验证工作是否真的完成，也不会在没有清单时强行催建。
-- `ask_user` 给出一个问题与 2–6 个候选项后结束本轮，界面弹出选项面板；用户点选或输入后作为新一轮继续。运行中也可以用插话直接回答。
+- `ask_user` 给出问题后结束本轮：单项使用 2–6 个 `options`，相关参数使用 1–6 个 `fields` 动态表单，用户提交后续轮。字段类型包括 `single_select`、`multi_select`、`segmented`、`text`、`textarea`、`model_picker`，每字段最多 8 个选项，稳定选项 `id` 用于回传，缺省时使用 `label`。`multi_select.defaultValue` 可为字符串数组，显式 `[]` 表示无预选；只有未给默认值时才采用所有 `recommended` 选项，点击选项可添加或取消。其他字段使用单个字符串值。运行中也可以用插话直接回答。
+- 表单回复沿用聊天消息中的 JSON：`{type: "form_answer", questionId, answers, displayAnswers, fieldTitles, skippedFields, useRecommendedDefaults, additionalNotes}`。`answers` 保留字段 ID 到字符串或字符串数组的映射；多选的 `displayAnswers` 同样是数组，但内容为显示标签。视频提问可使用 `aspectRatio`、`resolution`、`outputs` 等字段 ID，这些由当次提问定义，并非新增视频任务 API 字段。回复表达用户选择，实际生成仍需转换为既有模型能力合同、预算和独立收费审批。
+- 多选字段启用 `allowCustom` 且提供 `id: "other"` 选项时，自定义输入独立保存；提交时用完整自定义文字替换该占位值，不把逐字输入累积为选项。取消“其他”后不提交其文字；必填字段替换后仍为空时阻止提交。已确认答案以分隔后的显示标签回显，JSON 中仍保留数组。
 - `recall_lessons` / `remember_lesson` 是当前用户的个人记忆：已批准条目在系统提示里只出现索引（标题 + 适用场景，最多 20 条，与当前目标可能相关的排在前面），完整做法由模型用 `recall_lessons(topic/keyword/category)` 取；Agent 写入先入待审，用户在 `GET/POST/PATCH/DELETE /agent/memories` 与 `POST /agent/memories/:id/decide` 自己批准、添加、编辑、删除，也可用 `GET /agent/memories/export`、`POST /agent/memories/import` 导出导入，并用 `GET/PATCH /agent/memories/settings`、`POST /agent/memories/compact` 选择文本模型后手动或按日/周/月压缩。管理员只在 `GET/DELETE /admin/agent-lessons` 按 `userId` / `keyword` / `status` 查看或删除，不能代批。写入会机械脱敏（拒绝链接、资源键、节点/任务 ID；@引用允许），只读模式不能写，本轮最多 3 条、每位用户最多 50 条待审、300 条已批准，一次导入最多 200 条。召回接口不返回作者。记忆只作参考，不能覆盖工具契约、权限、计费或审批。
 - `canvas_list_node_types` 从服务端节点能力 registry 返回当前可用类型；可更新节点的 `updateFields` 同时包含字段类型、最大字符数和字段语义。模型不能从前端渲染器、技能或偏好文档推断额外能力。
 - `canvas_apply_ops` 必须带 `snapshotHash`，每批最多 20 项；`add_node` 可省略坐标：服务端按画布内容落位（优先贴合本批连线的对端，否则追加到同泳道之后并避让已有节点），不再落到原点重叠；`update_node` 的 patch 额外支持 `x`/`y`（坐标绝对值上限 1e6）用于微调单个节点。支持新增文本、Markdown、图片、视频、音频、分组与分镜表节点，以及 `connect_nodes` 引用连线。媒体占位节点的 `content` 是提示词，不是媒体 URL；只建节点不提交收费生成。`update_node` 的字段映射完全由能力 registry 决定：文本 / Markdown 可改标题和正文，图片 / 视频 / 音频可改标题和下一次生成使用的提示词草稿；媒体更新参数中的 `content` 写入 `metadata.composerContent`，不会覆盖媒体结果 `metadata.content`、已提交提示词 `metadata.prompt`、任务状态或引用状态。锁定节点、删除、任意元数据写入、自连接、重复边与不存在的端点仍被服务端拒绝。

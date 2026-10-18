@@ -2,9 +2,21 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 // Bun 直接执行 TypeScript 测试时需要保留扩展名；生产 tsconfig 不包含 test/。
-import { DEFAULT_VIDEO_PROMPT_MAX_CHARS, defaultModelCapabilityConfig, normalizeImageValue, normalizeVideoValue } from "../src/lib/model-capabilities.ts";
+import { DEFAULT_VIDEO_PROMPT_MAX_CHARS, defaultModelCapabilityConfig, imageResponseFormatFor, normalizeImageValue, normalizeModelCapabilityConfig, normalizeVideoValue } from "../src/lib/model-capabilities.ts";
 import { imageTierAvailable, imageResolutionTiers } from "../src/lib/image-size-presets.ts";
 import { workflowFieldIsRatioChoices } from "../src/lib/model-capabilities-workflow.ts";
+
+test("image response format uses only explicit supported choices", () => {
+    const config = defaultModelCapabilityConfig("openai-image");
+    assert.equal(imageResponseFormatFor(config.image!), undefined);
+    for (const value of ["auto", "b64_json", "url"] as const) {
+        const image = normalizeModelCapabilityConfig({ ...config, image: { ...config.image!, responseFormat: { supported: true, default: value } } }).image!;
+        assert.equal(image.responseFormat.default, value);
+        assert.equal(imageResponseFormatFor(image), value === "auto" ? undefined : value);
+        assert.equal(imageResponseFormatFor({ responseFormat: { supported: false, default: value } }), undefined);
+    }
+    assert.equal(normalizeModelCapabilityConfig({ ...config, image: { ...config.image!, responseFormat: { supported: true } } }).image!.responseFormat.default, "auto");
+});
 
 test("workflow ratio choices use the direct selection control only for ratio values", () => {
     const field = { fieldName: "aspectRatio", fieldType: "SELECT", options: ["auto", "9:16", "16:9", "21:9"] };

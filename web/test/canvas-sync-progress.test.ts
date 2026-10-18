@@ -22,14 +22,14 @@ const paths: Record<string, string> = {
     "@/lib/canvas/canvas-content": join(dir, "content.ts"),
     "@/stores/use-sync-progress-store": join(dir, "progress.ts"),
     "@/lib/canvas/canvas-task-mutation": fileURLToPath(new URL("../src/lib/canvas/canvas-task-mutation.ts", import.meta.url)),
-    "@/lib/canvas/agent-canvas-patch": new URL("../src/lib/canvas/agent-canvas-patch.ts", import.meta.url).pathname,
+    "./canvas-mutation-batches": fileURLToPath(new URL("services/canvas-mutation-batches.ts", root)),
     "./user-data-sync-media": join(dir, "media.ts"),
     "./canvas-edit-leases": stubPath,
     "@/lib/canvas/agent-canvas-patch": fileURLToPath(new URL("lib/canvas/agent-canvas-patch.ts", root)),
 };
 function copySource(source: string, name: string) {
     const code = readFileSync(new URL(source, root), "utf8");
-    const imports = code.replace(/"(@\/[^\"]+|\.\/user-data-sync-media|\.\/canvas-edit-leases|json-canonicalize|zustand)"/g, (_, specifier: string) => JSON.stringify(paths[specifier] ?? stubPath));
+    const imports = code.replace(/"(@\/[^\"]+|\.\/user-data-sync-media|\.\/canvas-edit-leases|\.\/canvas-mutation-batches|json-canonicalize|zustand)"/g, (_, specifier: string) => JSON.stringify(paths[specifier] ?? stubPath));
     writeFileSync(join(dir, name), `import { fixtureWindow as window } from ${JSON.stringify(stubPath)};\n` + imports);
 }
 writeFileSync(
@@ -450,6 +450,73 @@ afterAll(() => {
 });
 
 describe("定向保存与旧 journal 的真实同步集成", () => {
+    test.each(["direct", "reload", "checkpoint failure"])("分批提交后发生冲突，不重复应用已提交文本或覆盖它的后续远端修改：%s", async (recovery) => {
+        fixture.manualTimers = true;
+        const project = base();
+        project.nodes = Array.from({ length: 501 }, (_, index) => ({ ...project.nodes[0]!, id: `node-${index}`, title: "Scene", metadata: {} }));
+        fixture.remote = structuredClone(project);
+        fixture.data.clear();
+        useCanvasStore.setState({ projects: [project] });
+        await reloadSession();
+        edit({ nodes: live().nodes.map((node, index) => ({ ...node, width: 200, title: index === 0 ? "Scene A" : node.title })) });
+        fixture.afterPostHook = (_id: string, _request: unknown, count: number) => {
+            if (count !== 1) return;
+            fixture.remote.nodes[0].title = "Scene A B";
+            fixture.remote.nodes[0].width = 300;
+            fixture.remote.nodes[500].width = 150;
+            fixture.remote.revision++;
+        };
+        if (recovery === "reload") fixture.errors.set("canvas:2", new Error("offline before second batch"));
+        if (recovery === "checkpoint failure") {
+            fixture.saveHook = (key: string, value: string) => {
+                if (key === journalKey && fixture.writes.length === 1 && JSON.parse(value)[0]?.request.operations.length === 1) throw new Error("checkpoint disk full");
+            };
+        }
+        if (recovery !== "direct") {
+            await expect(sync.saveRemoteUserDataNow("canvas")).rejects.toThrow(recovery === "reload" ? "offline before second batch" : "checkpoint disk full");
+            const persisted = journal()[0];
+            expect(persisted.baseline.nodes[0].title).toBe(recovery === "reload" ? "Scene A" : "Scene");
+            fixture.saveHook = undefined;
+            await reloadSession();
+            await sync.saveRemoteUserDataNow("canvas");
+            expect(fixture.writes[recovery === "reload" ? 2 : 1]).toEqual(persisted.request);
+        } else {
+            await sync.saveRemoteUserDataNow("canvas");
+        }
+        expect(fixture.writes[0].operations).toHaveLength(500);
+        expect(fixture.remote.nodes[0]).toMatchObject({ title: "Scene A B", width: 300 });
+        expect(fixture.remote.nodes[500].width).toBe(200);
+        expect(live().nodes[0]).toMatchObject({ title: "Scene A B", width: 300 });
+        expect(journal()).toEqual([]);
+    });
+
+    test.each([
+        ["projectId", undefined],
+        ["activeChatId", null],
+    ] as const)("已确认清空 %s 后的批次冲突不覆盖远端新值", async (field, cleared) => {
+        fixture.manualTimers = true;
+        const project = { ...base(), [field]: "original" };
+        project.nodes = Array.from({ length: 499 }, (_, index) => ({ ...project.nodes[0]!, id: `node-${index}`, metadata: {} }));
+        fixture.remote = structuredClone(project);
+        fixture.data.clear();
+        useCanvasStore.setState({ projects: [project] });
+        await reloadSession();
+        edit({ [field]: cleared, backgroundMode: "grid", nodes: live().nodes.map((node) => ({ ...node, width: 200 })) });
+        fixture.afterPostHook = (_id: string, _request: unknown, count: number) => {
+            if (count !== 1) return;
+            fixture.remote[field] = "new-remote-value";
+            fixture.remote.backgroundMode = "none";
+            fixture.remote.revision++;
+        };
+        await sync.saveRemoteUserDataNow("canvas");
+        expect(fixture.writes[0].operations).toHaveLength(500);
+        expect(fixture.writes[0].operations[499]).toMatchObject({ type: "set_field", field, value: null });
+        expect(fixture.remote[field]).toBe("new-remote-value");
+        expect(live()[field]).toBe("new-remote-value");
+        expect(fixture.remote.backgroundMode).toBe("grid");
+        expect(journal()).toEqual([]);
+    });
+
     test("素材上传失败只暂停引用它的画布，其他画布仍保存完成", async () => {
         fixture.manualTimers = true;
         const asset = { id: "asset", kind: "text", title: "Asset", data: { content: "Original" }, metadata: {}, createdAt: "2026-01-01", updatedAt: "2026-01-01" };
