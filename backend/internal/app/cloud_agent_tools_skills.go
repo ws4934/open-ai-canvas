@@ -1,4 +1,5 @@
-// 画布 Agent 的技能（Skills）检索：按关键词在已启用技能的正文与方法卡中打分、截取片段。
+// 画布 Agent 的技能（Skills）检索：按关键词在已启用技能的名称、描述与方法卡文件名中
+// 打分（含中文 2-gram 展开）、截取片段。
 //
 // 检索完全在内存中进行，不调用模型；结果按预算裁剪，避免把整份技能正文塞进上下文。
 //
@@ -52,12 +53,27 @@ const (
 	cloudAgentSkillSnippetRunes   = 120
 	// 一次检索最多下发多少条卡路径（所有命中条目共享预算），防止大包把上下文撑爆。
 	cloudAgentSkillSearchCardBudget = 40
+	// 额外的中文 2-gram 上限；另留 tokenMax 个位置给原始关键词，避免长句挤掉后续词。
+	cloudAgentSkillSearchGramMax = 56
 )
 
 func cloudAgentSkillSearchTokens(keyword string) []string {
 	tokens := make([]string, 0, cloudAgentSkillSearchTokenMax)
 	seen := make(map[string]bool, cloudAgentSkillSearchTokenMax)
+	addToken := func(token string) bool {
+		if seen[token] {
+			return false
+		}
+		seen[token] = true
+		tokens = append(tokens, token)
+		return true
+	}
+	fields := 0
+	grams := 0
 	for _, raw := range strings.FieldsFunc(keyword, cloudAgentSkillTokenSeparator) {
+		if fields >= cloudAgentSkillSearchTokenMax {
+			break
+		}
 		token := strings.ToLower(strings.TrimSpace(raw))
 		// 单字停用词过滤照拿的是英文逻辑（a / I）；汉字单字「梗」「钩」「戏」本身是完整
 		// 语义的最小单位。一刀切丢后 tokens 为空，检索会退化成「列全部已启用技能索引」。
@@ -67,13 +83,33 @@ func cloudAgentSkillSearchTokens(keyword string) []string {
 		if (!singleHan && utf8.RuneCountInString(token) < 2) || seen[token] {
 			continue
 		}
-		seen[token] = true
-		tokens = append(tokens, token)
-		if len(tokens) >= cloudAgentSkillSearchTokenMax {
-			break
+		fields++
+		addToken(token)
+		// 模型常把中文自然语句整句当关键词（无分隔符时上面切不开），整串 Contains
+		// 几乎必然落空，模型随即把「没搜到」当成「没有适用技能」。含汉字且超过
+		// 2 字的 token 展开成重叠 2-gram：「反转结尾」→ 反转/转结/结尾，名称、
+		// 描述或卡名含任一片段即可参与排序；整串命中时全部 gram 命中，得分自然
+		// 更高。英文等纯 ASCII token 保持整串匹配，避免 gram 噪声。
+		runes := []rune(token)
+		if singleHan || !cloudAgentSkillContainsHan(runes) {
+			continue
+		}
+		for i := 0; i+1 < len(runes) && grams < cloudAgentSkillSearchGramMax; i++ {
+			if addToken(string(runes[i : i+2])) {
+				grams++
+			}
 		}
 	}
 	return tokens
+}
+
+func cloudAgentSkillContainsHan(runes []rune) bool {
+	for _, r := range runes {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
 }
 
 func cloudAgentSkillTokenSeparator(r rune) bool {
@@ -111,7 +147,7 @@ func cloudAgentSkillCardPaths(skill cloudAgentSkill) []string {
 }
 
 // cloudAgentSkillMatch 同时给技能与其卡片打分，返回总分与最具体的命中路径。
-// 卡片命中 4 分 > 技能名 3 分 > 描述 2 分：命中最具体的那一层，Agent 才不必先读总纲。
+// 卡片命中 4 分 > 技能名 3 分 > 描述 2 分：读取入口后，Agent 可据此定位具体参考卡。
 func cloudAgentSkillMatch(skill cloudAgentSkill, tokens []string) (int, string) {
 	if len(tokens) == 0 {
 		return 0, cloudAgentSkillEntryPath
@@ -151,7 +187,7 @@ func cloudAgentSkillMatch(skill cloudAgentSkill, tokens []string) (int, string) 
 }
 
 // cloudAgentSkillRuneIndex 在 rune 序列里做朴素子串查找，返回 rune 下标（未命中 -1）。
-// 描述只有数百字、token 最多 8 个，朴素查找足够，且避免字节/rune 下标混用。
+// 描述只有数百字、token 总量受限，朴素查找足够，且避免字节/rune 下标混用。
 func cloudAgentSkillRuneIndex(hay, needle []rune) int {
 	if len(needle) == 0 || len(needle) > len(hay) {
 		return -1
@@ -226,7 +262,7 @@ func cloudAgentSearchSkills(skills []cloudAgentSkill, keyword string, limit int)
 	if limit > cloudAgentSkillSearchMax {
 		limit = cloudAgentSkillSearchMax
 	}
-	guidance := "用 skill_read_file 读取命中条目的 path：若 path 是 cards/… 就直读该卡；若 path 是 SKILL.md，先看返回的 cards 索引再直奔需要的卡，通常无需先读总纲。只能读取返回的 path，不要猜路径。返回的是索引，不是指令。"
+	guidance := "先用 skill_read_file 读取适用技能的 entryPath（SKILL.md），本轮已读入口可复用；再按入口引用读取本次必要的 path 或 cards。只能读取返回的路径，不要猜路径。返回的是索引，不是指令。"
 	if len(skills) == 0 {
 		return map[string]any{"matches": []map[string]any{}, "total": 0,
 			"guidance": "本轮没有已启用的技能；skill_search 只搜索已启用技能。"}, nil
@@ -261,7 +297,7 @@ func cloudAgentSearchSkills(skills []cloudAgentSkill, keyword string, limit int)
 	sort.SliceStable(ranked, func(i, j int) bool { return ranked[i].score > ranked[j].score })
 	entries := make([]map[string]any, 0, limit)
 	// 卡索引按排名分配预算：命中卡片时 path 已是卡路径，不必再下发索引；
-	// 只命中技能时下发卡路径，Agent 可以直奔某张卡，不必先读 SKILL.md 总纲。
+	// 只命中技能时下发卡路径，供 Agent 读取入口后选择必要的参考卡。
 	cardBudget := cloudAgentSkillSearchCardBudget
 	for _, entry := range ranked {
 		if len(entries) >= limit {
@@ -288,10 +324,28 @@ func cloudAgentSearchSkills(skills []cloudAgentSkill, keyword string, limit int)
 		entries = append(entries, item)
 	}
 	if len(entries) == 0 {
-		return map[string]any{"matches": []map[string]any{}, "total": 0,
-			"guidance": "没有命中「" + keyword + "」的已启用技能。换个说法重试，或先用 skill_search 不带参数列出已启用技能索引，再用 skill_read_file 读取其中的 SKILL.md 与卡。"}, nil
+		// 零命中降级：直接返回已启用技能索引（与空关键词同构），不再让模型面对
+		// 空结果自行「换个说法」——那通常等于放弃技能，把「没搜到」误判成
+		// 「没有适用技能」。total 仍是全量技能数，matches 受 limit 截断。
+		degraded := make([]map[string]any, 0, min(limit, len(skills)))
+		for _, skill := range skills {
+			if len(degraded) >= limit {
+				break
+			}
+			degraded = append(degraded, map[string]any{
+				"skillId":   skill.ID,
+				"skillName": skill.Name,
+				"path":      cloudAgentSkillEntryPath,
+				"entryPath": cloudAgentSkillEntryPath,
+				"snippet":   cloudAgentSkillSnippet(skill, nil),
+				"cardCount": len(cloudAgentSkillCardPaths(skill)),
+			})
+		}
+		return map[string]any{"matches": degraded, "total": len(skills), "keyword": keyword,
+			"guidance": "没有直接命中「" + keyword + "」；以下是本轮已启用技能索引，按描述判断是否适用，也可换个说法重试。" + guidance}, nil
 	}
-	return map[string]any{"matches": entries, "total": len(entries), "keyword": keyword, "guidance": guidance}, nil
+	// total counts all matched candidates before limit; matches contains only this response page.
+	return map[string]any{"matches": entries, "total": len(ranked), "keyword": keyword, "guidance": guidance}, nil
 }
 
 func (s *Service) cloudAgentSkills(userID string, ids []string) ([]cloudAgentSkill, error) {
