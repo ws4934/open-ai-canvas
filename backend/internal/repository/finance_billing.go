@@ -1,7 +1,7 @@
 // 计费订单：预留、运行中、结算、退款与恢复。
 //
-// 积分扣减遵循「先预留、再按实际用量结算、多退少补」；所有状态迁移都带期望状态条件，
-// 并发或重复的结算/退款请求只有一个会生效（ErrBillingStateConflict）。
+// 积分扣减遵循「先预留、再按实际用量结算、多退少补」；终态事务先锁订单再修改账户，
+// 并发或重复的结算/退款只能释放一次该订单的预留，不能消耗同账户其他订单的冻结额。
 
 package repository
 
@@ -109,6 +109,8 @@ func (r *Repository) BillingOrdersByTaskIDs(userID string, taskIDs []string) (ma
 	return result, nil
 }
 
+const billingReviewTimeout = 40 * time.Minute
+
 func (r *Repository) AdminBillingOrders(status string, keyword string, limit int, offset int) ([]model.BillingOrder, int64, error) {
 	var items []model.BillingOrder
 	var total int64
@@ -116,7 +118,7 @@ func (r *Repository) AdminBillingOrders(status string, keyword string, limit int
 	if status == "review" {
 		query = query.Joins("LEFT JOIN tasks ON tasks.id = billing_orders.task_id").Where(
 			"billing_orders.status = ? OR (billing_orders.status = ? AND billing_orders.updated_at < ?) OR (billing_orders.status = ? AND tasks.status IN ?)",
-			model.BillingStatusUncertain, model.BillingStatusRunning, time.Now().Add(-40*time.Minute), model.BillingStatusReserved,
+			model.BillingStatusUncertain, model.BillingStatusRunning, time.Now().Add(-billingReviewTimeout), model.BillingStatusReserved,
 			[]model.TaskStatus{model.TaskStatusFailed, model.TaskStatusCancelled},
 		)
 	} else if status != "" && status != "all" {
@@ -255,7 +257,7 @@ func (r *Repository) settleBillingOrder(id string, providerRequestID string, aud
 	observedActualAvailable := false
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var order model.BillingOrder
-		if err := tx.First(&order, "id = ?", id).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, "id = ?", id).Error; err != nil {
 			return err
 		}
 		if order.Status == model.BillingStatusSettled {
@@ -349,9 +351,15 @@ func (r *Repository) settleBillingOrder(id string, providerRequestID string, aud
 		quantity := order.Quantity
 		refund := int64(0)
 		supplement := int64(0)
-		if order.BillingMode == "per_second" && order.Capability == "audio" {
+		// 音频始终按实测时长结算；视频处理任务（画质增强等）由调用方显式传入输出时长，
+		// 普通视频生成仍传 nil，保持按请求时长一次扣定。
+		if order.BillingMode == "per_second" && (order.Capability == "audio" || (order.Capability == "video" && audioDurationMs != nil)) {
+			mediaLabel := "音频"
+			if order.Capability == "video" {
+				mediaLabel = "视频"
+			}
 			if audioDurationMs == nil || *audioDurationMs <= 0 {
-				return errors.New("音频实际时长不可用，无法按秒结算")
+				return errors.New(mediaLabel + "实际时长不可用，无法按秒结算")
 			}
 			quantity = (*audioDurationMs + 999) / 1000
 			var err error
@@ -360,7 +368,7 @@ func (r *Repository) settleBillingOrder(id string, providerRequestID string, aud
 				return err
 			}
 			if billingChargeLimitApplies(order) && actual > order.ChargeLimitMicrocredits {
-				return errors.New("音频实际费用超过本次授权上限，需人工核对")
+				return errors.New(mediaLabel + "实际费用超过本次授权上限，需人工核对")
 			}
 			reserved := order.ReservedAmountMicrocredits
 			if reserved <= 0 {
@@ -380,7 +388,7 @@ func (r *Repository) settleBillingOrder(id string, providerRequestID string, aud
 				return updated.Error
 			}
 			if updated.RowsAffected != 1 {
-				return errors.New("预留积分不足以完成音频实际结算")
+				return errors.New("预留积分不足以完成" + mediaLabel + "实际结算")
 			}
 			var account model.CreditAccount
 			if err := tx.First(&account, "user_id = ?", order.UserID).Error; err != nil {
@@ -398,7 +406,7 @@ func (r *Repository) settleBillingOrder(id string, providerRequestID string, aud
 			if err := tx.Model(&order).Updates(orderUpdates).Error; err != nil {
 				return err
 			}
-			note := "音频按实际输出时长结算"
+			note := mediaLabel + "按实际输出时长结算"
 			if supplement > 0 {
 				note += "，已补扣差额"
 			}
@@ -412,7 +420,7 @@ func (r *Repository) settleBillingOrder(id string, providerRequestID string, aud
 				if err := tx.Create(&model.CreditLedgerEntry{ID: newRepositoryID(), UserID: order.UserID, Type: model.CreditLedgerRefund,
 					AmountMicrocredits: refund, AvailableDeltaMicrocredits: refund,
 					AvailableAfterMicrocredits: account.AvailableMicrocredits, ReservedAfterMicrocredits: account.ReservedMicrocredits,
-					BillingOrderID: order.ID, Model: order.Model, ChannelID: order.ChannelID, Scene: order.Scene, Note: "音频实际时长短于预授权，差额退回"}).Error; err != nil {
+					BillingOrderID: order.ID, Model: order.Model, ChannelID: order.ChannelID, Scene: order.Scene, Note: mediaLabel + "实际时长短于预授权，差额退回"}).Error; err != nil {
 					return err
 				}
 			}
@@ -505,7 +513,7 @@ func audioBillingAmount(unitPrice int64, quantity int64, multiplierBPS int64) (i
 func (r *Repository) RestoreRefundedBillingOrder(id string, providerRequestID string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var order model.BillingOrder
-		if err := tx.First(&order, "id = ?", id).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, "id = ?", id).Error; err != nil {
 			return err
 		}
 		if order.Status == model.BillingStatusSettled {
@@ -626,13 +634,40 @@ func zeroPricedTokenOrder(order model.BillingOrder) bool {
 }
 
 func (r *Repository) RefundBillingOrder(id string, errorText string) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+	_, err := r.refundBillingOrder(id, errorText, false)
+	return err
+}
+
+// RefundReviewBillingOrder rechecks the scan candidate while holding the same
+// order lock as settlement. Resolution metadata belongs to this refund only.
+func (r *Repository) RefundReviewBillingOrder(id string, note string) (bool, error) {
+	return r.refundBillingOrder(id, note, true)
+}
+
+func (r *Repository) refundBillingOrder(id string, errorText string, reviewOnly bool) (bool, error) {
+	refunded := false
+	err := r.db.Transaction(func(tx *gorm.DB) error {
 		var order model.BillingOrder
-		if err := tx.First(&order, "id = ?", id).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, "id = ?", id).Error; err != nil {
 			return err
 		}
 		if order.Status == model.BillingStatusRefunded {
 			return nil
+		}
+		if reviewOnly {
+			eligible := order.Status == model.BillingStatusUncertain ||
+				order.Status == model.BillingStatusRunning && order.UpdatedAt.Before(time.Now().Add(-billingReviewTimeout))
+			if order.Status == model.BillingStatusReserved {
+				var count int64
+				if err := tx.Model(&model.Task{}).Where("id = ? AND status IN ?", order.TaskID,
+					[]model.TaskStatus{model.TaskStatusFailed, model.TaskStatusCancelled}).Count(&count).Error; err != nil {
+					return err
+				}
+				eligible = count > 0
+			}
+			if !eligible {
+				return nil
+			}
 		}
 		if order.Status == model.BillingStatusSettled {
 			return errors.New("settled billing order requires a manual refund")
@@ -657,10 +692,14 @@ func (r *Repository) RefundBillingOrder(id string, errorText string) error {
 		}
 		now := time.Now()
 		updates := map[string]any{"status": model.BillingStatusRefunded, "error": errorText, "refunded_amount_microcredits": order.AmountMicrocredits, "refunded_at": &now, "updated_at": now}
+		if reviewOnly {
+			updates["resolved_by"] = ""
+			updates["resolution_note"] = errorText
+		}
 		if err := tx.Model(&order).Updates(updates).Error; err != nil {
 			return err
 		}
-		return tx.Create(&model.CreditLedgerEntry{
+		if err := tx.Create(&model.CreditLedgerEntry{
 			ID:                         newRepositoryID(),
 			UserID:                     order.UserID,
 			Type:                       model.CreditLedgerRefund,
@@ -674,8 +713,13 @@ func (r *Repository) RefundBillingOrder(id string, errorText string) error {
 			ChannelID:                  order.ChannelID,
 			Scene:                      order.Scene,
 			Note:                       errorText,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		refunded = true
+		return nil
 	})
+	return refunded && err == nil, err
 }
 
 func tokenUsageAmount(order model.BillingOrder, usage *BillingUsage) (int64, error) {

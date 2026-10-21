@@ -280,6 +280,22 @@ CANVAS_BACKEND_DATA_DIR=/明确的数据目录 ./migrate-schema repair-canvas-re
 
 Token 报价的 `estimated` 为 `true`，`quantity` 是预留 Token 数。参考素材数量不包含时长信息，带参考视频时统一按 15 秒估算并返回 `referenceDurationEstimated: true`。所有视频协议均支持 Token 定价；10% 预留是平台策略，不是费用上限。成功后优先有效上游用量，无有效用量时按提交的公式快照结算，余量不计入公式费用。账单新增 `videoFormulaTokens` 及 `usageSource`（`provider` / `video_formula`），公式结算的 `usageAvailable` 为 `false`，`outputTokens` 表示公式数量。算法、配置与异常用量处理见[视频 Token 计费](/docs/backend/video-token-billing)。
 
+## 系统渠道导入导出
+
+管理员使用 `POST /api/admin/channels/export` 提交可选 `{ ids: [] }`，为空时导出全部系统渠道。响应 `data` 为 `{ format: "yingce.system-channels", version: 1, exportedAt, channels }`，包含模型、能力参数、价格档和排序，不包含 API Key、Secret Key、自定义请求头或代理凭据。
+
+`POST /api/admin/channels/import` 接受同一对象，请求体最多 8 MiB、最多 200 个渠道、每渠道最多 500 个模型。按渠道名称、模型 `modelKey` 匹配；已有渠道保留凭据和启停状态，新渠道停用等待补齐密钥，导出文件未列出的模型保持不变。模型仍走管理端保存的权限及能力/价格校验。
+
+导入逐项执行，响应 `data` 为 `{ createdChannels, updatedChannels, savedModels, errors }`。部分成功时必须展示 `errors`，不能仅以 HTTP 200 判断全部导入成功；成功项不会因其他项失败自动回滚。
+
+## 冻结积分自动退回
+
+`GET/PATCH /api/admin/settings/billing-auto-refund` 仅管理员可调用，PATCH 接受 `{ enabled: boolean }`，响应 `data.setting` 为 `{ enabled, updatedAt? }`。默认关闭，配置存入 `system_settings.billing_auto_refund`，变更写入管理员审计，不增加数据库表。
+
+开启后立即检查一轮，并每分钟处理最多 100 笔待核对订单：`uncertain` 直接进入候选，`running` 以订单 `updated_at` 超过 40 分钟为准，`reserved` 仅在关联任务失败或取消时进入。关闭后下一轮停止。待核对订单可能已产生上游费用，开关须由管理员明确开启。
+
+自动扫描取得订单锁后重新检查候选资格；退款、结算与退款恢复共用同一订单锁，订单、钱包、流水及自动核对备注在同一事务提交。重复或竞争处理不会再次释放该订单冻结积分。开关与管理员审计也在同一事务保存，审计失败不会实际启用开关。
+
 ## 管理员积分成本
 
 `GET/POST /admin/channels/:id/models` 与 `PATCH /admin/channels/:id/models/:modelId` 的 `priceTiers[]` 增加 `costPricing`：`configured`、`unitPriceMicrocredits`、`inputTokenPriceMicrocredits`、`outputTokenPriceMicrocredits`、`cachedTokenPriceMicrocredits`。成本沿用该价格档的计费方式；按次/秒使用单位价，文本 Token 按输入/输出/缓存分别定价，视频 Token 只使用输出价。价格为整数微积分，范围为 0 到 1000000000000；`configured=false` 表示未配置，`true` 且价格为 0 表示显式零成本。
@@ -330,7 +346,8 @@ operations 的结构化配额在提交事务内实时统计账号的素材/画�
 
 - `POST /agent/runs` 创建一轮；`POST /agent/runs/:id/messages` 以上一轮为父节点创建新的不可变轮次，两者返回 `{ run }`，追加后必须使用新的 `run.id` 订阅。
 - `POST /agent/runs/:id/interjections` 向**正在运行**的轮次插入一句话，不新建轮次、不产生新的扣费身份。请求 `{ text, messageId }`，`text` 最多 4000 字符；同一 `messageId` 幂等。插话在下一次模型调用前注入；运行已结束返回 409，前端应回落为新一轮发送。步数耗尽或运行失败时发出 `user_interjection_dropped`，不会静默吞掉，也不会自动替用户开新一轮。
-- 请求字段：`canvasId`、`prompt`、受管 `logicalModelId` 或 `channelId` + `channelModelKey`、`permissionMode: "read_only" | "request_approval" | "auto"`、`reasoningMode: "off" | "auto" | "deep"`、`profileRevision`、`skillIds`、`contextScope: [] | ["canvas"]`、`budget: { maxCredits, maxGenerationTasks, maxVideoSeconds }`、`idempotencyKey`。不接受密钥、自定义 URL、客户端历史或未知字段。
+- 请求字段：可选 `canvasId`、`prompt`、受管 `logicalModelId` 或 `channelId` + `channelModelKey`、`permissionMode: "read_only" | "request_approval" | "auto"`、`reasoningMode: "off" | "auto" | "deep"`、`profileRevision`、`skillIds`、`contextScope: [] | ["canvas"]`、`budget: { maxCredits, maxGenerationTasks, maxVideoSeconds }`、`idempotencyKey`。不接受密钥、自定义 URL、客户端历史或未知字段。
+- 未绑定画布时，`contextScope` 和 `focusNodeIds` 必须为空；该轮不读取或锁定画布，不开放画布、媒体生成或预演工具。续轮可绑定或切换到当前用户自己的画布，也可不带 `canvasId` 解除绑定；换绑清除旧创作锚点，并以 `scope_change` 告知旧节点 ID 和快照不可再用。已提交运行及审批仍以该轮的 `run.canvasId` 为准，页面切换不改变写回目标。
 - 同用户同幂等键及相同请求返回同一运行；不同请求复用键返回 409。失败后重试同一提交应保留键。上一轮未完成时禁止追加；已完成、失败、取消或已拒绝的终态轮次作为不可变历史读取，即使其冻结的策略或节点能力版本早于当前服务，也可用于创建采用当前执行合同的新一轮，父运行不会被改写。旧版合同下仍活动或待审批的运行不得恢复执行。历史只保留最近 10 轮用户目标；运行历史与跨轮摘要仍受独立的持久化 JSON 保护，超限先丢掉更早的可重读正文并保留结构化事实，单轮仍超出当前模型能力预算时才提示缩小范围或新建对话；历史结构损坏返回明确 409，不投影为通用 500。
 - 续轮交接是一条**有界结构化事实帧**（`{ source: "server", kind: "run_handoff", parentRunId, status, failureReason?, submittedTaskIds?, canvasChanges?, omittedCanvasChanges?, authority }`）：画布改动取自上一轮真实的 `canvas_updated` 事件，最多 12 组（operation、去重后的 nodeId/title、actionCount），超出的组数只记 `omittedCanvasChanges`，不静默丢弃；帧还带 `authority` 明写"执行事实交接，不是重放写入、重复提交任务或扩大权限的授权"。帧按字节封顶（单个 nodeId 截 64 字符、整帧 8 KiB，超限按最近改动优先裁剪），失败原因沿用 `cloudAgentSafeUserMessage` 的脱敏口径，不合格退回固定说法。身份由服务端字段 `agentContextSource=continuation` 承载并要求"来源元数据 + `【运行状态】` 前缀 + JSON `source=server`/`kind=run_handoff`"三者同时成立，因此用户逐字复制帧正文也拿不到该身份；升级前落库、没有来源字段的旧散文交接只在历史裁剪与轮次计数上按"紧跟上一轮 assistant 回复 + 旧版文案前缀"识别，该判据不影响 canonical 身份。
 - `POST /agent/runs/:id/approvals/:approvalId/decision` 的 `{ decision, reason? }` 可在批准图片生成时附带 `mediaSettings: { logicalModelId? | channelId? + channelModelKey?, size, quality }`。仅替换本次模型选择、画幅和质量，不允许修改目标、提示词、引用、模式或快照。服务端先无收费预检，失败保留待审批状态；成功原子更新审批调用、哈希及预览，提交任务时再次校验内容、资源归属、模型能力、价格与累计预算。相同参数重复批准幂等，不同参数复用已决定审批返回 409。
@@ -370,7 +387,7 @@ operations 的结构化配额在提交事务内实时统计账号的素材/画�
 - 模型选择将 `model_list.selection` 展开到顶层：非空 `logicalModelId`，或完整非空 `channelId` + `channelModelKey`，不得混用；未使用字段可省略或传空字符串，不能传 `null` 或纯空白。`generate_media` 完全省略选择字段时，仅允许继承草稿或本轮最新同模式、同参考节点查询的唯一候选；最新查询失败、无候选、多候选或存在未查询的临时参考时不补模型。`image_layer_split` 仍要求显式选择。显式选择先检查结构，省略时在解析草稿和目录后检查，均早于创建草稿、审批和计费。错误返回 `reason: invalid_tool_arguments`、`field`、`issue` 和本轮工具 `parameters`。补齐后仍校验目录、能力、权限、价格和预算，不猜模型、不切换渠道、不吞掉未知字段。
 - `canvas_apply_ops` 创建节点、编辑提示词或连线不会提交生成任务，也不会改变已提交任务的输入；收费生成独立使用 `generate_media`。操作参数错误按数组项返回 `field`（例如 `ops[0].snapshotHash`）和 `issue`（例如 `unexpected_field`、`type_mismatch`、`required`），并附本轮工具 schema；不把未知字段误报成缺少其他必填字段，不回显任意参数键和值。
 - `read_only` 只允许读取；`request_approval` 对写画布和媒体生成暂停为 `waiting_approval`；`auto` 可在预算内执行已授权画布操作，但图片 / 视频生成始终独立审批，不能绕过。`maxGenerationTasks` / `maxVideoSeconds` 为非负整数，0 表示该项不设业务上限，正数按本轮累计执行；不再固定 8 次模型调用、8 个生成任务或 120 秒视频。积分上限仍必填且大于 0，实际报价在任务创建与预留积分前校验，时长必须符合所选模型的实际能力。失败事件保留具体错误和已有任务的 `taskId`、`nodeId`、`status`；媒体结果的 `phase` 区分 `admission` 与 `completion`，`taskSubmitted` 表达是否已提交。已提交的收费生成失败作为工具错误交回模型，整轮保持可继续，不得自动重试收费生成；只有生成结果无法回写画布时才把整轮标为 `failed`。模型应报告错误，不能自行删减提示词。
-- 必须有当前用户已保存的画布。系统提示里的 `canvasSummary` 是节点目录，不是整张画布的 JSON：每条只含 `id`、`type`、截断后的 `title`，以及不支持操作的类型标记；最多列入 120 个节点，并按约 24KB 兜底截断，装不下的节点记入 `omittedNodes` 与 `totalNodes`。正文、提示词、媒体和结构化表不进目录，由 `canvas_get_state` 按 `offset` 每页读取 40 个节点、资产可引用状态及相关连线，按 `nodeIds` 精读最多 8 个节点（正文每字段最多 16000 字符），通过 `hasMore` / `nextOffset` 和字段 `Truncated` 判断是否完整。工具结果留在当轮消息里，历史压缩会卸掉可重读正文，不会在后续每一步把整页结果再打包一次。分镜表包含镜头、角色节点与资产绑定；摘要每页最多 20 行，精读每次 1 行，可用 `storyboardOffset` 翻页；单行叙事文本累计最多 24000 字符，角色 / 绑定各最多 16 项。上下文不含媒体 URL、任意元数据或未同步修改；节点名称不等于图像视觉识别。普通任务重试接口不能重试 Agent 任务。
+- 使用画布工具时必须绑定当前用户已保存的画布。系统提示里的 `canvasSummary` 是节点目录，不是整张画布的 JSON：每条只含 `id`、`type`、截断后的 `title`，以及不支持操作的类型标记；最多列入 120 个节点，并按约 24KB 兜底截断，装不下的节点记入 `omittedNodes` 与 `totalNodes`。正文、提示词、媒体和结构化表不进目录，由 `canvas_get_state` 按 `offset` 每页读取 40 个节点、资产可引用状态及相关连线，按 `nodeIds` 精读最多 8 个节点（正文每字段最多 16000 字符），通过 `hasMore` / `nextOffset` 和字段 `Truncated` 判断是否完整。工具结果留在当轮消息里，历史压缩会卸掉可重读正文，不会在后续每一步把整页结果再打包一次。分镜表包含镜头、角色节点与资产绑定；摘要每页最多 20 行，精读每次 1 行，可用 `storyboardOffset` 翻页；单行叙事文本累计最多 24000 字符，角色 / 绑定各最多 16 项。上下文不含媒体 URL、任意元数据或未同步修改；节点名称不等于图像视觉识别。普通任务重试接口不能重试 Agent 任务。
 - `canvas_get_state` 首次调用传 `{}`，仅接受可选的 `offset`、`storyboardOffset`（非负整数）和 `nodeIds`（最多 8 个字符串组成的数组）；当前画布由运行绑定，不接受 `canvasId`、`limit` 或 `page`。读取工具分别反馈非对象 / 多对象、JSON 格式错误、未知字段和字段类型错误。可纠正的工具参数失败在 `tool_failed.result` 及模型工具结果中返回 `reason: invalid_tool_arguments`、本轮已声明的 `parameters` 和 `guidance`；画布读取额外给出 `exampleArguments: {}`。失败调用仍如实记录，由模型修正参数后继续，不静默丢弃字段或自动重放写操作；资源归属、审批、快照和收费校验仍按原规则执行。
 - `GET /agent/runs/:id` 返回运行信息；`POST /agent/runs/:id/cancel` 取消当前运行及活动子任务；`POST /agent/runs/:id/approvals/:approvalId/decision` 接受 `{"decision":"approve"|"reject","reason":"..."}`，审批决定幂等且服务端校验归属。
 - `GET /agent/skills/usage` 需要登录，只聚合当前用户最近最多 200 次 Agent 运行的日志；返回技能启用次数、检索命中、成功/失败读取、总纲/卡片读取和最多 5 条最常读卡片路径，不返回技能正文。损坏的日志会返回错误而非静默给出不完整统计。

@@ -1233,6 +1233,84 @@ paths:
             application/yaml:
               schema:
                 type: string
+  /admin/channels/export:
+    post:
+      tags: [admin]
+      summary: 导出系统渠道配置（管理员）
+      description: 请求体最多 64 KiB；ids 为空或不传时导出全部渠道。包含模型、能力参数和价格档，不包含 API Key、Secret Key、自定义请求头或代理地址。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids: {type: array, items: {type: string}}
+      responses:
+        "200":
+          description: 导出文件对象位于信封 data
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: {$ref: "#/components/schemas/SystemChannelExport"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/channels/import:
+    post:
+      tags: [admin]
+      summary: 按名称合并系统渠道配置（管理员）
+      description: |
+        请求体最多 8 MiB，一次最多 200 个渠道，每渠道最多 500 个模型。新渠道停用且不含密钥；
+        现有渠道保留凭证及启停状态。模型按 modelKey 保存，文件中未出现的模型不变。
+        这是逐项导入而非全批事务；data.errors 非空表示部分配置未保存，不能只检查 HTTP 200。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SystemChannelExport"}
+      responses:
+        "200":
+          description: 各渠道及模型的导入结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: {$ref: "#/components/schemas/SystemChannelImportResult"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/settings/billing-auto-refund:
+    get:
+      tags: [admin]
+      summary: 读取冻结积分自动退回开关（管理员）
+      responses:
+        "200": {$ref: "#/components/responses/BillingAutoRefundSetting"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    patch:
+      tags: [admin]
+      summary: 设置冻结积分自动退回开关（管理员）
+      description: 默认关闭。开启后扫描待核对冻结订单；这些订单可能已在供应商侧产生费用，管理员需明确决定是否自动退回。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled: {type: boolean, default: false}
+      responses:
+        "200": {$ref: "#/components/responses/BillingAutoRefundSetting"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
   /admin/channels/{id}/duplicate:
     post:
       tags: [admin]
@@ -1927,6 +2005,76 @@ components:
       in: cookie
       name: open_ai_canvas_session
   schemas:
+    SystemChannelExport:
+      type: object
+      required: [format, version, channels]
+      properties:
+        format: {type: string, enum: [yingce.system-channels]}
+        version: {type: integer, enum: [1]}
+        exportedAt: {type: string, format: date-time}
+        channels:
+          type: array
+          description: 导入时须有 1–200 项；空系统的导出可以为空。
+          items:
+            type: object
+            required: [name]
+            properties:
+              name: {type: string, minLength: 1}
+              baseUrl: {type: string}
+              sortOrder: {type: integer, minimum: 0, maximum: 999999}
+              enabled: {type: boolean, description: 导出当前状态；导入不覆盖目标启停状态，新渠道始终停用}
+              concurrencyLimit: {type: integer, description: 小于等于 0 使用全局并发设置}
+              catalogProviderId: {type: string}
+              models:
+                type: array
+                maxItems: 500
+                items:
+                  type: object
+                  required: [modelKey, capability, protocol]
+                  description: 渠道模型保存合同，包含展示字段、能力配置和价格档；按后台手动保存的规则校验。
+                  properties:
+                    modelKey: {type: string}
+                    providerModelKey: {type: string}
+                    displayName: {type: string}
+                    channelLabel: {type: string}
+                    description: {type: string}
+                    icon: {type: string}
+                    sortOrder: {type: integer, minimum: 0, maximum: 999999}
+                    enabled: {type: boolean}
+                    capability: {type: string, enum: [text, image, video, audio]}
+                    protocol: {type: string}
+                    capabilityConfig: {type: object, additionalProperties: true}
+                    billingMode: {type: string}
+                    unitPriceMicrocredits: {type: integer, format: int64}
+                    inputTokenPriceMicrocredits: {type: integer, format: int64}
+                    outputTokenPriceMicrocredits: {type: integer, format: int64}
+                    cachedTokenPriceMicrocredits: {type: integer, format: int64}
+                    priceConfigured: {type: boolean}
+                    tags:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          text: {type: string}
+                          color: {type: string}
+                    priceTiers:
+                      type: array
+                      description: 规格 selector、上游模型标识、成本和售价配置及启停状态。
+                      items: {type: object, additionalProperties: true}
+    SystemChannelImportResult:
+      type: object
+      required: [createdChannels, updatedChannels, savedModels, errors]
+      properties:
+        createdChannels: {type: array, items: {type: string}, description: 已成功导入的新渠道名称}
+        updatedChannels: {type: array, items: {type: string}, description: 已成功更新的渠道名称}
+        savedModels: {type: integer, minimum: 0}
+        errors: {type: array, items: {type: string}, description: 逐项失败原因；非空表示存在未完成项}
+    BillingAutoRefundSetting:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: {type: boolean, default: false}
+        updatedAt: {type: string, format: date-time}
     ProgramUpdateStatus:
       type: object
       required: [supported, repository, currentVersion, updateAvailable, canRollback, operation]
@@ -2134,11 +2282,12 @@ components:
     CloudAgentRequest:
       type: object
       additionalProperties: false
-      required: [canvasId, prompt, permissionMode, contextScope, budget, idempotencyKey]
+      required: [prompt, permissionMode, contextScope, budget, idempotencyKey]
       properties:
         canvasId:
           type: string
           maxLength: 80
+          description: 可选。为空时是平台级对话：不占画布锁、只开放无画布工具，contextScope 和 focusNodeIds 必须为空。续轮可换绑画布，服务端会注入换绑说明。
         prompt:
           type: string
           description: 非空，最多 16000 字节
@@ -2240,6 +2389,20 @@ components:
                 - model_catalog_mismatch
                 - invalid_model_selection
   responses:
+    BillingAutoRefundSetting:
+      description: 冻结积分自动退回设置，位于信封 data.setting
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Envelope"
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    required: [setting]
+                    properties:
+                      setting: {$ref: "#/components/schemas/BillingAutoRefundSetting"}
     ProgramUpdate:
       description: 程序更新状态业务信封
       content:
