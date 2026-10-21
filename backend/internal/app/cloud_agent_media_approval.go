@@ -73,7 +73,7 @@ func (s *Service) updateCloudAgentMediaApproval(repo *repository.Repository, run
 	// Dry admission uses the same model, ownership and option checks as task
 	// submission, without reserving credits or creating a generation task.
 	// DecideCloudAgentApproval already holds storageMu for this mutation.
-	preparation := &creationTaskPreparation{}
+	preparation := &creationTaskPreparation{agentRunID: run.ID}
 	req.creationPrepare = preparation
 	req.callerHoldsStorageMu = true
 	task, err := s.CreateTask(run.UserID, req)

@@ -475,7 +475,7 @@ func (s *Service) advanceCloudAgentTool(run *model.CloudAgentExecution, state *c
 			// quote. Reusing it avoids a second dry admission after a worker restart.
 			if plan.Prepared == nil {
 				// Dry admission validates the selected model and prompt limits without a task or charge.
-				mediaPreparation = &creationTaskPreparation{}
+				mediaPreparation = &creationTaskPreparation{agentRunID: run.ID}
 				req.creationPrepare = mediaPreparation
 				preparedTask, err = s.CreateTask(run.UserID, req)
 				if err != nil {

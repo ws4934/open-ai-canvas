@@ -31,9 +31,12 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 	if req.admission == nil {
 		release, err := s.AcquireProgramUpdateIntake()
 		if err != nil {
-			return nil, err
+			if !s.programUpdateAllowsAgentPreparation(userID, req) {
+				return nil, err
+			}
+		} else {
+			defer release()
 		}
-		defer release()
 	}
 	if req.admission == nil && (strings.HasPrefix(req.Operation, "cloud_agent") || req.Input["cloudAgent"] != nil) {
 		return nil, BadAuthRequest("Agent 任务必须通过 Agent 接口创建")

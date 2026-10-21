@@ -32,6 +32,25 @@ func (s *Service) ProgramUpdateDraining() bool {
 	return s.updateIntakeFenced
 }
 
+// A dry admission may finish an existing Agent's approval while new intake is
+// fenced. Its registered execution keeps the updater waiting; no task or credit
+// reservation is created until the normal approval and admission paths commit.
+func (s *Service) programUpdateAllowsAgentPreparation(userID string, req CreateTaskRequest) bool {
+	if req.creationPrepare == nil || req.creationPrepare.agentRunID == "" {
+		return false
+	}
+	run, err := s.repo.CloudAgent(userID, req.creationPrepare.agentRunID)
+	if err != nil || run.CanvasID != req.ProjectID {
+		return false
+	}
+	switch run.Status {
+	case "queued", "running", "waiting_approval", "waiting_user":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Service) ResumeAfterProgramUpdate() {
 	s.updateIntakeMu.Lock()
 	s.updateIntakeFenced = false
