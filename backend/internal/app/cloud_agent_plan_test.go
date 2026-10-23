@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"yingce/backend/internal/model"
+	"yingce/backend/internal/repository"
 )
 
 func TestCloudAgentPlanUpdateAndPending(t *testing.T) {
@@ -128,7 +129,7 @@ func TestCloudAgentAskUserAcceptsDynamicForm(t *testing.T) {
 	call := cloudAgentCall{ID: "ask-form-1"}
 	call.Function.Name = "ask_user"
 	call.Function.Arguments = `{"question":"确认创作方向","questionId":"canvas-setup","fields":[{"id":"genre","title":"题材","type":"single_select","options":[{"id":"comedy","label":"搞笑"},{"id":"other","label":"其他"}],"defaultValue":"comedy","allowCustom":true},{"id":"aspectRatio","title":"画幅","type":"segmented","options":[{"id":"9:16","label":"9:16"},{"id":"16:9","label":"16:9"}],"defaultValue":"9:16"},{"id":"notes","title":"补充说明","type":"textarea","placeholder":"可选"}]}`
-	result, err := cloudAgentAskUser(call)
+	result, err := cloudAgentReadTool(nil, "user", &cloudAgentRuntime{}, call)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +147,7 @@ func TestCloudAgentAskUserAcceptsMultiSelectField(t *testing.T) {
 	call := cloudAgentCall{ID: "ask-multi-select"}
 	call.Function.Name = "ask_user"
 	call.Function.Arguments = `{"question":"确认视频输出","fields":[{"id":"outputs","title":"输出内容","type":"multi_select","options":[{"id":"video","label":"视频","recommended":true},{"id":"cover","label":"封面"}],"defaultValue":["video"]}]}`
-	result, err := cloudAgentAskUser(call)
+	result, err := cloudAgentReadTool(nil, "user", &cloudAgentRuntime{}, call)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +168,7 @@ func TestCloudAgentAskUserPreservesExplicitEmptyMultiSelectDefault(t *testing.T)
 	call := cloudAgentCall{ID: "ask-empty-multi-select"}
 	call.Function.Name = "ask_user"
 	call.Function.Arguments = `{"question":"确认输出","fields":[{"id":"outputs","title":"输出内容","type":"multi_select","options":[{"id":"video","label":"视频","recommended":true}],"defaultValue":[]}]}`
-	result, err := cloudAgentAskUser(call)
+	result, err := cloudAgentReadTool(nil, "user", &cloudAgentRuntime{}, call)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,6 +176,49 @@ func TestCloudAgentAskUserPreservesExplicitEmptyMultiSelectDefault(t *testing.T)
 	values, ok := fields[0]["defaultValue"].([]string)
 	if !ok || values == nil || len(values) != 0 {
 		t.Fatalf("explicit empty default was lost: %#v", fields[0])
+	}
+}
+
+func TestCloudAgentAskUserFormAnswerSurvivesConversationContinuation(t *testing.T) {
+	s, _, args := agentMediaFixture(t)
+	run, state := agentMediaRun(t, s, args, "auto")
+	call := cloudAgentCall{ID: "ask-video-form"}
+	call.Function.Name = "ask_user"
+	call.Function.Arguments = `{"question":"确认视频输出","questionId":"video-output","fields":[{"id":"outputs","title":"输出内容","type":"multi_select","options":[{"id":"video","label":"视频"},{"id":"other","label":"其他"}],"defaultValue":[],"allowCustom":true},{"id":"aspectRatio","title":"画幅","type":"segmented","options":[{"id":"16:9","label":"16:9"},{"id":"9:16","label":"9:16"}],"defaultValue":"16:9"}]}`
+	state.Calls = []cloudAgentCall{call}
+	if err := s.repo.MutateCloudAgent("user", run.ID, run.Revision, func(current *model.CloudAgentExecution, _ *repository.Repository) error {
+		return cloudAgentSave(current, &state)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.advanceCloudAgentByID("user", run.ID); err != nil {
+		t.Fatal(err)
+	}
+	waiting, err := s.CloudAgentRun("user", run.ID)
+	if err != nil || waiting.Status != "completed" {
+		t.Fatalf("registered form did not reach user: %#v, %v", waiting, err)
+	}
+	questionFound := false
+	for _, event := range waiting.Events {
+		questionFound = questionFound || event.Type == "user_question" && event.Payload["questionId"] == "video-output" && event.Payload["kind"] == "form"
+	}
+	if !questionFound {
+		t.Fatal("completed question turn lost its form event")
+	}
+	answer := `{"type":"form_answer","questionId":"video-output","answers":{"outputs":["video","海报"],"aspectRatio":"16:9"},"displayAnswers":{"outputs":["视频","海报"],"aspectRatio":"16:9"}}`
+	req := agentTestRequest()
+	req.Prompt, req.IdempotencyKey = answer, "video-form-answer"
+	next, err := s.CreateCloudAgentRun("user", req, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := s.repo.CloudAgent("user", next.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	continued, err := cloudAgentDecode(stored)
+	if err != nil || continued.Request.Prompt != answer || next.UserPrompt != answer || next.ConversationID != waiting.ConversationID {
+		t.Fatalf("continuation lost array, custom answer, video option or conversation: %#v, %v", next, err)
 	}
 }
 

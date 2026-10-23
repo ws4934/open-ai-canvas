@@ -32,6 +32,8 @@ docker compose --env-file .env -f docker-compose.deploy.yml logs --tail=100 back
 
 首次启动超时后，保留已生成的配置与数据，用上面的命令排查，再执行同一 Compose 的 `up -d --wait`；不要删除数据或重新生成数据库密码。
 
+图片、音频等非视频异步任务默认不重试暂时性轮询错误。需要时在 `.env` 设置 `CANVAS_ASYNC_POLL_TRANSIENT_RETRIES=3`（允许 0–10，默认 0），再用同一 Compose 重建应用使环境变量生效；只重试查询已有上游任务，不重新提交生成请求。所有 Compose 入口均透传该配置。
+
 ## 外部反向代理只转发应用端口
 
 页面、静态文件、API、OAuth 回调和模型代理都走同一个上游，代理不需要认识前端文件目录，也不需要 SPA 的 `try_files`。外层代理保留 `Host`，正确设置 `X-Forwarded-Proto`、`X-Forwarded-For`；在 `.env` 的 `CANVAS_TRUSTED_PROXIES` 中填写应用实际看到的代理源 IP/CIDR。宿主机代理经过 Docker 端口转发后通常呈现为桥接网关地址，不应直接假设为 `127.0.0.1`。留空时应用忽略转发头，不使用任意来源伪造的协议与地址。

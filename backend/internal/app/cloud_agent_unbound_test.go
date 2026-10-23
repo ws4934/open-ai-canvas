@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -72,8 +73,19 @@ func TestCloudAgentUnboundRuntimeKeepsCanvasPermissionsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.Canvas != nil || request.CanvasId != "" {
-		t.Fatalf("unbound Node request included canvas context: %#v", request.Canvas)
+	if request.CanvasId != "" {
+		t.Fatalf("unbound Node request included a canvas ID: %q", request.CanvasId)
+	}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if fields["canvas"] != nil || fields["memory"] != nil {
+		t.Fatalf("Node request reintroduced unowned canvas or memory state: %s", payload)
 	}
 	for name, permission := range request.Permissions {
 		if strings.HasPrefix(name, "can") && permission != false {
@@ -105,7 +117,7 @@ func TestCloudAgentBindingRejectsForeignCanvasAndConversation(t *testing.T) {
 	if _, err := s.CreateCloudAgentRun("other", unboundAgentTestRequest("foreign-parent"), root.ID); err == nil {
 		t.Fatal("continuing another user's unbound conversation was accepted")
 	}
-	if permissions := s.buildPermissionsConfig("user", "foreign-canvas"); permissions["canReadCanvas"] != false || permissions["canWriteCanvas"] != false {
+	if permissions := s.buildPermissionsConfig("user", req); permissions["canReadCanvas"] != false || permissions["canWriteCanvas"] != false {
 		t.Fatalf("foreign canvas runtime permissions = %#v", permissions)
 	}
 }

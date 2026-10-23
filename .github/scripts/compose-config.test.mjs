@@ -40,6 +40,7 @@ function configuration(files, overrides = {}) {
         CANVAS_HTTP_PORT: "34567",
         CANVAS_WEB_HOST_PORT: "34567",
         CANVAS_BACKEND_HOST_PORT: "34568",
+        CANVAS_ASYNC_POLL_TRANSIENT_RETRIES: "",
         ...overrides,
     };
     for (const [key, value] of Object.entries(env)) if (value === undefined) delete env[key];
@@ -64,6 +65,7 @@ for (const [name, files] of variants) {
         assert.equal(backend.environment.PGPASSWORD, postgres.environment.POSTGRES_PASSWORD);
         assert.equal(backend.environment.PGPASSWORD.replaceAll("$$", "$"), password);
         assert.equal(backend.environment.REDIS_URL, "redis://redis:6379/0");
+        assert.equal(backend.environment.CANVAS_ASYNC_POLL_TRANSIENT_RETRIES, "0");
         assert.equal(backend.depends_on.postgres.condition, "service_healthy");
         assert.equal(backend.depends_on.redis.condition, "service_healthy");
         for (const service of [postgres, redis]) {
@@ -96,6 +98,12 @@ for (const [name, files] of variants) {
         assert.match(postgres.healthcheck.test[1], /\$POSTGRES_USER/);
         assert.match(postgres.healthcheck.test[1], /\$POSTGRES_DB/);
         assert.doesNotMatch(postgres.healthcheck.test[1], /open_ai_canvas/);
+    });
+
+    test(name + " forwards an explicit transient poll retry limit", () => {
+        const result = configuration(files, { CANVAS_ASYNC_POLL_TRANSIENT_RETRIES: "3" });
+        assert.equal(result.status, 0, result.stderr || String(result.error));
+        assert.equal(JSON.parse(result.stdout).services.backend.environment.CANVAS_ASYNC_POLL_TRANSIENT_RETRIES, "3");
     });
 
     test(name + " rejects an empty password instead of falling back to SQLite", () => {

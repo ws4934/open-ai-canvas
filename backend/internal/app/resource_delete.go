@@ -48,7 +48,7 @@ func (s *Service) deleteUserAssetsWithResources(userID string, ids []string, pur
 	//     不因画布、任务、项目或画布历史快照仍引用而拒绝；旧引用随之失效，画布保存时由
 	//     由统一 operations 提交前的资源完整性校验修复断链。
 	//   - purge=false 是内部普通删除：回收站（archived）素材同样直接删除，其余素材保留引用保护。
-	//   - 无论哪种，被其他素材复用的资源与物理对象都保留，物理删除一律经 Outbox 异步执行。
+	//   - 无论哪种，被其他素材或反馈复用的资源与物理对象都保留，物理删除一律经 Outbox 异步执行。
 	deleteReferencedResources := purge
 	if !purge {
 		if len(assetRecords) != 1 {
@@ -109,7 +109,7 @@ func (s *Service) deleteUserAssetsWithResources(userID string, ids []string, pur
 		var snapshot repository.ResourceReferenceSnapshot
 		var snapshotErr error
 		if deleteReferencedResources {
-			// 彻底删除只需要知道哪些资源仍被「其他素材」复用（这些资源要保留），不扫描任务和画布。
+			// 彻底删除保留其他素材和反馈复用的资源，不扫描任务和画布。
 			snapshot, snapshotErr = s.repo.OtherAssetResourceReferences(userID, assetIDs)
 		} else {
 			snapshot, snapshotErr = s.repo.ResourceReferenceSnapshotExcludingAssets(userID, assetIDs, ownedIDs)
@@ -117,11 +117,11 @@ func (s *Service) deleteUserAssetsWithResources(userID string, ids []string, pur
 		if snapshotErr != nil {
 			return snapshotErr
 		}
-		sharedAssetResourceIDs := map[string]struct{}{}
+		retainedResourceIDs := map[string]struct{}{}
 		for _, reference := range snapshot.Direct {
 			if _, exists := ownedIDSet[reference.ResourceID]; exists {
-				if reference.Kind == "素材" {
-					sharedAssetResourceIDs[reference.ResourceID] = struct{}{}
+				if reference.Kind == "素材" || reference.Kind == "反馈" {
+					retainedResourceIDs[reference.ResourceID] = struct{}{}
 					continue
 				}
 				if !deleteReferencedResources {
@@ -148,7 +148,7 @@ func (s *Service) deleteUserAssetsWithResources(userID string, ids []string, pur
 			if len(referencedIDs) > 0 {
 				if document.Kind == "素材" {
 					for resourceID := range referencedIDs {
-						sharedAssetResourceIDs[resourceID] = struct{}{}
+						retainedResourceIDs[resourceID] = struct{}{}
 					}
 					continue
 				}
@@ -157,10 +157,10 @@ func (s *Service) deleteUserAssetsWithResources(userID string, ids []string, pur
 				}
 			}
 		}
-		if len(sharedAssetResourceIDs) > 0 {
+		if len(retainedResourceIDs) > 0 {
 			deletableOwnedIDs := ownedIDs[:0]
 			for _, resourceID := range ownedIDs {
-				if _, shared := sharedAssetResourceIDs[resourceID]; !shared {
+				if _, shared := retainedResourceIDs[resourceID]; !shared {
 					deletableOwnedIDs = append(deletableOwnedIDs, resourceID)
 				}
 			}
@@ -193,6 +193,9 @@ func (s *Service) deleteUserAssetsWithResources(userID string, ids []string, pur
 		}
 		if errors.Is(err, repository.ErrCanvasHistoryResourceReferenced) {
 			return BadAuthRequest("素材仍被画布历史版本引用，已保留文件")
+		}
+		if errors.Is(err, repository.ErrResourceCleanupStillReferenced) {
+			return BadAuthRequest("素材文件仍被反馈引用，已保留文件，请刷新后重试")
 		}
 		return fmt.Errorf("素材记录删除失败，请重试：%w", err)
 	}

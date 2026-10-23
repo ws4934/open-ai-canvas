@@ -22,8 +22,6 @@ type cloudAgentPiProcessRequest struct {
 	SystemPrompt  string           `json:"systemPrompt"`
 	EnabledSkills []map[string]any `json:"enabledSkills,omitempty"`
 	Profile       map[string]any   `json:"profile,omitempty"`
-	Memory        map[string]any   `json:"memory,omitempty"`
-	Canvas        map[string]any   `json:"canvas,omitempty"`
 	Features      map[string]any   `json:"features,omitempty"`
 	Tools         []map[string]any `json:"tools"`
 	Compaction    map[string]any   `json:"compaction,omitempty"`
@@ -38,7 +36,7 @@ func runCloudAgentPi(ctx context.Context, request cloudAgentPiProcessRequest, br
 		SessionID:    request.SessionId, UserID: request.UserId, CanvasID: request.CanvasId, RunID: request.RunId,
 		Prompt: request.Prompt, SystemPrompt: request.SystemPrompt,
 		EnabledSkills: request.EnabledSkills, Profile: request.Profile,
-		Memory: request.Memory, Canvas: request.Canvas, Features: request.Features, Tools: request.Tools,
+		Features: request.Features, Tools: request.Tools,
 		Compaction: request.Compaction, Permissions: request.Permissions, Model: request.Model,
 	}
 	return agentruntime.Run(ctx, runtimeRequest, agentruntime.Bridge(bridge))

@@ -129,5 +129,6 @@ test("run controls and old node references do not borrow a different page's canv
     expect(source).toContain("pending && pending.canvasId !== canvasId");
     expect(source).toContain("prefillRequest.canvasId !== canvasId");
     expect(source).toContain("const key = `${canvasId}:${prefillRequest.id}`");
-    expect(source).toMatch(/accepted = true;\s*if \(!isCurrentScope\(scope\)\) return;\s*setRun\(result.run\);\s*await waitForCanvasSync\(clearCloudAgentPendingSubmission/);
+    expect(source).toMatch(/accepted = true;\s*if \(isCurrentScope\(scope\)\) \{/);
+    expect(source).toContain("clearCloudAgentPendingSubmission(activeConversationId, accountScope)");
 });

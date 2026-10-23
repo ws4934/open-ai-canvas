@@ -42,8 +42,6 @@ type ProcessRequest struct {
 	SystemPrompt  string           `json:"systemPrompt"`
 	EnabledSkills []map[string]any `json:"enabledSkills,omitempty"`
 	Profile       map[string]any   `json:"profile,omitempty"`
-	Memory        map[string]any   `json:"memory,omitempty"`
-	Canvas        map[string]any   `json:"canvas,omitempty"`
 	Features      map[string]any   `json:"features,omitempty"`
 	Tools         []map[string]any `json:"tools"`
 	Compaction    map[string]any   `json:"compaction,omitempty"`
@@ -66,7 +64,7 @@ func Run(ctx context.Context, request ProcessRequest, bridge Bridge) error {
 	}
 	defer release()
 	if bridge.Model == nil || bridge.Tool == nil || bridge.Event == nil {
-		return errors.New("Agent bridge handlers are incomplete")
+		return errors.New("agent bridge handlers are incomplete")
 	}
 	runtimeDir, err := RuntimeDir()
 	if err != nil {
@@ -137,14 +135,14 @@ func Run(ctx context.Context, request ProcessRequest, bridge Bridge) error {
 		return lineErr
 	}
 	if waitErr != nil {
-		return fmt.Errorf("Agent runtime exited: %w", waitErr)
+		return fmt.Errorf("agent runtime exited: %w", waitErr)
 	}
 	return nil
 }
 
 func startBridge(bridge Bridge) (*BridgeServer, error) {
 	if bridge.Model == nil || bridge.Tool == nil || bridge.Event == nil {
-		return nil, errors.New("Agent bridge handlers are incomplete")
+		return nil, errors.New("agent bridge handlers are incomplete")
 	}
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
@@ -158,7 +156,7 @@ func startBridge(bridge Bridge) (*BridgeServer, error) {
 	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok || tcpAddr.Port == 0 {
 		_ = listener.Close()
-		return nil, errors.New("Agent bridge did not receive a TCP port")
+		return nil, errors.New("agent bridge did not receive a TCP port")
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /model", func(w http.ResponseWriter, r *http.Request) { BridgeCall(w, r, token, bridge.Model) })
@@ -247,7 +245,7 @@ func RuntimeDir() (string, error) {
 			return candidate, nil
 		}
 	}
-	return "", errors.New("Agent runtime files are missing; set CANVAS_PI_RUNTIME_DIR")
+	return "", errors.New("agent runtime files are missing; set CANVAS_PI_RUNTIME_DIR")
 }
 
 const (

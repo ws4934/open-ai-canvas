@@ -59,9 +59,14 @@ func (r *Repository) AssetsResourceRecords(assetIDs []string) ([]model.AssetVers
 	return versions, representations, nil
 }
 
-// OtherAssetResourceReferences 只查询整批删除范围之外的素材，不扫描任务和画布。
+// OtherAssetResourceReferences 查询删除范围之外的素材及需保留附件的反馈，不扫描任务和画布。
 func (r *Repository) OtherAssetResourceReferences(userID string, excludedAssetIDs []string) (ResourceReferenceSnapshot, error) {
 	snapshot := ResourceReferenceSnapshot{}
+	feedback, err := r.FeedbackResourceReferences(userID)
+	if err != nil {
+		return snapshot, err
+	}
+	snapshot.Direct = append(snapshot.Direct, feedback...)
 	var assets []model.Asset
 	if err := r.db.Where("user_id = ? AND id NOT IN ?", userID, excludedAssetIDs).Find(&assets).Error; err != nil {
 		return snapshot, err
@@ -127,6 +132,11 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 	if len(resourceIDs) == 0 {
 		return snapshot, nil
 	}
+	feedback, err := r.FeedbackResourceReferences(userID)
+	if err != nil {
+		return snapshot, err
+	}
+	snapshot.Direct = append(snapshot.Direct, feedback...)
 	history, err := r.CanvasHistoryResourceReferences(resourceIDs)
 	if err != nil {
 		return snapshot, err
@@ -455,17 +465,20 @@ func (r *Repository) DeleteAssetsAndResources(userID string, assetIDs []string, 
 		if len(assetIDs) == 0 || len(ownedAssets) != len(assetIDs) {
 			return gorm.ErrRecordNotFound
 		}
+		if len(resourceIDs) > 0 {
+			// Serialize with feedback publication and canvas history references.
+			var resources []model.Resource
+			if err := tx.Select("id").Where("id IN ?", resourceIDs).Order("id").Clauses(clause.Locking{Strength: "UPDATE"}).Find(&resources).Error; err != nil {
+				return err
+			}
+			if err := New(tx).requireNoFeedbackResourceReferences(userID, resourceIDs); err != nil {
+				return err
+			}
+		}
 		if deleteReferencedResources {
 			// 彻底删除：移除被删资源的画布历史索引，让删除 worker 可以释放物理对象；
 			// 历史快照正文保留，恢复该版本时由画布断链修复处理失效媒体。
 			if len(resourceIDs) > 0 {
-				// 与历史快照写入串行化，避免清除索引后又插入外键引用。
-				if r.Dialect() == "postgres" {
-					var resources []model.Resource
-					if err := tx.Select("id").Where("id IN ?", resourceIDs).Order("id").Clauses(clause.Locking{Strength: "UPDATE"}).Find(&resources).Error; err != nil {
-						return err
-					}
-				}
 				if err := tx.Where("resource_id IN ?", resourceIDs).Delete(&model.CanvasSnapshotResource{}).Error; err != nil {
 					return err
 				}
