@@ -24,7 +24,7 @@ test("模型行只保留选中高亮，价格使用独立的彩色标签", async
     expect(badge).toContain("padding: 2px 5px");
     expect(price).toContain("--model-price-ink: #946900");
     expect(component).toContain('<Coins className="model-picker-price-icon" aria-hidden="true" />');
-    expect(styles).toContain("width: min(800px, calc(100vw - 24px))");
+    expect(styles).toContain("width: min(640px, calc(100vw - 24px))");
 });
 
 test("每次打开菜单都展开当前选中模型所属目录，无有效选中时显示一级目录", async () => {

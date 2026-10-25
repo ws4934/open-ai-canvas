@@ -204,7 +204,7 @@ export function ModelPicker({
                                         ) : null}
                                     </span>
                                     <small className="canvas-model-picker-brand-meta">
-                                        <span className="canvas-model-picker-brand-subtext">{group.models.length} 个{group.kind === "product" ? "渠道" : "模型"}{group.scope ? ` · ${group.scope}` : ""}</span>
+                                        <span className="canvas-model-picker-brand-subtext">{group.models.length} 个{group.kind === "product" ? "渠道" : "模型"}</span>
                                         <ModelRecentHealthTrack availability={groupAvailability(config, group)} />
                                     </small>
                                 </span>
@@ -227,7 +227,7 @@ export function ModelPicker({
                                         ) : null}
                                     </span>
                                     <small className="canvas-model-picker-brand-meta">
-                                        <span className="canvas-model-picker-brand-subtext">{group.models.length} 个{group.kind === "product" ? "渠道" : "模型"}{group.scope ? ` · ${group.scope}` : ""}</span>
+                                        <span className="canvas-model-picker-brand-subtext">{group.models.length} 个{group.kind === "product" ? "渠道" : "模型"}</span>
                                         <ModelRecentHealthTrack availability={groupAvailability(config, group)} />
                                     </small>
                                 </span>
@@ -412,9 +412,11 @@ export function ModelLabel({
                     ) : null}
                     <ModelAvailabilityBadge availability={modelAvailability(config, model)} available={logicalCost?.available ?? true} showAvailability={channel.scope === "system"} />
                 </span>
-                <span className={cn("canvas-model-picker-description mt-1 block", showDescription && "is-visible")} style={{ color: theme.node.muted }}>
-                    {capabilitySummary}
-                </span>
+                {capabilitySummary ? (
+                    <span className={cn("canvas-model-picker-description mt-1 block", showDescription && "is-visible")} style={{ color: theme.node.muted }}>
+                        {capabilitySummary}
+                    </span>
+                ) : null}
                 <ModelTags tags={modelTags} />
             </span>
             {!creationVariant && meta.time ? (
@@ -511,7 +513,10 @@ function modelMenuPrice(config: AiConfig, model: string, capability?: ModelCapab
 
 function pickerModelDisplayName(config: AiConfig, model: string, showConfiguredModelName: boolean) {
     const name = showConfiguredModelName ? configuredModelDisplayName(config, model) : modelDisplayName(config, model);
-    return isDirectSystemModel(config, model) ? `${name} · ${modelChannelLabel(config, model)}` : name;
+    if (!isDirectSystemModel(config, model)) return name;
+    // 渠道未单独命名时标签会退回模型标识，拼在模型名后只是重复，还会把触发器挤到截断。
+    const channelLabel = modelChannelLabel(config, model);
+    return channelLabel === modelOptionName(model) || channelLabel === name ? name : `${name} · ${channelLabel}`;
 }
 
 function pickerModelOptionLabel(config: AiConfig, model: string, showConfiguredModelName: boolean) {
@@ -643,6 +648,8 @@ function ModelAvailabilityBadge({ availability, available, showAvailability }: {
     const successCount = recentResults.filter(Boolean).length;
     const failCount = recentResults.filter((item) => item === false).length;
     const hasRuns = recentResults.length > 0;
+    // 没有调用记录也没有可用的成功率时，行内不再重复一串空槽；目录栏仍常驻状态条。
+    if (!hasRuns && availability?.dataState !== "ready") return null;
 
     const label = availability?.dataState === "ready" && availability.rate24h !== null
         ? `${Math.round(availability.rate24h * 100)}%`
