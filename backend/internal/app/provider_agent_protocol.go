@@ -440,6 +440,9 @@ func canonicalAgentGeminiBody(source *canonicalAgentRequest) map[string]interfac
 			function, _ := tool["function"].(map[string]interface{})
 			declaration := cloneStringAnyMap(function)
 			delete(declaration, "strict")
+			if parameters, ok := declaration["parameters"]; ok {
+				declaration["parameters"] = geminiToolSchema(parameters)
+			}
 			declarations = append(declarations, declaration)
 		}
 		choice := map[string]interface{}{"mode": "AUTO"}
@@ -452,6 +455,71 @@ func canonicalAgentGeminiBody(source *canonicalAgentRequest) map[string]interfac
 		body["toolConfig"] = map[string]interface{}{"functionCallingConfig": choice}
 	}
 	return body
+}
+
+// Gemini / Vertex 的 parameters 只接受 OpenAPI 子集：不认 const、exclusiveMinimum/Maximum、
+// uniqueItems，enum 只能是字符串。JSON 往返得到深拷贝，不改动其他协议共用的工具定义。
+func geminiToolSchema(value interface{}) interface{} {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return value
+	}
+	var schema interface{}
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		return value
+	}
+	geminiCleanSchema(schema)
+	return schema
+}
+
+func geminiCleanSchema(value interface{}) {
+	if list, ok := value.([]interface{}); ok {
+		for _, item := range list {
+			geminiCleanSchema(item)
+		}
+		return
+	}
+	schema, ok := value.(map[string]interface{})
+	if !ok {
+		return
+	}
+	for _, key := range []string{"exclusiveMinimum", "exclusiveMaximum", "uniqueItems"} {
+		delete(schema, key)
+	}
+	if constant, ok := schema["const"]; ok {
+		delete(schema, "const")
+		schema["enum"] = []interface{}{constant}
+	}
+	if values, ok := schema["enum"].([]interface{}); ok {
+		allStrings := true
+		for _, item := range values {
+			if _, ok := item.(string); !ok {
+				allStrings = false
+				break
+			}
+		}
+		if !allStrings {
+			// 非字符串枚举改写进描述，类型约束保留。
+			delete(schema, "enum")
+			hint, _ := json.Marshal(values)
+			description, _ := schema["description"].(string)
+			schema["description"] = strings.TrimSpace(description + " 可选值：" + string(hint))
+		} else if schema["type"] == nil {
+			schema["type"] = "string"
+		}
+	}
+	for key, child := range schema {
+		switch key {
+		case "properties", "$defs", "definitions":
+			if children, ok := child.(map[string]interface{}); ok {
+				for _, item := range children {
+					geminiCleanSchema(item)
+				}
+			}
+		case "items", "anyOf", "oneOf", "allOf", "additionalProperties":
+			geminiCleanSchema(child)
+		}
+	}
 }
 
 func canonicalAgentContent(content interface{}, format string) interface{} {
