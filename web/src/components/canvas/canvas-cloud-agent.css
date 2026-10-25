@@ -46,9 +46,10 @@
     animation-play-state: paused !important;
 }
 
+/* 左内边距让出西北角缩放手柄（left 4px + 20px），任何面板宽度下标题都不与其重叠。 */
 .agent-panel-header {
     min-height: 68px;
-    padding: var(--space-3) var(--space-4) var(--space-2) var(--space-5);
+    padding: var(--space-3) var(--space-4) var(--space-2) var(--space-6);
 }
 
 .agent-panel-title {
@@ -59,8 +60,11 @@
 
 .agent-panel-context {
     margin-top: var(--space-1);
+    overflow: hidden;
     color: var(--agent-caption);
     font-size: var(--fs-label);
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .agent-panel-status {
@@ -1023,7 +1027,6 @@
 @container (max-width: 400px) {
     .agent-panel-header {
         gap: var(--space-2);
-        padding-inline: var(--space-4);
     }
     .agent-panel-status {
         white-space: nowrap;
@@ -1052,6 +1055,10 @@
     .canvas-agent-panel {
         border-end-start-radius: 0;
         border-end-end-radius: 0;
+    }
+    /* 移动端不显示缩放手柄。 */
+    .agent-panel-header {
+        padding-left: var(--space-4);
     }
     .agent-composer-wrap {
         padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));

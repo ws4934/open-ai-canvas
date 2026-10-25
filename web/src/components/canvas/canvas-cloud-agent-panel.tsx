@@ -1283,7 +1283,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                             aria-label="调整 Agent 面板大小"
                             title="拖动调整宽高，也可用方向键调整"
                             data-agent-resize="northwest"
-                            className="agent-panel-resize-corner absolute left-2 top-2 z-10 hidden size-5 cursor-nw-resize touch-none place-items-center rounded-md opacity-60 transition-opacity hover:opacity-100 focus-visible:outline focus-visible:outline-2 sm:grid"
+                            className="agent-panel-resize-corner absolute left-1 top-1 z-10 hidden size-5 cursor-nw-resize touch-none place-items-center rounded-md opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 sm:grid"
                             onKeyDown={panelLayout.onResizeKeyDown}
                             style={{ color: theme.node.muted }}
                         >

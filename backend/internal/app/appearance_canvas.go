@@ -32,7 +32,7 @@ func defaultCanvasAppearance() CanvasAppearance {
 			"idle": "idle", "queued": "sleep_loop", "running": "working_loop", "waiting_approval": "think",
 			"completed": "wave", "failed": "wipe_sweat", "cancelled": "lie_down", "rejected": "think",
 		},
-		AvatarHeight: 220,
+		AvatarHeight: 150,
 	}
 }
 

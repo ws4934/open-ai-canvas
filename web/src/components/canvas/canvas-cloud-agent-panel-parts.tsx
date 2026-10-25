@@ -197,8 +197,8 @@ export function AgentHeader({
                         {statusLabel}
                     </span>
                 </div>
-                <div className="agent-panel-context">
-                    {appearance.agentName} · {nodeCount === null ? "未在画布中，可对话；进入画布后自动关联" : `当前画布 ${nodeCount} 个节点`}
+                <div className="agent-panel-context" title={nodeCount === null ? "未在画布中，可以直接对话；进入画布后自动关联" : undefined}>
+                    {appearance.agentName} · {nodeCount === null ? "未关联画布" : `当前画布 ${nodeCount} 个节点`}
                 </div>
             </div>
             <div className="agent-header-actions flex items-center gap-0.5" style={{ color: theme.node.muted }}>
@@ -260,6 +260,8 @@ export function AgentContextRing({ view, theme }: { view: AgentContextUsageView;
             trigger="click"
             placement="topRight"
             autoAdjustOverflow
+            // topRight 只会翻转不会平移；窄屏下两侧都放不下时平移回视口内，避免左侧被裁切。
+            align={{ overflow: { adjustX: true, adjustY: true, shiftX: true } }}
             arrow={false}
             classNames={{ root: "agent-context-popover" }}
             // 助手面板会裁切内容；独立挂到 body，并显式携带画布主题。

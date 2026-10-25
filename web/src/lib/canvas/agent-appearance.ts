@@ -107,7 +107,7 @@ export const DEFAULT_CANVAS_APPEARANCE: CanvasAppearance = {
         cancelled: "lie_down",
         rejected: "think",
     },
-    avatarHeight: 220,
+    avatarHeight: 150,
 };
 
 export function agentCopy(template: string, name: string) {
