@@ -379,9 +379,16 @@
     pointer-events: none;
 }
 
+/* 品牌名压在影片上，与右侧控制胶囊共用底色，保证任意画面下的对比度。 */
 .auth-scene-brand,
 .auth-scene-brand:hover {
+    padding: 5px 12px 5px 6px;
+    border: 1px solid color-mix(in srgb, var(--foreground) 16%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--auth-panel-bg) 78%, transparent);
     color: inherit;
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
 }
 
 .auth-scene-hero-control {
@@ -15637,15 +15644,15 @@ html:not(.dark) .creation-home .creation-user-message-copy-wrap { box-shadow: 0 
     display: none;
 }
 
+/* 外框与后台导航、外观预览一致：实心反色底，内置黑白标志随之反色。 */
 .app-user-workspace .app-workspace-brand-mark {
     width: 28px;
     height: 28px;
+    border: 0;
     border-radius: 8px;
-    background: transparent;
+    background: var(--user-accent);
     box-shadow: none;
-    color: var(--user-accent) !important;
-    border: 1px solid color-mix(in srgb, var(--user-accent) 28%, transparent);
-    background: color-mix(in srgb, var(--user-accent) 8%, transparent);
+    color: var(--user-surface) !important;
 }
 
 .app-user-workspace .app-workspace-nav-link {

@@ -29,10 +29,10 @@ func TestAppearanceDefaultsPreserveBuiltInBrand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if appearance.BrandName != "织影" || appearance.Canvas.AgentName != "织影" || appearance.LogoURL != "/logo-zhiying.png" {
+	if appearance.BrandName != "织影" || appearance.Canvas.AgentName != "织影" || appearance.LogoURL != "/logo-zhiying.png" || appearance.DarkLogoURL != "/logo-zhiying-dark.png" {
 		t.Fatalf("built-in brand = %#v", appearance)
 	}
-	if appearance.Configured || appearance.SchemaVersion != appearanceSchemaVersion || appearance.BrandName != defaultAppearanceBrandName || appearance.BrandSlug != defaultAppearanceBrandSlug || appearance.AuthHeroTitle != defaultAppearanceHeroTitle || appearance.AuthHeroDescription != "" || appearance.LogoURL != defaultAppearanceLogoURL || appearance.DarkLogoURL != defaultAppearanceLogoURL || !appearance.LogoFrameEnabled || appearance.AuthVideoURL != defaultAppearanceVideoURL || appearance.AuthVideoPosterURL != defaultAppearancePosterURL || !appearance.AuthVideoAutoplay || appearance.SkinID != defaultAppearanceSkinID || appearance.SEOTitle != defaultAppearanceBrandName || !strings.Contains(appearance.SEODescription, defaultAppearanceBrandName) || !strings.Contains(appearance.FooterCopyright, defaultAppearanceBrandName) || appearance.ICPFilingEnabled {
+	if appearance.Configured || appearance.SchemaVersion != appearanceSchemaVersion || appearance.BrandName != defaultAppearanceBrandName || appearance.BrandSlug != defaultAppearanceBrandSlug || appearance.AuthHeroTitle != defaultAppearanceHeroTitle || appearance.AuthHeroDescription != "" || appearance.LogoURL != defaultAppearanceLogoURL || appearance.DarkLogoURL != defaultAppearanceDarkLogoURL || !appearance.LogoFrameEnabled || appearance.AuthVideoURL != defaultAppearanceVideoURL || appearance.AuthVideoPosterURL != defaultAppearancePosterURL || !appearance.AuthVideoAutoplay || appearance.SkinID != defaultAppearanceSkinID || appearance.SEOTitle != defaultAppearanceBrandName || !strings.Contains(appearance.SEODescription, defaultAppearanceBrandName) || !strings.Contains(appearance.FooterCopyright, defaultAppearanceBrandName) || appearance.ICPFilingEnabled {
 		t.Fatalf("Appearance() = %#v", appearance)
 	}
 	if appearance.LogoConfigured || appearance.DarkLogoConfigured || appearance.AuthVideoConfigured || appearance.AuthVideoPosterConfigured || appearance.Revision != "builtin" {
@@ -131,7 +131,7 @@ func TestAppearanceBackfillsVersionSevenFieldsForExistingSetting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if appearance.SchemaVersion != appearanceSchemaVersion || appearance.BrandName != "旧品牌" || appearance.BrandSlug != defaultAppearanceBrandSlug || appearance.AuthHeroTitle != defaultAppearanceHeroTitle || appearance.AuthHeroDescription != "" || appearance.DarkLogoURL != defaultAppearanceLogoURL || !appearance.LogoFrameEnabled || !appearance.AuthVideoAutoplay || appearance.SEOTitle != "旧品牌" || !strings.Contains(appearance.SEODescription, "旧品牌") || !strings.Contains(appearance.FooterCopyright, "旧品牌") || appearance.ActiveSkin.ID != "classic" {
+	if appearance.SchemaVersion != appearanceSchemaVersion || appearance.BrandName != "旧品牌" || appearance.BrandSlug != defaultAppearanceBrandSlug || appearance.AuthHeroTitle != defaultAppearanceHeroTitle || appearance.AuthHeroDescription != "" || appearance.DarkLogoURL != defaultAppearanceDarkLogoURL || !appearance.LogoFrameEnabled || !appearance.AuthVideoAutoplay || appearance.SEOTitle != "旧品牌" || !strings.Contains(appearance.SEODescription, "旧品牌") || !strings.Contains(appearance.FooterCopyright, "旧品牌") || appearance.ActiveSkin.ID != "classic" {
 		t.Fatalf("legacy appearance = %#v", appearance)
 	}
 }
@@ -249,6 +249,9 @@ func TestResetAppearanceRestoresBuiltInBrandWithoutDeletingResources(t *testing.
 	if reset.Configured || reset.BrandName != defaultAppearanceBrandName || reset.BrandSlug != defaultAppearanceBrandSlug || reset.AuthHeroTitle != defaultAppearanceHeroTitle || reset.LogoResourceID != "" || reset.DarkLogoResourceID != "" || !reset.LogoFrameEnabled || reset.Public.Revision != "builtin" || reset.Public.LogoConfigured || reset.Public.DarkLogoConfigured {
 		t.Fatalf("ResetAppearance() = %#v", reset)
 	}
+	if reset.Public.LogoURL != defaultAppearanceLogoURL || reset.Public.DarkLogoURL != defaultAppearanceDarkLogoURL {
+		t.Fatalf("reset logos = %#v", reset.Public)
+	}
 	var resourceCount int64
 	if err := db.Model(&model.Resource{}).Where("id = ?", resource.ID).Count(&resourceCount).Error; err != nil {
 		t.Fatal(err)
@@ -326,7 +329,7 @@ func TestAppearanceFallsBackWhenConfiguredLogoResourceIsMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if appearance.LogoConfigured || appearance.LogoURL != defaultAppearanceLogoURL || appearance.DarkLogoURL != defaultAppearanceLogoURL {
+	if appearance.LogoConfigured || appearance.LogoURL != defaultAppearanceLogoURL || appearance.DarkLogoURL != defaultAppearanceDarkLogoURL {
 		t.Fatalf("missing logo public appearance = %#v", appearance)
 	}
 	adminAppearance, err := svc.AdminAppearance(admin)

@@ -84,10 +84,12 @@ export function useAppearancePreviews(setting: AdminAppearance | null, files: Dr
 }
 
 export function LogoThemePreview({ label, icon, src, dark, frameEnabled }: { label: string; icon: ReactNode; src: string; dark: boolean; frameEnabled: boolean }) {
+    const builtinLogo = src === DEFAULT_PUBLIC_APPEARANCE.logoUrl || src === DEFAULT_PUBLIC_APPEARANCE.darkLogoUrl;
+    const previewSource = builtinLogo && frameEnabled ? (dark ? DEFAULT_PUBLIC_APPEARANCE.logoUrl : DEFAULT_PUBLIC_APPEARANCE.darkLogoUrl) : src;
     return (
         <div className={cn("admin-appearance-logo-preview", dark ? "is-dark" : "is-light")}>
             <span className={cn("admin-appearance-logo-preview-mark", !frameEnabled && "is-unframed")}>
-                <img src={src} alt="" />
+                <img src={previewSource} alt="" />
             </span>
             <span className="admin-appearance-logo-preview-label">
                 {icon}

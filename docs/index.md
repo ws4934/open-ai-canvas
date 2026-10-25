@@ -12,7 +12,7 @@
 
 ## 设计沉淀
 
-- [织影品牌与 Logo](design/zhiying-brand.md)：默认名称、生成图形、资源接入与生图提示词。
+- [织影品牌与 Logo](design/zhiying-brand.md)：默认名称、黑白 Z 标志、透明资源、明暗适配与生图提示词。
 
 - [资源访问与 OSS/CDN 分发架构重构](design/resource-delivery-architecture.md)：资源身份、场景授权与分发策略分离，统一访问合同、全入口迁移、旧实现退场及流量/安全验收门槛（核心代码已实施，待真实 OSS/CDN 链路验收）。
 

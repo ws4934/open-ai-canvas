@@ -6,32 +6,53 @@
 
 邮件配置中原内置发件人名称仍按「继承站点品牌」解释，避免改名后变成固定旧名称；明确填写的其他发件人名称不变。
 
-Logo 位于 `web/public/logo-zhiying.png`，由内置生图工具生成。紫蓝光带交织成抽象的 Z，呼应「织」与影像创作；透明背景供浅色、深色主题共用。登录页、品牌首页、工作区侧栏、管理端和加载态通过 `BrandLogo` 使用同一资源，favicon 通过外观 metadata 投影设置。未解析外观时保持中性占位；自定义品牌未上传 Logo 时，页面组件仍使用中性图标。
+默认 Logo 使用黑白 Z 形标志：宽斜带呼应胶片与「织影」首字母，上下横笔画形成画幅感。右上和左下保留贯通外部的断口，只对端部做小圆角；三个笔画不连接，不使用渐变、立体折面或阴影。
+
+- 设计原稿：`assets/brand/zhiying-logo-source.png`，保留生图定稿供后续编辑。
+- 浅色界面：`web/public/logo-zhiying.png`，黑色标志，512 × 512 透明 PNG。
+- 深色界面：`web/public/logo-zhiying-dark.png`，白色标志，512 × 512 透明 PNG。
+
+登录页、品牌首页、工作区侧栏、管理端和加载态通过 `BrandLogo` 选择对应主题资源。favicon 由外观 metadata 写入，按浏览器的 `prefers-color-scheme` 选择黑白版本，因为标签栏底色跟随浏览器而不是应用主题。工作区侧栏与后台导航都使用实心反色外框，`BrandLogoFrame inverted` 在外框启用时对调内置黑白版本；禁用外框后恢复普通主题版本。外观设置的预览遵循相同规则。登录页品牌名压在影片上，使用与右侧影片控制相同的半透明胶囊底，保证任意画面下的对比度。
+
+未解析外观时保持中性占位；自定义品牌未上传 Logo 时，页面组件仍使用中性图标。上传的浅色、深色或单一 Logo 保持原有选择规则，不因内置标志的反色适配而替换或改色。
 
 README 保留原名称与原 Logo 引用，因此保留 `web/public/logo.svg`。仓库地址、Go module、容器名、协议、存储键及对象存储前缀不随展示品牌改名。
 
-## 生图提示词
+## 生图方式与提示词
 
-使用内置 `image_gen`，透明背景。先生成图形，再简化胶片齿孔和细节。最终资源仅做等比缩小，保留生成图像的透明通道。
+使用内置 `image_gen`。先基于用户选定的黑白 Z 稿微调端部，再分别导出黑、白透明版；生产 PNG 仅等比缩小到 512 × 512，保留生成图像的透明通道。
 
-初始提示词：
+### 断口小圆角定稿
 
 ```text
-Use case: logo-brand
-Asset type: production logo symbol for a Chinese AI film and short-drama creation workbench named 织影 (weaving images/stories).
-Primary request: Create one distinctive, beautifully simple logo mark: two broad cinematic ribbons weave over and under each other to form a compact, slightly angular open film-frame / abstract Z. The single clear crossing expresses weaving; the negative space subtly suggests a beam of projection. Strong recognisable silhouette at 20–32 px, substantial ribbon widths, clean negative space.
-Style/medium: precise flat vector-like graphic rendered as a high-resolution PNG, restrained contemporary creative-software identity.
-Color palette: use the existing app's violet-to-blue family (#6554df and #386fbc), with a lighter periwinkle ribbon for contrast on dark and light interfaces. At most two ribbons, gentle controlled color transitions, crisp clean edges.
-Composition/framing: square 1:1 transparent canvas, single centered symbol filling roughly 86 percent of the canvas, balanced optical weight.
-Text: none. The Chinese name will be typeset separately in the interface.
-Constraints: genuinely transparent background; all interior cutouts transparent; no tile or bounding box, no outer frame, no mockup, no lettering, no checkerboard drawn into image, no shadow, no 3D, no texture, no sparkles, no watermark. Deliver only the final single logo symbol.
+Use case: precise-object-edit / logo-brand.
+Edit Image 1, the black-and-white abstract Z logo.
+
+用户要求：不要连接！保留右上和左下的断口与白色缝隙，只把断口两侧的尖角轻轻磨圆。几条黑色笔画必须仍然相互分离，不接触、不搭桥、不连成一整条。
+
+Keep the existing disconnected topology EXACTLY. Both diagonal white slits must remain OPEN ALL THE WAY TO THE OUTSIDE of the silhouette at the upper-right and lower-left. There must be visible white daylight separating the two black ends at each opening. DO NOT close the gaps. DO NOT add any black connecting bridge. DO NOT turn the white channels into enclosed round-ended holes.
+
+The ONLY geometry change: replace the needle-point tips facing those two open gaps with restrained small-radius rounded tips / fillets. Smooth the adjacent turns to be tangent-continuous. The two facing ends should look softly finished and intentionally separated, like two non-touching rounded ribbon ends, rather than razor points. Preserve a clear visible gap between them. Use a gentle corner radius, not big pill caps.
+Keep the recognizable Z, the broad straight central diagonal band, the top and bottom arms, the near-square silhouette, the existing proportions, weight and layout. Do not otherwise redesign.
+Strict flat solid black on pure white. No gray shading, no gradient, no 3D fold, no texture, no shadow, no text, no added symbols. One centered symbol only, same scale and margins as Image 1.
 ```
 
-以初稿为编辑目标的最终提示词：
+### 黑色透明版
 
 ```text
-Use case: logo-brand
-Image 1 is the logo edit target. Refine this 织影 app logo into a much simpler flat graphic for a 20px navigation icon. Keep its compact abstract Z silhouette, weaving-film-ribbon concept, and violet / blue palette.
-Change: remove ALL film sprocket holes / perforations and ALL tiny details. Use only two broad clean flat-color interwoven ribbon shapes: violet #6554df and a mid-blue #568bed. Show over-under weaving through one crisp negative-space break, NOT through shaded volume.
-Flat 2D vector-logo aesthetic, bold geometric silhouette, optically balanced. Smooth and immaculate antialiased edges. No 3D shading, no highlights, no gradients, no texture, no shadow, no background color, no outer tile, no text. Genuinely transparent square canvas, centered mark with 8 percent padding. All negative space truly transparent. Deliver one final icon only.
+Use case: background-extraction.
+Image 1 is the exact final logo. Make a transparent production asset from it. DO NOT redesign or alter any contours.
+CRITICAL: KEEP BOTH WHITE SLITS OPEN TO THE OUTSIDE at the upper-right and lower-left. Keep all three black forms DISCONNECTED, with the exact little rounded ends and clear gaps in Image 1. No bridges, no joining, no closing the negative spaces.
+Remove the white background and white slits to genuine transparency. Center the unchanged whole symbol on a square transparent canvas, scale the entire symbol uniformly to occupy about 84% of the canvas. Preserve its aspect ratio. Clean vector-like antialiased edges, no stray pixels, no texture, no shading.
+The entire visible symbol is pure BLACK #000000, fully opaque. Outside and both open gaps are transparent. No white pixels, no tile, no text.
+```
+
+### 白色透明版
+
+```text
+Use case: background-extraction.
+Image 1 is the exact final logo. Make a transparent production asset from it. DO NOT redesign or alter any contours.
+CRITICAL: KEEP BOTH WHITE SLITS OPEN TO THE OUTSIDE at the upper-right and lower-left. Keep all three black forms DISCONNECTED, with the exact little rounded ends and clear gaps in Image 1. No bridges, no joining, no closing the negative spaces.
+Remove the white background and white slits to genuine transparency. Center the unchanged whole symbol on a square transparent canvas, scale the entire symbol uniformly to occupy about 84% of the canvas. Preserve its aspect ratio. Clean vector-like antialiased edges, no stray pixels, no texture, no shading.
+Recolor only the visible symbol to pure WHITE #FFFFFF, fully opaque. Outside and both open gaps are transparent. No black pixels, no tile, no text. Its disconnected silhouette must be identical to the input.
 ```

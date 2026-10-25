@@ -14,7 +14,7 @@ export const DEFAULT_PUBLIC_APPEARANCE: PublicAppearance = {
     authHeroTitle: "让一个故事，\n从文字走向银幕。",
     authHeroDescription: "",
     logoUrl: "/logo-zhiying.png",
-    darkLogoUrl: "/logo-zhiying.png",
+    darkLogoUrl: "/logo-zhiying-dark.png",
     logoFrameEnabled: true,
     authVideoUrl: "https://boss-shjd.biliapi.net/updream/aniforge/video/video_bbcb00bd-650d-4249-9346-5cd21fd2484c_m1hc-u0-1pu13x-3v1s.mp4",
     authVideoPosterUrl: "https://i0.hdslb.com/bfs/aitool/aniforge/image/02933f26-5f1b-49ff-a811-b7f95ee5e5b8_m1hc-u0-sau.jpg",
@@ -55,7 +55,7 @@ export function normalizePublicAppearance(value?: Partial<PublicAppearance> | nu
     const authHeroDescription = normalizeAppearanceCopy(value?.authHeroDescription, DEFAULT_PUBLIC_APPEARANCE.authHeroDescription, true);
     const customVideo = Boolean(value?.authVideoConfigured);
     const logoUrl = safeAppearanceURL(value?.logoUrl, DEFAULT_PUBLIC_APPEARANCE.logoUrl);
-    const darkLogoUrl = safeAppearanceURL(value?.darkLogoUrl, logoUrl);
+    const darkLogoUrl = safeAppearanceURL(value?.darkLogoUrl, logoUrl === DEFAULT_PUBLIC_APPEARANCE.logoUrl ? DEFAULT_PUBLIC_APPEARANCE.darkLogoUrl : logoUrl);
     const resolvedBrandName = brandName || DEFAULT_PUBLIC_APPEARANCE.brandName;
     const seoTitle = normalizeAppearanceCopy(value?.seoTitle, resolvedBrandName);
     const seoDescription = normalizeAppearanceCopy(value?.seoDescription, `${resolvedBrandName}，面向 AI 影视与短剧创作的工作台。`, true);
@@ -131,7 +131,9 @@ export function applyAppearanceMetadata(appearance: PublicAppearance, targetDocu
         favicon.rel = "icon";
         targetDocument.head.appendChild(favicon);
     }
-    favicon.href = appearanceLogoURL(appearance, targetDocument.documentElement.classList.contains("dark") ? "dark" : "light");
+    // 标签栏颜色跟随浏览器而不是应用主题；读不到时退回应用主题。
+    const browserDark = targetDocument.defaultView?.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
+    favicon.href = appearanceLogoURL(appearance, (browserDark ?? mode === "dark") ? "dark" : "light");
 
     const location = targetDocument.defaultView?.location;
     if (location && (location.protocol === "http:" || location.protocol === "https:")) {
