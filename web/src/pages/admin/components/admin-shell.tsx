@@ -44,6 +44,7 @@ import { Link, NavLink, Outlet, useLocation } from "react-router";
 
 import { AppChangelogButton } from "@/components/layout/app-changelog-modal";
 import { BrandLogoFrame } from "@/components/brand/brand-logo";
+import { WorkspaceRouteLoader } from "@/components/ui/aceternity/full-screen-loader";
 import { publishWorkspaceSidebarCollapsed, readWorkspaceSidebarCollapsed, subscribeWorkspaceSidebarCollapsed } from "@/components/layout/workspace-sidebar-state";
 import { cn } from "@/lib/utils";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -206,15 +207,9 @@ function AdminShellLayout() {
                             ) : null}
                         </div>
                     </aside>
-                    <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                    <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
                         <MobileAdminNavigation />
-                        <Suspense
-                            fallback={
-                                <div className="p-8 text-sm" role="status">
-                                    正在加载管理页面…
-                                </div>
-                            }
-                        >
+                        <Suspense fallback={<WorkspaceRouteLoader label="正在打开管理页面" />}>
                             <Outlet />
                         </Suspense>
                     </section>

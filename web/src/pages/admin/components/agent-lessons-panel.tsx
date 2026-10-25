@@ -1,12 +1,13 @@
-import { App, Button, Input, Space, Tag, Tooltip } from "antd";
+import { App, Button, Space, Tag, Tooltip } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { RefreshCw, Trash2 } from "lucide-react";
+import { RefreshCw, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { agentLessonCategoryLabel, deleteAdminAgentLesson, listAdminAgentLessons, type AdminAgentLesson } from "@/services/api/admin-agent-lessons";
 import { listAdminUsers, type AdminUser } from "@/services/api/auth";
-import { AdminDataTable, AdminStatusBadge, AdminTableEmpty } from "./admin-ui";
+import { AdminDataTable, AdminStatusBadge, AdminTableEmpty, PaginationBar } from "./admin-ui";
+import { AdminSearchInput } from "./admin-search-input";
 import { Select } from "@/components/ui/base/select";
 
 function authorLabel(record: AdminAgentLesson) {
@@ -24,6 +25,8 @@ export default function AgentLessonsPanel() {
     const [users, setUsers] = useState<AdminUser[]>([]);
     const [userSearch, setUserSearch] = useState("");
     const [searchingUsers, setSearchingUsers] = useState(false);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(20);
     const debouncedKeyword = useDebouncedValue(keyword.trim(), 250);
     const debouncedUserSearch = useDebouncedValue(userSearch.trim(), 250);
     const seqRef = useRef(0);
@@ -178,55 +181,100 @@ export default function AgentLessonsPanel() {
         },
     ];
 
+    const hasFilters = status !== "all" || Boolean(userId) || Boolean(keyword.trim());
+    // Deleting the last row of the last page must not leave an empty page behind.
+    const currentPage = Math.min(page, Math.max(1, Math.ceil(items.length / pageSize)));
+    const pagedItems = items.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
     return (
-        <div className="flex flex-col gap-3">
-            <p className="text-xs text-foreground/60">记忆归用户自己批准和管理。这里只做巡查：可按用户、状态、关键词筛选，必要时删除违规内容。批准入口在用户的「设置 → Agent 记忆」。</p>
-            <AdminDataTable
-                toolbar={
-                    <div className="flex flex-wrap items-center gap-2">
-                        <Select
-                            value={status}
-                            onChange={setStatus}
-                            className="w-[120px]"
-                            options={[
-                                { label: "全部", value: "all" },
-                                { label: "待审", value: "pending" },
-                                { label: "已批准", value: "approved" },
-                                { label: "已拒绝", value: "rejected" },
-                            ]}
-                        />
-                        <Select
-                            allowClear
-                            showSearch
-                            filterOption={false}
-                            loading={searchingUsers}
-                            placeholder="筛选用户"
-                            className="w-[220px]"
-                            value={userId}
-                            onSearch={setUserSearch}
-                            onChange={(value) => setUserId(value)}
-                            options={users.map((user) => ({
-                                value: user.id,
-                                label: user.displayName ? `${user.displayName}（${user.username}）` : user.username,
-                            }))}
-                        />
-                        <Input.Search allowClear placeholder="主题、内容或用户名" className="w-[220px]" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
-                        <Button icon={<RefreshCw className="size-4" />} onClick={() => void load()}>
-                            刷新
-                        </Button>
-                        <span className="text-xs opacity-60">共 {items.length} 条</span>
-                    </div>
-                }
-                table={{
-                    rowKey: "id",
-                    size: "small",
-                    loading,
-                    columns,
-                    dataSource: items,
-                    pagination: { defaultPageSize: 20, showSizeChanger: true },
-                }}
-                empty={<AdminTableEmpty title="没有匹配的记忆" description="换一个用户或关键词再查。用户自己在设置页批准后才会注入该用户的会话。" />}
-            />
-        </div>
+        <AdminDataTable
+            toolbar={
+                <AdminSearchInput
+                    allowClear
+                    className="app-list-search"
+                    prefix={<Search className="size-4 text-foreground/40" />}
+                    value={keyword}
+                    aria-label="搜索记忆"
+                    placeholder="搜索主题、内容或用户名"
+                    onValueChange={(value) => {
+                        setKeyword(value);
+                        setPage(1);
+                    }}
+                />
+            }
+            toolbarActive={hasFilters}
+            onReset={() => {
+                setKeyword("");
+                setStatus("all");
+                setUserId(undefined);
+                setUserSearch("");
+                setPage(1);
+            }}
+            toolbarFilters={
+                <>
+                    <Select
+                        aria-label="筛选记忆状态"
+                        value={status}
+                        onChange={(value) => {
+                            setStatus(value);
+                            setPage(1);
+                        }}
+                        className="w-32"
+                        options={[
+                            { label: "全部状态", value: "all" },
+                            { label: "待审", value: "pending" },
+                            { label: "已批准", value: "approved" },
+                            { label: "已拒绝", value: "rejected" },
+                        ]}
+                    />
+                    <Select
+                        aria-label="筛选用户"
+                        allowClear
+                        showSearch
+                        filterOption={false}
+                        loading={searchingUsers}
+                        placeholder="筛选用户"
+                        className="w-[220px]"
+                        value={userId}
+                        onSearch={setUserSearch}
+                        onChange={(value) => {
+                            setUserId(value);
+                            setPage(1);
+                        }}
+                        options={users.map((user) => ({
+                            value: user.id,
+                            label: user.displayName ? `${user.displayName}（${user.username}）` : user.username,
+                        }))}
+                    />
+                </>
+            }
+            trailing={
+                <Button type="text" size="small" icon={<RefreshCw className="size-3.5" />} loading={loading} onClick={() => void load()}>
+                    刷新
+                </Button>
+            }
+            table={{
+                className: "app-data-table",
+                rowKey: "id",
+                size: "small",
+                loading,
+                columns,
+                dataSource: pagedItems,
+                pagination: false,
+            }}
+            empty={<AdminTableEmpty title="没有匹配的记忆" description="换一个用户或关键词再查。用户自己在设置页批准后才会注入该用户的会话。" />}
+            footer={
+                <PaginationBar
+                    alwaysShow
+                    current={currentPage}
+                    pageSize={pageSize}
+                    total={items.length}
+                    onChange={(nextPage, nextPageSize) => {
+                        setPage(nextPageSize !== pageSize ? 1 : nextPage);
+                        setPageSize(nextPageSize);
+                    }}
+                />
+            }
+        />
     );
 }

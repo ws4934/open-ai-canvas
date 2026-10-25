@@ -1,10 +1,14 @@
 import { useEffect, useState, useCallback } from "react";
-import { App, Button, Drawer, Input, Modal, Popconfirm, Select, Space, Table, Tag, Image as AntImage, Segmented } from "antd";
+import { App, Button, Drawer, Input, Modal, Popconfirm, Space, Tag, Image as AntImage, Segmented } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { AlertCircle, Archive, ArchiveRestore, Bug, CheckCircle2, Clock, FileText, Inbox, Lightbulb, MessageSquare, Paperclip, Play, RefreshCw, Search, Send, Sparkles, UserRound } from "lucide-react";
+import { AlertCircle, Archive, ArchiveRestore, Bug, CheckCircle2, FileText, Lightbulb, MessageSquare, Paperclip, Play, RefreshCw, Search, Send, Sparkles, UserRound } from "lucide-react";
 
 import { getAdminFeedbacks, updateAdminFeedback, archiveAdminFeedback, type FeedbackItem, type FeedbackType, type FeedbackStatus, type FeedbackAttachment } from "@/services/api/feedback";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { Select } from "@/components/ui/base/select";
 import { AdminPageFrame } from "../components/admin-shell";
+import { AdminSearchInput } from "../components/admin-search-input";
+import { AdminDataTable, AdminStatTile, AdminTableEmpty, PaginationBar } from "../components/admin-ui";
 import { cn } from "@/lib/utils";
 
 export default function AdminFeedbacksPage() {
@@ -21,6 +25,8 @@ export default function AdminFeedbacksPage() {
     const [statusFilter, setStatusFilter] = useState<string>("all");
     const [archivedTab, setArchivedTab] = useState<"active" | "archived" | "all">("active");
     const [keyword, setKeyword] = useState<string>("");
+    const debouncedKeyword = useDebouncedValue(keyword.trim());
+    const hasFilters = Boolean(keyword.trim()) || typeFilter !== "all" || statusFilter !== "all";
 
     // Detail drawer
     const [drawerOpen, setDrawerOpen] = useState(false);
@@ -39,7 +45,7 @@ export default function AdminFeedbacksPage() {
                 type: typeFilter,
                 status: statusFilter,
                 archived: archivedTab === "all" ? "all" : archivedTab === "archived",
-                keyword: keyword.trim() || undefined,
+                keyword: debouncedKeyword || undefined,
                 page,
                 limit,
             });
@@ -50,7 +56,7 @@ export default function AdminFeedbacksPage() {
         } finally {
             setLoading(false);
         }
-    }, [typeFilter, statusFilter, archivedTab, keyword, page, limit, message]);
+    }, [typeFilter, statusFilter, archivedTab, debouncedKeyword, page, limit, message]);
 
     useEffect(() => {
         void loadData();
@@ -253,136 +259,113 @@ export default function AdminFeedbacksPage() {
     } catch {}
 
     return (
-        <AdminPageFrame title="用户反馈收件箱" description="集中查阅全站用户提交的 Bug 缺陷、功能提议与体验建议，支持收件箱式答复与历史归档管理" scroll>
+        <AdminPageFrame
+            title="用户反馈收件箱"
+            description="查阅用户提交的缺陷、功能提议与体验建议，答复并归档"
+            scroll
+            actions={
+                <Button icon={<RefreshCw className="size-4" />} loading={loading} onClick={() => void loadData()}>
+                    刷新
+                </Button>
+            }
+        >
             <div className="space-y-4">
-                {/* Metrics Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="rounded-xl border border-border/70 bg-card p-3.5 flex items-center justify-between">
-                        <div>
-                            <p className="text-xs text-muted-foreground">当前列表数</p>
-                            <p className="text-xl font-bold text-foreground mt-0.5">{total}</p>
-                        </div>
-                        <Inbox className="size-5 text-primary opacity-60" />
-                    </div>
-                    <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 p-3.5 flex items-center justify-between">
-                        <div>
-                            <p className="text-xs text-orange-600 dark:text-orange-400">待处理</p>
-                            <p className="text-xl font-bold text-orange-600 dark:text-orange-400 mt-0.5">{pendingCount}</p>
-                        </div>
-                        <Clock className="size-5 text-orange-500 opacity-60" />
-                    </div>
-                    <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-3.5 flex items-center justify-between">
-                        <div>
-                            <p className="text-xs text-blue-600 dark:text-blue-400">处理中</p>
-                            <p className="text-xl font-bold text-blue-600 dark:text-blue-400 mt-0.5">{processingCount}</p>
-                        </div>
-                        <Sparkles className="size-5 text-blue-500 opacity-60" />
-                    </div>
-                    <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-3.5 flex items-center justify-between">
-                        <div>
-                            <p className="text-xs text-green-600 dark:text-green-400">已解决 / 采纳</p>
-                            <p className="text-xl font-bold text-green-600 dark:text-green-400 mt-0.5">{resolvedCount}</p>
-                        </div>
-                        <CheckCircle2 className="size-5 text-green-500 opacity-60" />
-                    </div>
+                <div className="grid overflow-hidden rounded-md border border-border sm:grid-cols-2 xl:grid-cols-4">
+                    <AdminStatTile label="当前列表数" value={total} detail="符合当前筛选" />
+                    <AdminStatTile label="待处理" value={pendingCount} detail="本页未归档" />
+                    <AdminStatTile label="处理中" value={processingCount} detail="本页未归档" />
+                    <AdminStatTile label="已解决 / 采纳" value={resolvedCount} detail="本页未归档" />
                 </div>
 
-                {/* Filter and Search Bar */}
-                <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-border/70 bg-card p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <Segmented
-                            value={archivedTab}
-                            onChange={(v) => {
-                                setArchivedTab(v as "active" | "archived" | "all");
-                                setPage(1);
+                <AdminDataTable
+                    toolbar={
+                        <>
+                            <Segmented
+                                aria-label="反馈范围"
+                                value={archivedTab}
+                                onChange={(v) => {
+                                    setArchivedTab(v as "active" | "archived" | "all");
+                                    setPage(1);
+                                }}
+                                options={[
+                                    { label: "进行中反馈", value: "active" },
+                                    { label: "历史归档", value: "archived" },
+                                    { label: "全部反馈", value: "all" },
+                                ]}
+                            />
+                            <AdminSearchInput
+                                allowClear
+                                className="app-list-search"
+                                prefix={<Search className="size-4 text-foreground/40" />}
+                                value={keyword}
+                                aria-label="搜索反馈"
+                                placeholder="搜索标题、内容、用户或联系方式"
+                                onValueChange={(value) => {
+                                    setKeyword(value);
+                                    setPage(1);
+                                }}
+                            />
+                        </>
+                    }
+                    toolbarActive={hasFilters}
+                    onReset={() => {
+                        setKeyword("");
+                        setTypeFilter("all");
+                        setStatusFilter("all");
+                        setPage(1);
+                    }}
+                    toolbarFilters={
+                        <>
+                            <Select
+                                aria-label="筛选反馈类型"
+                                className="w-32"
+                                value={typeFilter}
+                                onChange={(v) => {
+                                    setTypeFilter(v);
+                                    setPage(1);
+                                }}
+                                options={[
+                                    { label: "全部类型", value: "all" },
+                                    { label: "Bug 缺陷", value: "bug" },
+                                    { label: "功能提议", value: "feature" },
+                                    { label: "体验建议", value: "improvement" },
+                                    { label: "其他意见", value: "other" },
+                                ]}
+                            />
+                            <Select
+                                aria-label="筛选处理状态"
+                                className="w-32"
+                                value={statusFilter}
+                                onChange={(v) => {
+                                    setStatusFilter(v);
+                                    setPage(1);
+                                }}
+                                options={[
+                                    { label: "全部状态", value: "all" },
+                                    { label: "待处理", value: "pending" },
+                                    { label: "处理中", value: "processing" },
+                                    { label: "已解决", value: "resolved" },
+                                    { label: "已关闭", value: "closed" },
+                                ]}
+                            />
+                        </>
+                    }
+                    table={{ className: "app-data-table", size: "small", rowKey: "id", loading, columns, dataSource: list, pagination: false }}
+                    empty={<AdminTableEmpty filtered={hasFilters} title={hasFilters ? undefined : "暂无反馈"} />}
+                    footer={
+                        <PaginationBar
+                            alwaysShow
+                            current={page}
+                            pageSize={limit}
+                            total={total}
+                            pageSizeOptions={[15, 30, 50]}
+                            onChange={(nextPage, nextLimit) => {
+                                setPage(nextLimit !== limit ? 1 : nextPage);
+                                setLimit(nextLimit);
                             }}
-                            options={[
-                                { label: "进行中反馈", value: "active" },
-                                { label: "历史归档", value: "archived" },
-                                { label: "全部反馈", value: "all" },
-                            ]}
-                            className="bg-muted/40"
                         />
-                        <Input
-                            placeholder="搜索标题、内容、用户或联系方式"
-                            prefix={<Search className="size-3.5 text-muted-foreground mr-1" />}
-                            value={keyword}
-                            onChange={(e) => setKeyword(e.target.value)}
-                            onPressEnter={() => {
-                                setPage(1);
-                                void loadData();
-                            }}
-                            allowClear
-                            className="w-56 h-8 text-xs"
-                        />
-                        <Select
-                            value={typeFilter}
-                            onChange={(v) => {
-                                setTypeFilter(v);
-                                setPage(1);
-                            }}
-                            className="w-28 h-8 text-xs"
-                            options={[
-                                { label: "全部类型", value: "all" },
-                                { label: "Bug 缺陷", value: "bug" },
-                                { label: "功能提议", value: "feature" },
-                                { label: "体验建议", value: "improvement" },
-                                { label: "其他意见", value: "other" },
-                            ]}
-                        />
-                        <Select
-                            value={statusFilter}
-                            onChange={(v) => {
-                                setStatusFilter(v);
-                                setPage(1);
-                            }}
-                            className="w-28 h-8 text-xs"
-                            options={[
-                                { label: "全部状态", value: "all" },
-                                { label: "待处理", value: "pending" },
-                                { label: "处理中", value: "processing" },
-                                { label: "已解决", value: "resolved" },
-                                { label: "已关闭", value: "closed" },
-                            ]}
-                        />
-                        <Button
-                            size="small"
-                            type="primary"
-                            onClick={() => {
-                                setPage(1);
-                                void loadData();
-                            }}
-                        >
-                            查询
-                        </Button>
-                    </div>
-
-                    <Button size="small" icon={<RefreshCw className={cn("size-3.5", loading && "animate-spin")} />} onClick={() => void loadData()}>
-                        刷新
-                    </Button>
-                </div>
-
-                {/* Feedback Table */}
-                <div className="rounded-xl border border-border/70 bg-card overflow-hidden">
-                    <Table
-                        columns={columns}
-                        dataSource={list}
-                        rowKey="id"
-                        loading={loading}
-                        size="small"
-                        pagination={{
-                            current: page,
-                            pageSize: limit,
-                            total,
-                            showSizeChanger: true,
-                            pageSizeOptions: ["15", "30", "50"],
-                            onChange: (p, l) => {
-                                setPage(p);
-                                setLimit(l);
-                            },
-                        }}
-                    />
-                </div>
+                    }
+                />
             </div>
 
             {/* Detail & Reply Drawer */}

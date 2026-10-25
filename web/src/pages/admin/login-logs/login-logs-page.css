@@ -59,7 +59,7 @@
 
 @container admin-login-log-toolbar (min-width: 1080px) {
     .admin-login-log-filters {
-        grid-template-columns: minmax(180px, 1fr) 104px 140px 96px minmax(120px, 0.8fr) minmax(300px, 1.6fr) 80px;
+        grid-template-columns: minmax(164px, 1fr) 104px 140px 112px minmax(120px, 0.8fr) minmax(300px, 1.6fr) 80px;
     }
 
     .admin-login-log-dates {

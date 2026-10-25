@@ -266,6 +266,11 @@
     background: var(--admin-canvas);
 }
 
+/* 子页面按需加载时的占位：沿用工作区路由加载器（延迟出现，快速加载不闪），底色对齐后台画布。 */
+[data-admin-root] .workspace-route-loader {
+    background: var(--admin-canvas);
+}
+
 [data-admin-root] .admin-page-frame {
     display: flex;
     height: 100%;
@@ -427,6 +432,13 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
+}
+
+/* 搜索框宽度是 min(360px, 100%)，按内容估算时百分比不生效，主区会被算窄而把筛选挤到第二行。
+   让主区占满动作区之外的剩余宽度，搜索与筛选同排，放不下时再自然换行。 */
+[data-admin-root] .admin-list-toolbar-main {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 [data-admin-root] .admin-list-toolbar-filters {
@@ -706,6 +718,13 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+/* 设置表单在宽屏拉满时，说明在最左、开关在最右，视线要横跨整屏；限制阅读宽度，页头随内容对齐。
+   系统性能是监控看板，保持全宽。 */
+[data-admin-root] .admin-page-frame-scrollable:has(> .admin-settings-stack:not(.admin-system-performance)) > :is(.admin-page-header, .admin-settings-stack) {
+    width: 100%;
+    max-width: 1120px;
 }
 
 [data-admin-root] .admin-settings-section {
@@ -991,7 +1010,46 @@
 [data-admin-root] .admin-row-actions {
     display: inline-flex;
     justify-content: center;
-    gap: 4px;
+    gap: 2px;
+}
+
+/* 行内操作：表格里每行都会出现，用无边框文字按钮，主次只靠字重与颜色区分。 */
+:is([data-admin-root], .admin-modal-root, .admin-drawer) .admin-row-action.ant-btn {
+    height: 28px;
+    min-height: 28px;
+    padding: 0 8px;
+    border: 0 !important;
+    border-radius: var(--admin-radius-sm);
+    background: transparent !important;
+    color: var(--admin-text-secondary);
+    font-weight: 550;
+    transition:
+        background-color 140ms ease,
+        color 140ms ease !important;
+}
+
+:is([data-admin-root], .admin-modal-root, .admin-drawer) .admin-row-action.ant-btn:is(:hover, :focus-visible, .ant-dropdown-open):not(:disabled) {
+    background: var(--admin-nav-hover) !important;
+    color: var(--admin-text);
+}
+
+:is([data-admin-root], .admin-modal-root, .admin-drawer) .admin-row-action-primary.ant-btn {
+    color: var(--admin-text);
+    font-weight: 650;
+}
+
+:is([data-admin-root], .admin-modal-root, .admin-drawer) .admin-row-action-danger.ant-btn {
+    color: var(--admin-status-error);
+}
+
+:is([data-admin-root], .admin-modal-root, .admin-drawer) .admin-row-action-danger.ant-btn:is(:hover, :focus-visible):not(:disabled) {
+    background: color-mix(in srgb, var(--admin-status-error) 8%, transparent) !important;
+    color: var(--admin-status-error);
+}
+
+:is([data-admin-root], .admin-modal-root, .admin-drawer) .admin-row-action.ant-btn:disabled {
+    background: transparent !important;
+    color: var(--admin-text-placeholder);
 }
 
 [data-admin-root] .admin-unauthorized {

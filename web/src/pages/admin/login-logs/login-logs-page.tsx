@@ -75,7 +75,7 @@ export default function LoginLogsPage() {
     const columns: ColumnsType<LoginLog> = [
         {
             title: "时间",
-            width: 180,
+            width: 168,
             render: (_, log) => (
                 <button type="button" className="admin-log-detail-link" aria-label={`查看登录日志 ${log.id} 详情`} onClick={() => setDetailId(log.id)}>
                     {dayjs(log.createdAt).format("YYYY-MM-DD HH:mm:ss")}
@@ -84,7 +84,7 @@ export default function LoginLogsPage() {
         },
         {
             title: "用户 / 账号",
-            width: 190,
+            width: 180,
             render: (_, log) => (
                 <div className="min-w-0">
                     <div className="truncate font-medium">{log.displayName || log.username || "未关联用户"}</div>
@@ -94,7 +94,7 @@ export default function LoginLogsPage() {
         },
         {
             title: "事件",
-            width: 160,
+            width: 120,
             render: (_, log) => (
                 <div>
                     <div>{loginEventLabels[log.event]}</div>
@@ -102,12 +102,12 @@ export default function LoginLogsPage() {
                 </div>
             ),
         },
-        { title: "登录方式", width: 165, render: (_, log) => loginMethodLabels[log.method] },
-        { title: "结果", width: 92, render: (_, log) => <AdminStatusBadge label={log.result === "success" ? "成功" : "失败"} tone={log.result === "success" ? "success" : "error"} /> },
-        { title: "IP", dataIndex: "ip", width: 175, render: (value: string) => <span className="break-all font-mono text-xs">{value || "未记录"}</span> },
+        { title: "登录方式", width: 130, render: (_, log) => loginMethodLabels[log.method] },
+        { title: "结果", width: 80, render: (_, log) => <AdminStatusBadge label={log.result === "success" ? "成功" : "失败"} tone={log.result === "success" ? "success" : "error"} /> },
+        { title: "IP", dataIndex: "ip", width: 150, render: (value: string) => <span className="break-all font-mono text-xs">{value || "未记录"}</span> },
         {
             title: "浏览器 / 系统",
-            width: 190,
+            width: 150,
             render: (_, log) => {
                 const device = loginLogDevice(log.userAgent);
                 return (
@@ -120,7 +120,6 @@ export default function LoginLogsPage() {
         },
         {
             title: "失败原因",
-            width: 250,
             render: (_, log) =>
                 log.result === "failed" ? (
                     <div className="line-clamp-2" title={log.message}>
@@ -214,7 +213,7 @@ export default function LoginLogsPage() {
                     )
                 }
                 footer={<PaginationBar alwaysShow current={page} pageSize={pageSize} total={total} onChange={(next, size) => update({ page: next, pageSize: size })} />}
-                table={{ rowKey: "id", dataSource: logs, columns, loading, pagination: false, scroll: { x: 1400 }, size: "small" }}
+                table={{ rowKey: "id", dataSource: logs, columns, loading, pagination: false, scroll: { x: 1170 }, size: "small" }}
             />
             <LoginLogDetailDrawer id={detailId} onClose={() => setDetailId(null)} />
         </AdminPageFrame>

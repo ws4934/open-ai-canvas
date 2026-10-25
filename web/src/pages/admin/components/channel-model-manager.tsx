@@ -194,7 +194,6 @@ export function ChannelModelManager({ channel, onChanged }: { channel: ModelChan
     const columns: ColumnsType<ChannelModel> = [
         {
             title: "模型",
-            width: 240,
             render: (_, item) => (
                 <div className="flex min-w-0 items-center gap-2.5">
                     <span className="admin-channel-model-icon">
@@ -211,27 +210,29 @@ export function ChannelModelManager({ channel, onChanged }: { channel: ModelChan
                 </div>
             ),
         },
-        { title: "能力", dataIndex: "capability", width: 90, render: capabilityLabel },
+        { title: "能力", dataIndex: "capability", width: 64, render: capabilityLabel },
         {
             title: "请求协议",
             dataIndex: "protocol",
-            width: 190,
+            width: 150,
             render: (value: ModelProtocol) =>
                 value ? (
                     <div>
                         <div className="text-xs font-medium">{modelProtocolLabel(value, availableProtocols)}</div>
-                        <div className="truncate text-[var(--fs-tiny)] text-foreground/45">{modelProtocolDefinition(value, availableProtocols)?.create}</div>
+                        <div className="truncate text-[var(--fs-tiny)] text-foreground/45" title={modelProtocolDefinition(value, availableProtocols)?.create}>
+                            {modelProtocolDefinition(value, availableProtocols)?.create}
+                        </div>
                     </div>
                 ) : (
                     <AdminStatusBadge label="待配置" tone="warning" />
                 ),
         },
-        { title: "规格成本价 / 销售价 / 加价", width: 310, render: (_, item) => <ChannelModelCostSummary item={item} /> },
-        { title: "版本", dataIndex: "priceVersion", width: 75, render: (value) => `v${value}` },
-        { title: "状态", dataIndex: "enabled", width: 85, render: (enabled) => <AdminStatusBadge label={enabled ? "启用" : "停用"} tone={enabled ? "success" : "neutral"} /> },
+        { title: "规格成本价 / 销售价 / 加价", render: (_, item) => <ChannelModelCostSummary item={item} /> },
+        { title: "版本", dataIndex: "priceVersion", width: 56, render: (value) => `v${value}` },
+        { title: "状态", dataIndex: "enabled", width: 64, render: (enabled) => <AdminStatusBadge label={enabled ? "启用" : "停用"} tone={enabled ? "success" : "neutral"} /> },
         {
             title: "操作",
-            width: 130,
+            width: 156,
             fixed: "right",
             render: (_, item) => (
                 <Space size={4}>
@@ -420,7 +421,7 @@ export function ChannelModelManager({ channel, onChanged }: { channel: ModelChan
                     columns,
                     dataSource: pagedItems,
                     pagination: false,
-                    scroll: { x: 1090 },
+                    scroll: { x: 920 },
                 }}
                 footer={
                     <PaginationBar

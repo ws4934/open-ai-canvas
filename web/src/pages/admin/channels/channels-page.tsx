@@ -325,7 +325,7 @@ export default function ChannelsPage() {
     );
 
     return (
-        <AdminPageFrame title="系统模型" description="左侧选择渠道，右侧直接管理模型、协议与售价。">
+        <AdminPageFrame title="系统渠道" description="左侧选择渠道，右侧直接管理模型、协议与售价。">
             <div className="admin-channel-workspace">
                 <aside className="admin-channel-sidebar" aria-label="系统渠道">
                     <div className="admin-channel-sidebar-header">
