@@ -1,6 +1,6 @@
 import { createClientUUID } from "@/lib/client-id";
 import { App, Button, Input, InputNumber, Modal, Progress, Segmented, Select, Spin, Switch, Tooltip } from "antd";
-import { Check, Camera, ChevronDown, ChevronUp, Clapperboard, Expand, FileImage, History, ImagePlus, Images, LoaderCircle, Mic, Palette, Plus, RotateCcw, Search, ShoppingBag, Sparkles, Upload, UserRound, Video, X } from "lucide-react";
+import { Check, Camera, ChevronDown, ChevronUp, Clapperboard, Expand, FileImage, ImagePlus, Images, LoaderCircle, Mic, Palette, RefreshCw, RotateCcw, Search, ShoppingBag, Sparkles, Upload, UserRound, Video, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
@@ -154,13 +154,6 @@ function toolVisual(tool: WorkbenchTool, kind: WorkbenchKind) {
     if (text.includes("风格") || text.includes("海报") || text.includes("视觉")) return { icon: <Palette />, tone: "style", label: "风格与视觉" };
     if (text.includes("主图") || text.includes("商品") || text.includes("电商") || text.includes("白底")) return { icon: <ShoppingBag />, tone: "product", label: "商品出品" };
     return { icon: kind === "image" ? <Camera /> : <Sparkles />, tone: "creative", label: "创意生成" };
-}
-
-function flowStepState(step: string, values: { tool: WorkbenchTool | null; references: WorkbenchReference[]; prompt: string; selectedModel: string }) {
-    if (step === "goal") return values.tool ? "done" : "active";
-    if (step === "reference") return values.references.length ? "done" : values.tool?.inputContract?.slots.some((slot) => slot.required) ? "active" : "ready";
-    if (step === "prompt") return values.prompt.trim() ? "done" : "active";
-    return values.selectedModel ? "done" : "active";
 }
 
 export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
@@ -830,6 +823,9 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     };
     const resultTask = resultHidden ? null : activeTask || tasks.find((task) => task.status === "succeeded") || null;
     const resultUrl = resultTask ? taskPreview(resultTask) : "";
+    const normalizedQuery = query.trim().toLowerCase();
+    // 主舞台已展示的任务不再在作品网格里重复出现。
+    const galleryTasks = [...activeTasks, ...historyTasks].filter((task) => task.id !== resultTask?.id && (!normalizedQuery || task.prompt.toLowerCase().includes(normalizedQuery))).slice(0, 60);
     const settingsPanel =
         kind === "image" && imageProfile ? (
             <div className="workbench-settings-content">
@@ -970,35 +966,14 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     return (
         <WorkspacePage fluid scroll={false} className="workbench-page">
             <div className="workbench-shell" data-kind={kind}>
-                <div className="workbench-flow-steps" aria-label="创作流程">
-                    <Tooltip title="清空工具、提示词、参考素材和生成结果">
-                        <button type="button" className="workbench-flow-reset" onClick={resetWorkbench} aria-label="重置工作台">
-                            <RotateCcw />
-                            <span>重置</span>
-                        </button>
-                    </Tooltip>
-                    {[
-                        ["goal", "01", "选择出品目标", flowStepState("goal", { tool, references, prompt, selectedModel })],
-                        ["reference", "02", "准备参考素材", flowStepState("reference", { tool, references, prompt, selectedModel })],
-                        ["prompt", "03", "描述商品画面", flowStepState("prompt", { tool, references, prompt, selectedModel })],
-                        ["settings", "04", "确认参数并生成", flowStepState("settings", { tool, references, prompt, selectedModel })],
-                    ].map(([key, number, label, state], index) => (
-                        <div className={`workbench-flow-step is-${state}`} key={key}>
-                            <span className="workbench-flow-number">{state === "done" ? <Check /> : number}</span>
-                            <span>{label}</span>
-                            {index < 3 ? <span className="workbench-flow-line" aria-hidden /> : null}
-                        </div>
-                    ))}
-                </div>
                 <section className={`workbench-columns ${mobileTab !== "generate" ? "is-mobile-secondary" : ""}`}>
                     <div className="workbench-mobile-tabs">
                         <Segmented
                             value={mobileTab}
                             onChange={(value) => setMobileTab(String(value))}
                             options={[
-                                { label: "生成", value: "generate" },
-                                { label: "结果", value: "result" },
-                                { label: "任务", value: "tasks" },
+                                { label: "创作", value: "generate" },
+                                { label: activeTasks.length ? `作品 · ${activeTasks.length}` : "作品", value: "result" },
                             ]}
                         />
                     </div>
@@ -1006,420 +981,401 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                     <section className={`workbench-input-column ${mobileTab === "generate" ? "is-mobile-active" : ""}`} aria-label="生成参数">
                         <div className="workbench-composer">
                             <div className="workbench-tool-bar">
-                                <span className="workbench-kind-label">{kind === "image" ? "图片生成" : "视频生成"}</span>
                                 <button type="button" className="workbench-tool-choice" aria-expanded={toolLibraryOpen} aria-haspopup="dialog" aria-controls="workbench-tool-library" onClick={() => setToolLibraryOpen((open) => !open)}>
-                                    <span className="workbench-tool-choice-mark">{tool?.iconUrl ? <img src={tool.iconUrl} alt="" /> : kind === "image" ? <FileImage /> : <Video />}</span>
-                                    <span className="workbench-tool-choice-copy">
-                                        <small>{tool ? (isModelIdLike(tool.subtitle) ? tool.description || "创作工具" : tool.subtitle || tool.description || "创作工具") : "直接创作"}</small>
-                                        <strong>{tool?.name || "选择创作工具"}</strong>
+                                    <span className={`workbench-tool-choice-mark ${tool ? `is-${toolVisual(tool, kind).tone}` : ""}`}>
+                                        {tool?.iconUrl ? <img src={tool.iconUrl} alt="" /> : tool ? toolVisual(tool, kind).icon : kind === "image" ? <FileImage /> : <Video />}
                                     </span>
-                                    <ChevronDown className={toolLibraryOpen ? "is-open" : ""} />
+                                    <span className="workbench-tool-choice-copy">
+                                        <strong>{tool?.name || (kind === "image" ? "自由生图" : "自由生视频")}</strong>
+                                        <small>{tool ? (isModelIdLike(tool.subtitle) ? tool.description || "创作工具" : tool.subtitle || tool.description || "创作工具") : "直接写提示词，或选一个创作工具"}</small>
+                                    </span>
+                                    <span className="workbench-tool-choice-action">
+                                        {tool ? "更换" : "选择工具"}
+                                        <ChevronDown />
+                                    </span>
                                 </button>
+                                <Tooltip title="清空工具、提示词、参考素材和生成结果">
+                                    <button type="button" className="workbench-icon-button" onClick={resetWorkbench} aria-label="重置工作台">
+                                        <RotateCcw />
+                                    </button>
+                                </Tooltip>
                             </div>
-                            <Modal
-                                title="选择创作工具"
-                                open={toolLibraryOpen}
-                                onCancel={() => setToolLibraryOpen(false)}
-                                footer={null}
-                                width="min(1120px, calc(100vw - 32px))"
-                                className="workbench-picker-modal"
-                            >
+                            <Modal title="选择创作工具" open={toolLibraryOpen} onCancel={() => setToolLibraryOpen(false)} footer={null} width="min(1120px, calc(100vw - 32px))" className="workbench-picker-modal">
                                 {toolLibrary}
                             </Modal>
-                            {!tool && tools.length ? (
-                                <section className="workbench-goal-picker" aria-label="快速选择出品目标">
-                                    <div className="workbench-goal-heading">
-                                        <div>
-                                            <span className="workbench-section-index">01</span>
-                                            <div>
-                                                <strong>你现在要做什么？</strong>
-                                                <span>选择一个出品目标，参数和提示词会更快就位</span>
-                                            </div>
+                            <div className="workbench-studio">
+                                {!tool && tools.length ? (
+                                    <section className="workbench-field" aria-label="快速选择出品目标">
+                                        <div className="workbench-field-head">
+                                            <strong>常用工具</strong>
+                                            <button type="button" className="workbench-text-button" onClick={() => setToolLibraryOpen(true)}>
+                                                全部工具
+                                                <ChevronDown />
+                                            </button>
                                         </div>
-                                        <button type="button" onClick={() => setToolLibraryOpen(true)}>查看更多 <ChevronDown /></button>
+                                        <div className="workbench-goal-grid">
+                                            {quickTools.map((item) => (
+                                                <QuickGoalCard key={item.id} tool={item} kind={kind} onClick={() => chooseTool(item)} />
+                                            ))}
+                                        </div>
+                                    </section>
+                                ) : null}
+                                <section className="workbench-field" aria-label="提示词">
+                                    <div className="workbench-field-head">
+                                        <strong>{kind === "image" ? "画面描述" : "镜头描述"}</strong>
                                     </div>
-                                    <div className="workbench-goal-grid">
-                                        {quickTools.map((item) => <QuickGoalCard key={item.id} tool={item} kind={kind} onClick={() => chooseTool(item)} />)}
+                                    {tool?.presets.length ? (
+                                        <div className="workbench-preset-row" role="group" aria-label="工具提示词模板">
+                                            {tool.presets.slice(0, 5).map((item) => (
+                                                <button
+                                                    type="button"
+                                                    key={item.id}
+                                                    className={`workbench-preset-chip ${preset?.id === item.id ? "is-active" : ""}`}
+                                                    aria-pressed={preset?.id === item.id}
+                                                    title={item.summary || item.name}
+                                                    onClick={() => choosePreset(item)}
+                                                >
+                                                    {item.name}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : null}
+                                    <div className="workbench-prompt-surface">
+                                        <CanvasResourceMentionTextarea
+                                            aria-label="生成提示词，可输入 @ 引用参考素材"
+                                            className="workbench-prompt-input workbench-prompt-rich-editor"
+                                            containerClassName="workbench-prompt-mention-container"
+                                            value={prompt}
+                                            references={promptReferences}
+                                            onChange={setPrompt}
+                                            onSubmit={() => void submit()}
+                                            sendOnEnter={false}
+                                            style={{ color: "var(--wb-text)" }}
+                                            placeholder={kind === "image" ? "写下要生成的画面：主体、场景、构图、光线、风格" : "写下镜头里发生什么：主体、运动、光线、节奏、转场"}
+                                            maxLength={kind === "image" ? imageProfile?.references.promptMaxChars || 32000 : videoProfile?.references.promptMaxChars || 8000}
+                                        />
+                                        <div className="workbench-prompt-meta">
+                                            <span>
+                                                {prompt.length} / {kind === "image" ? imageProfile?.references.promptMaxChars || 32000 : videoProfile?.references.promptMaxChars || 8000}
+                                            </span>
+                                            <span>⌘ / Ctrl + Enter</span>
+                                        </div>
                                     </div>
                                 </section>
-                            ) : null}
-                            <div className="workbench-studio">
-                                <div className="workbench-block-label">
-                                    <span className="workbench-section-index">03</span>
-                                    <div>
-                                        <strong>描述你想要的成品</strong>
-                                        <span>说清商品、场景、构图、光线和需要保留的细节</span>
-                                    </div>
-                                </div>
-                                {tool?.presets.length ? (
-                                    <div className="workbench-preset-row" role="group" aria-label="工具提示词模板">
-                                        {tool.presets.slice(0, 5).map((item) => (
-                                            <button
-                                                type="button"
-                                                key={item.id}
-                                                className={`workbench-preset-chip ${preset?.id === item.id ? "is-active" : ""}`}
-                                                aria-pressed={preset?.id === item.id}
-                                                title={item.summary || item.name}
-                                                onClick={() => choosePreset(item)}
-                                            >
-                                                {item.name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                ) : null}
-                                <div className="workbench-prompt-surface">
-                                    <CanvasResourceMentionTextarea
-                                        aria-label="生成提示词，可输入 @ 引用参考素材"
-                                        className="workbench-prompt-input workbench-prompt-rich-editor"
-                                        containerClassName="workbench-prompt-mention-container"
-                                        value={prompt}
-                                        references={promptReferences}
-                                        onChange={setPrompt}
-                                        onSubmit={() => void submit()}
-                                        sendOnEnter={false}
-                                        style={{ color: "var(--wb-text)" }}
-                                        placeholder={kind === "image" ? "写下要生成的画面：主体、场景、构图、光线、风格" : "写下镜头里发生什么：主体、运动、光线、节奏、转场"}
-                                        maxLength={kind === "image" ? imageProfile?.references.promptMaxChars || 32000 : videoProfile?.references.promptMaxChars || 8000}
-                                    />
-                                    <div className="workbench-prompt-meta">
-                                        <span>
-                                            {prompt.length} / {kind === "image" ? imageProfile?.references.promptMaxChars || 32000 : videoProfile?.references.promptMaxChars || 8000}
+                                <section className="workbench-field" aria-label="参考素材">
+                                    <div className="workbench-field-head">
+                                        <strong>参考素材</strong>
+                                        <span className="workbench-field-count">
+                                            {references.length} /{" "}
+                                            {kind === "image" ? imageProfile?.references.maxImages || 0 : (videoProfile?.references.maxImages || 0) + (videoProfile?.references.maxVideos || 0) + (videoProfile?.references.maxAudios || 0)}
                                         </span>
-                                        <span>⌘ / Ctrl + Enter</span>
+                                        <div className="workbench-field-actions">
+                                            <Tooltip title="上传参考素材">
+                                                <button type="button" className="workbench-icon-button" aria-label="上传参考素材" onClick={() => fileRef.current?.click()}>
+                                                    <Upload />
+                                                </button>
+                                            </Tooltip>
+                                            {references.length ? (
+                                                <Tooltip title="清空参考素材">
+                                                    <button type="button" className="workbench-icon-button" aria-label="清空参考素材" onClick={() => references.forEach(removeReference)}>
+                                                        <X />
+                                                    </button>
+                                                </Tooltip>
+                                            ) : null}
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="workbench-composer-toolbar">
-                                    <span className="workbench-ref-count">
-                                        参考素材 {references.length} /{" "}
-                                        {kind === "image" ? imageProfile?.references.maxImages || 0 : (videoProfile?.references.maxImages || 0) + (videoProfile?.references.maxVideos || 0) + (videoProfile?.references.maxAudios || 0)}
-                                    </span>
-                                    <div className="workbench-toolbar-actions">
-                                        <Tooltip title="添加参考素材">
-                                            <button type="button" aria-label="添加参考素材" onClick={() => fileRef.current?.click()}>
-                                                <Upload />
-                                            </button>
-                                        </Tooltip>
-                                        <Tooltip title="清空参考素材">
-                                            <button type="button" aria-label="清空参考素材" onClick={() => references.forEach(removeReference)} disabled={!references.length}>
-                                                <X />
-                                            </button>
-                                        </Tooltip>
-                                    </div>
-                                </div>
-                                {tool?.inputContract?.slots.length ? (
-                                    <div className="workbench-reference-slots">
-                                        {tool.inputContract.slots.map((slot) => {
-                                            const slotReferences = references.filter((reference) => reference.slotKey === slot.key);
-                                            const mediaLabel = slot.mediaTypes.map((type) => (type === "image" ? "图片" : type === "video" ? "视频" : "音频")).join(" / ");
-                                            const openSlotPicker = () => {
-                                                setUploadSlotKey(slot.key);
-                                                fileRef.current?.click();
-                                            };
-                                            return (
-                                                <section className="workbench-reference-slot" key={slot.key}>
-                                                    <div className="workbench-reference-slot-heading">
-                                                        <div className="workbench-reference-slot-copy">
-                                                            <div className="workbench-reference-slot-title">
-                                                                <strong>{slot.name || "参考素材"}</strong>
-                                                                <span className={`workbench-reference-slot-requirement${slot.required ? " is-required" : ""}`}>{slot.required ? "必填" : "可选"}</span>
-                                                            </div>
-                                                            <div className="workbench-reference-slot-meta">
-                                                                <span>
-                                                                    {slot.minCount}-{slot.maxCount} 个
-                                                                </span>
-                                                                <span>{mediaLabel}</span>
-                                                            </div>
-                                                        </div>
-                                                        {slotReferences.length ? (
-                                                            <button type="button" className="workbench-slot-upload" onClick={openSlotPicker} aria-label={`为${slot.name}添加素材`} disabled={slotReferences.length >= slot.maxCount}>
-                                                                <ImagePlus /> <span>添加</span>
-                                                            </button>
-                                                        ) : null}
-                                                    </div>
-                                                    <div className="workbench-reference-grid">
-                                                        {slotReferences.map((reference) => (
-                                                            <ReferenceCard
-                                                                key={reference.id}
-                                                                reference={reference}
-                                                                kind={kind}
-                                                                onRemove={removeReference}
-                                                                onRoleChange={(role) => setReferences((current) => current.map((item) => (item.id === reference.id ? { ...item, role } : item)))}
-                                                            />
-                                                        ))}
-                                                        {!slotReferences.length ? (
-                                                            <button type="button" className="workbench-reference-slot-empty" onClick={openSlotPicker} disabled={slotReferences.length >= slot.maxCount}>
-                                                                <span className="workbench-reference-slot-empty-icon">
-                                                                    <ImagePlus />
-                                                                </span>
-                                                                <span className="workbench-reference-slot-empty-copy">
-                                                                    <strong>上传{slot.name || "参考"}素材</strong>
-                                                                    <small>从设备中选择文件</small>
-                                                                </span>
-                                                            </button>
-                                                        ) : null}
-                                                    </div>
-                                                </section>
-                                            );
-                                        })}
-                                    </div>
-                                ) : (
-                                    <div className="workbench-reference-grid">
-                                        {references.map((reference) => (
-                                            <ReferenceCard
-                                                key={reference.id}
-                                                reference={reference}
-                                                kind={kind}
-                                                onRemove={removeReference}
-                                                onRoleChange={(role) => setReferences((current) => current.map((item) => (item.id === reference.id ? { ...item, role } : item)))}
-                                            />
-                                        ))}
-                                        {!references.length || (kind === "video" && references.length < 5) ? (
-                                            <button
-                                                type="button"
-                                                className="workbench-reference-add"
-                                                onClick={() => {
-                                                    setUploadSlotKey(undefined);
+                                    {tool?.inputContract?.slots.length ? (
+                                        <div className="workbench-reference-slots">
+                                            {tool.inputContract.slots.map((slot) => {
+                                                const slotReferences = references.filter((reference) => reference.slotKey === slot.key);
+                                                const mediaLabel = slot.mediaTypes.map((type) => (type === "image" ? "图片" : type === "video" ? "视频" : "音频")).join(" / ");
+                                                const openSlotPicker = () => {
+                                                    setUploadSlotKey(slot.key);
                                                     fileRef.current?.click();
-                                                }}
-                                            >
-                                                <ImagePlus />
-                                                <span>添加{kind === "image" ? "参考图" : "参考素材"}</span>
-                                            </button>
-                                        ) : null}
-                                    </div>
-                                )}
-                                <input
-                                    ref={fileRef}
-                                    type="file"
-                                    className="sr-only"
-                                    accept={
-                                        uploadSlotKey
-                                            ? tool?.inputContract?.slots
-                                                  .find((slot) => slot.key === uploadSlotKey)
-                                                  ?.mediaTypes.map((type) => `${type}/*`)
-                                                  .join(",")
-                                            : kind === "image"
-                                              ? "image/*"
-                                              : "image/*,video/*,audio/*"
-                                    }
-                                    multiple
-                                    onChange={(event) => {
-                                        if (event.target.files) void addFiles(event.target.files, uploadSlotKey);
-                                        event.currentTarget.value = "";
-                                    }}
-                                />
-                                <section className="workbench-parameters" aria-label="生成参数">
-                                    <header>
+                                                };
+                                                return (
+                                                    <section className="workbench-reference-slot" key={slot.key}>
+                                                        <div className="workbench-reference-slot-heading">
+                                                            <div className="workbench-reference-slot-copy">
+                                                                <div className="workbench-reference-slot-title">
+                                                                    <strong>{slot.name || "参考素材"}</strong>
+                                                                    <span className={`workbench-reference-slot-requirement${slot.required ? " is-required" : ""}`}>{slot.required ? "必填" : "可选"}</span>
+                                                                </div>
+                                                                <div className="workbench-reference-slot-meta">
+                                                                    <span>
+                                                                        {slot.minCount}-{slot.maxCount} 个
+                                                                    </span>
+                                                                    <span>{mediaLabel}</span>
+                                                                </div>
+                                                            </div>
+                                                            {slotReferences.length ? (
+                                                                <button type="button" className="workbench-slot-upload" onClick={openSlotPicker} aria-label={`为${slot.name}添加素材`} disabled={slotReferences.length >= slot.maxCount}>
+                                                                    <ImagePlus /> <span>添加</span>
+                                                                </button>
+                                                            ) : null}
+                                                        </div>
+                                                        <div className="workbench-reference-grid">
+                                                            {slotReferences.map((reference) => (
+                                                                <ReferenceCard
+                                                                    key={reference.id}
+                                                                    reference={reference}
+                                                                    kind={kind}
+                                                                    onRemove={removeReference}
+                                                                    onRoleChange={(role) => setReferences((current) => current.map((item) => (item.id === reference.id ? { ...item, role } : item)))}
+                                                                />
+                                                            ))}
+                                                            {!slotReferences.length ? (
+                                                                <button type="button" className="workbench-reference-slot-empty" onClick={openSlotPicker} disabled={slotReferences.length >= slot.maxCount}>
+                                                                    <span className="workbench-reference-slot-empty-icon">
+                                                                        <ImagePlus />
+                                                                    </span>
+                                                                    <span className="workbench-reference-slot-empty-copy">
+                                                                        <strong>上传{slot.name || "参考"}素材</strong>
+                                                                        <small>从设备中选择文件</small>
+                                                                    </span>
+                                                                </button>
+                                                            ) : null}
+                                                        </div>
+                                                    </section>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <div className="workbench-reference-grid">
+                                            {references.map((reference) => (
+                                                <ReferenceCard
+                                                    key={reference.id}
+                                                    reference={reference}
+                                                    kind={kind}
+                                                    onRemove={removeReference}
+                                                    onRoleChange={(role) => setReferences((current) => current.map((item) => (item.id === reference.id ? { ...item, role } : item)))}
+                                                />
+                                            ))}
+                                            {!references.length || (kind === "video" && references.length < 5) ? (
+                                                <button
+                                                    type="button"
+                                                    className="workbench-reference-add"
+                                                    onClick={() => {
+                                                        setUploadSlotKey(undefined);
+                                                        fileRef.current?.click();
+                                                    }}
+                                                >
+                                                    <ImagePlus />
+                                                    <span>添加{kind === "image" ? "参考图" : "参考素材"}</span>
+                                                </button>
+                                            ) : null}
+                                        </div>
+                                    )}
+                                    <input
+                                        ref={fileRef}
+                                        type="file"
+                                        className="sr-only"
+                                        accept={
+                                            uploadSlotKey
+                                                ? tool?.inputContract?.slots
+                                                      .find((slot) => slot.key === uploadSlotKey)
+                                                      ?.mediaTypes.map((type) => `${type}/*`)
+                                                      .join(",")
+                                                : kind === "image"
+                                                  ? "image/*"
+                                                  : "image/*,video/*,audio/*"
+                                        }
+                                        multiple
+                                        onChange={(event) => {
+                                            if (event.target.files) void addFiles(event.target.files, uploadSlotKey);
+                                            event.currentTarget.value = "";
+                                        }}
+                                    />
+                                </section>
+                                <section className="workbench-field workbench-parameters" aria-label="生成参数">
+                                    <div className="workbench-field-head">
                                         <strong>{kind === "image" ? "图片参数" : "视频参数"}</strong>
-                                        <span>{kind === "image" ? "尺寸、分辨率、质量和数量" : "时长、画幅、清晰度和音频"}</span>
-                                    </header>
+                                    </div>
                                     {selectedModel ? settingsPanel : <p className="workbench-list-empty">先选择模型，再调整尺寸、数量或时长。</p>}
                                 </section>
                             </div>
                             <div className="workbench-composer-dock" aria-label="生成设置">
-                                {models.length ? (
-                                    <ModelPicker
-                                        config={config}
-                                        value={selectedModel}
-                                        capability={capability}
-                                        requirements={{
-                                            capability,
-                                            input: {
-                                                textCount: prompt.trim() ? 1 : 0,
-                                                imageCount: references.filter((reference) => reference.kind === "image").length,
-                                                referenceImageCount: references.filter((reference) => reference.kind === "image" && reference.role !== "first_frame" && reference.role !== "last_frame").length,
-                                                videoCount: references.filter((reference) => reference.kind === "video").length,
-                                                audioCount: references.filter((reference) => reference.kind === "audio").length,
-                                                characterCount: 0,
-                                            },
-                                            ...(kind === "image" ? { imageSize: ratio, options: { size: ratio, quality, ...(imageProfile?.resolution.supported ? { imageResolution } : {}), count: selectedCount } } : { videoSeconds: seconds, options: { size: ratio, videoSeconds: Number(seconds), vquality: videoQuality } }),
-                                        }}
-                                        variant="creation"
-                                        fullWidth
-                                        className="creation-model-picker workbench-model-picker"
-                                        showSelectedPrice={false}
-                                        showOptionPrices
-                                        onChange={(value) => {
-                                            if (kind === "image") updateConfig("imageModel", value);
-                                            else updateConfig("videoModel", value);
-                                            updateConfig("model", value);
-                                        }}
-                                        placeholder={`选择${kind === "image" ? "图片" : "视频"}模型`}
-                                    />
-                                ) : (
-                                    <div className="workbench-model-empty">
-                                        <span>暂无可用的{kind === "image" ? "图片" : "视频"}模型</span>
-                                        <a href="/settings?section=models" target="_blank" rel="noreferrer">
-                                            模型设置
-                                        </a>
-                                    </div>
-                                )}
-                                <div className="workbench-submit-estimate" aria-live="polite">
-                                    <span className="workbench-submit-estimate-label">{estimateLabel || "预估可用积分"}</span>
-                                    {selectedModel ? (
-                                        <span className="workbench-submit-estimate-model">使用 {modelDisplayName(config, selectedModel)}</span>
-                                    ) : null}
+                                <div className="workbench-dock-row">
+                                    {models.length ? (
+                                        <ModelPicker
+                                            config={config}
+                                            value={selectedModel}
+                                            capability={capability}
+                                            requirements={{
+                                                capability,
+                                                input: {
+                                                    textCount: prompt.trim() ? 1 : 0,
+                                                    imageCount: references.filter((reference) => reference.kind === "image").length,
+                                                    referenceImageCount: references.filter((reference) => reference.kind === "image" && reference.role !== "first_frame" && reference.role !== "last_frame").length,
+                                                    videoCount: references.filter((reference) => reference.kind === "video").length,
+                                                    audioCount: references.filter((reference) => reference.kind === "audio").length,
+                                                    characterCount: 0,
+                                                },
+                                                ...(kind === "image"
+                                                    ? { imageSize: ratio, options: { size: ratio, quality, ...(imageProfile?.resolution.supported ? { imageResolution } : {}), count: selectedCount } }
+                                                    : { videoSeconds: seconds, options: { size: ratio, videoSeconds: Number(seconds), vquality: videoQuality } }),
+                                            }}
+                                            variant="creation"
+                                            fullWidth
+                                            className="creation-model-picker workbench-model-picker"
+                                            showSelectedPrice={false}
+                                            showOptionPrices
+                                            onChange={(value) => {
+                                                if (kind === "image") updateConfig("imageModel", value);
+                                                else updateConfig("videoModel", value);
+                                                updateConfig("model", value);
+                                            }}
+                                            placeholder={`选择${kind === "image" ? "图片" : "视频"}模型`}
+                                        />
+                                    ) : (
+                                        <div className="workbench-model-empty">
+                                            <span>暂无可用的{kind === "image" ? "图片" : "视频"}模型</span>
+                                            <a href="/settings?section=models" target="_blank" rel="noreferrer">
+                                                模型设置
+                                            </a>
+                                        </div>
+                                    )}
+                                    <Button
+                                        className="workbench-submit"
+                                        type="primary"
+                                        loading={busy}
+                                        disabled={(promptRequired && !prompt.trim()) || Boolean(missingInput) || !selectedModel || references.some((reference) => reference.uploading || Boolean(reference.error))}
+                                        onClick={() => void submit()}
+                                    >
+                                        {busy ? null : <Sparkles />}
+                                        <span>{kind === "image" ? "生成图片" : "生成视频"}</span>
+                                    </Button>
                                 </div>
-                                <Button
-                                    className="workbench-submit"
-                                    type="primary"
-                                    loading={busy}
-                                    disabled={(promptRequired && !prompt.trim()) || Boolean(missingInput) || !selectedModel || references.some((reference) => reference.uploading || Boolean(reference.error))}
-                                    onClick={() => void submit()}
-                                >
-                                    <Sparkles />
-                                    <span>{kind === "image" ? "生成图片" : "生成视频"}</span>
-                                </Button>
+                                <div className="workbench-dock-meta" aria-live="polite">
+                                    {missingInput ? <span className="workbench-dock-hint">还需要上传{missingInput.name || "参考素材"}</span> : promptRequired && !prompt.trim() ? <span>写好{kind === "image" ? "画面" : "镜头"}描述后即可生成</span> : null}
+                                    {estimateLabel ? <span className="workbench-dock-estimate">{estimateLabel}</span> : null}
+                                </div>
                             </div>
                         </div>
                     </section>
 
-                    <section className={`workbench-result-column ${!tool ? "is-tool-unselected" : ""} ${mobileTab === "result" ? "is-mobile-active" : ""}`} aria-label="生成结果和工具说明">
-                        <div className="workbench-result-stage">
-                            <div className="workbench-section-heading">
-                                <div>
-                                    <h2>生成结果</h2>
-                                    <span>{resultTask ? displayTaskState(resultTask) : "作品会在这里呈现"}</span>
-                                </div>
-                                {resultTask?.status === "running" || resultTask?.status === "queued" ? <LoaderCircle className="size-4 animate-spin text-foreground/45" /> : null}
+                    <section className={`workbench-results ${mobileTab === "result" ? "is-mobile-active" : ""}`} aria-label="作品">
+                        <header className="workbench-results-head">
+                            <div className="workbench-results-title">
+                                <h2>作品</h2>
+                                <span>
+                                    {activeTasks.length ? `${activeTasks.length} 个生成中 · ` : ""}
+                                    {historyTasks.length} 条记录
+                                </span>
                             </div>
-                            {!resultTask ? (
-                                <div className="workbench-empty-result">
-                                    <div className="workbench-stage-frame" aria-hidden>
-                                        <span className="workbench-empty-mark">{kind === "image" ? <FileImage /> : <Video />}</span>
+                            <Input className="workbench-results-search" aria-label="搜索历史任务" prefix={<Search className="size-3.5" />} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索提示词" allowClear />
+                            <Tooltip title="刷新">
+                                <button type="button" className="workbench-icon-button" aria-label="刷新任务列表" onClick={() => void loadTasks()}>
+                                    <RefreshCw />
+                                </button>
+                            </Tooltip>
+                        </header>
+                        <div className="workbench-results-body">
+                            <div className={`workbench-stage ${resultTask?.status === "succeeded" && resultUrl ? "has-media" : ""}`}>
+                                {!resultTask && tool ? (
+                                    <div className="workbench-guide">
+                                        <span className={`workbench-guide-mark is-${toolVisual(tool, kind).tone}`}>{tool.iconUrl ? <img src={tool.iconUrl} alt="" /> : toolVisual(tool, kind).icon}</span>
+                                        <h3>{tool.name}</h3>
+                                        {tool.description || tool.subtitle ? <p className="workbench-guide-description">{tool.description || tool.subtitle}</p> : null}
+                                        {normalizeWorkbenchGuide(tool.guide) ? (
+                                            <div className="workbench-guide-copy">
+                                                {normalizeWorkbenchGuide(tool.guide)
+                                                    .split("\n")
+                                                    .filter(Boolean)
+                                                    .map((line, index) => (
+                                                        <p key={`${index}:${line}`}>{line}</p>
+                                                    ))}
+                                            </div>
+                                        ) : null}
+                                        {tool.inputHint ? <p className="workbench-guide-input-hint">{tool.inputHint}</p> : null}
+                                        {tool.resultExample?.imageUrls?.length || tool.resultExample?.videoUrl ? (
+                                            <div className="workbench-example-strip">
+                                                <span>{tool.resultExample.title || "效果参考"}</span>
+                                                <div>
+                                                    {tool.resultExample.imageUrls?.slice(0, 4).map((url) => (
+                                                        <span className="workbench-example-thumb" key={url}>
+                                                            <img src={url} alt="工具效果参考" />
+                                                        </span>
+                                                    ))}
+                                                    {tool.resultExample.videoUrl ? (
+                                                        <span className="workbench-example-thumb">
+                                                            <video src={tool.resultExample.videoUrl} muted />
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                            </div>
+                                        ) : null}
                                     </div>
-                                    <strong>{kind === "image" ? "图片会显示在这里" : "视频会显示在这里"}</strong>
-                                    <span>{kind === "image" ? "写好画面后生成，结果保持原始比例。" : "写好镜头后生成，结果以 16:9 画幅预览。"}</span>
-                                </div>
-                            ) : resultTask.status === "queued" || resultTask.status === "running" ? (
-                                <div className="workbench-generating">
-                                    <div className="workbench-flow-skeleton">
-                                        <span />
-                                        <span />
-                                        <span />
+                                ) : !resultTask ? (
+                                    <div className="workbench-empty-result">
+                                        <span className="workbench-stage-frame" aria-hidden>
+                                            {kind === "image" ? <FileImage /> : <Video />}
+                                        </span>
+                                        <strong>{kind === "image" ? "生成的图片会出现在这里" : "生成的视频会出现在这里"}</strong>
+                                        <span>{kind === "image" ? "在左侧写好画面描述，或先选一个常用工具。" : "在左侧写好镜头描述，或先选一个常用工具。"}</span>
                                     </div>
-                                    <strong>{displayTaskState(resultTask)}</strong>
-                                    <span>任务已安全进入队列，完成后会自动显示结果</span>
-                                    <Progress percent={resultTask.progress || 8} showInfo={false} />
-                                </div>
-                            ) : resultTask.status === "succeeded" && resultUrl ? (
-                                <div className="workbench-result-media">
-                                    {resultTask.previewKind === "video" || kind === "video" ? (
-                                        <video src={resultUrl} controls playsInline />
-                                    ) : (
-                                        <MediaPreview src={resultUrl} kind="image" alt="生成结果" className="size-full object-contain" fallbackLabel="结果暂不可用" />
-                                    )}
-                                    <div className="workbench-result-caption">
-                                        <span>{taskModelLabel(resultTask)}</span>
-                                        <Button size="small" icon={<Expand className="size-3.5" />} onClick={() => setDetailTask(resultTask)}>
-                                            查看详情
-                                        </Button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="workbench-result-error">
-                                    <span>{displayTaskState(resultTask)}</span>
-                                    <Button onClick={() => setDetailTask(resultTask)}>查看任务详情</Button>
-                                </div>
-                            )}
-                        </div>
-                        <div className="workbench-guide-stage">
-                            <div className="workbench-section-heading">
-                                <div>
-                                    <h2>{tool?.name || "工具说明"}</h2>
-                                    <span>创作指南与效果预览</span>
-                                </div>
-                            </div>
-                            {tool ? (
-                                <>
-                                    <p className="workbench-guide-description">{tool.description || tool.subtitle}</p>
-                                    {normalizeWorkbenchGuide(tool.guide) ? (
-                                        <div className="workbench-guide-copy">
-                                            {normalizeWorkbenchGuide(tool.guide)
-                                                .split("\n")
-                                                .filter(Boolean)
-                                                .map((line, index) => (
-                                                    <p key={`${index}:${line}`}>{line}</p>
-                                                ))}
+                                ) : resultTask.status === "queued" || resultTask.status === "running" ? (
+                                    <div className="workbench-generating">
+                                        <div className="workbench-flow-skeleton" aria-hidden>
+                                            <span />
+                                            <span />
+                                            <span />
                                         </div>
+                                        <strong>{displayTaskState(resultTask)}</strong>
+                                        <span>任务已进入队列，完成后会自动显示在这里</span>
+                                        <Progress percent={resultTask.progress || 8} showInfo={false} />
+                                    </div>
+                                ) : resultTask.status === "succeeded" && resultUrl ? (
+                                    <div className="workbench-result-media">
+                                        {resultTask.previewKind === "video" || kind === "video" ? (
+                                            <video src={resultUrl} controls playsInline />
+                                        ) : (
+                                            <MediaPreview src={resultUrl} kind="image" alt="生成结果" className="size-full object-contain" fallbackLabel="结果暂不可用" />
+                                        )}
+                                        <div className="workbench-result-caption">
+                                            <span>{taskModelLabel(resultTask)}</span>
+                                            <Button size="small" icon={<Expand className="size-3.5" />} onClick={() => setDetailTask(resultTask)}>
+                                                查看详情
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className={`workbench-result-error is-${resultTask.status}`}>
+                                        <strong>{displayTaskState(resultTask)}</strong>
+                                        <Button onClick={() => setDetailTask(resultTask)}>查看任务详情</Button>
+                                    </div>
+                                )}
+                            </div>
+                            {galleryTasks.length || tasksLoading ? (
+                                <section className="workbench-gallery" aria-label="历史作品">
+                                    <div className="workbench-gallery-head">
+                                        <strong>历史作品</strong>
+                                        {query.trim() ? <span>匹配 {galleryTasks.length} 条</span> : null}
+                                    </div>
+                                    {tasksLoading && !galleryTasks.length ? (
+                                        <Spin size="small" />
                                     ) : (
-                                        <div className="workbench-guide-empty">选择适合的模型和参考素材，写下你希望呈现的画面细节。</div>
-                                    )}
-                                    {tool.inputHint ? <p className="workbench-guide-input-hint">{tool.inputHint}</p> : null}
-                                    {tool.inputContract?.slots.length ? (
-                                        <div className="workbench-guide-contract">
-                                            <strong>输入素材</strong>
-                                            {tool.inputContract.slots.map((slot) => (
-                                                <span key={slot.key}>
-                                                    {slot.name} · {slot.required ? "必填" : "可选"} · 最多 {slot.maxCount} 个
-                                                </span>
+                                        <div className="workbench-gallery-grid">
+                                            {galleryTasks.map((task) => (
+                                                <TaskTile
+                                                    key={task.id}
+                                                    task={task}
+                                                    kind={kind}
+                                                    modelLabel={taskModelLabel(task)}
+                                                    busy={taskBusyId === task.id}
+                                                    onOpen={() => void openDetail(task)}
+                                                    onCancel={task.status === "queued" || task.status === "running" ? () => void cancelTask(task) : undefined}
+                                                    onRetry={task.status === "queued" || task.status === "running" ? undefined : () => void retryTask(task)}
+                                                />
                                             ))}
                                         </div>
-                                    ) : null}
-                                    {tool.resultExample?.imageUrls?.length || tool.resultExample?.videoUrl ? (
-                                        <div className="workbench-example-strip">
-                                            <span>{tool.resultExample.title || "效果参考"}</span>
-                                            {tool.resultExample.imageUrls?.slice(0, 3).map((url) => (
-                                                <span className="workbench-example-thumb" key={url}>
-                                                    <img src={url} alt="工具效果参考" />
-                                                </span>
-                                            ))}
-                                            {tool.resultExample.videoUrl ? (
-                                                <span className="workbench-example-thumb">
-                                                    <video src={tool.resultExample.videoUrl} muted />
-                                                </span>
-                                            ) : null}
-                                        </div>
-                                    ) : null}
-                                </>
-                            ) : (
-                                <div className="workbench-guide-empty">选定工具后，这里会展示创作说明和示例效果。</div>
-                            )}
+                                    )}
+                                </section>
+                            ) : query.trim() ? (
+                                <p className="workbench-list-empty">没有匹配“{query.trim()}”的作品</p>
+                            ) : null}
                         </div>
                     </section>
-
-                    <aside className={`workbench-task-column ${mobileTab === "tasks" ? "is-mobile-active" : ""}`} aria-label="任务与历史">
-                        <section className="workbench-active-panel">
-                            <div className="workbench-section-heading">
-                                <div>
-                                    <h2>进行中的任务</h2>
-                                    <span>{activeTasks.length} 个任务</span>
-                                </div>
-                                <Tooltip title="刷新任务">
-                                    <button type="button" aria-label="刷新任务列表" onClick={() => void loadTasks()}>
-                                        <History />
-                                    </button>
-                                </Tooltip>
-                            </div>
-                            <div className="workbench-task-list">
-                                {activeTasks.length ? (
-                                    activeTasks.map((task) => <TaskRow key={task.id} task={task} kind={kind} modelLabel={taskModelLabel(task)} busy={taskBusyId === task.id} onOpen={() => void openDetail(task)} onCancel={() => void cancelTask(task)} />)
-                                ) : (
-                                    <p className="workbench-list-empty">暂无进行中的任务</p>
-                                )}
-                            </div>
-                        </section>
-                        <section className="workbench-history-panel">
-                            <div className="workbench-section-heading">
-                                <div>
-                                    <h2>历史生成</h2>
-                                    <span>{historyTasks.length} 条记录</span>
-                                </div>
-                                <Input aria-label="搜索历史任务" prefix={<Search className="size-3.5" />} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索提示词" allowClear />
-                            </div>
-                            <div className="workbench-task-list">
-                                {tasksLoading ? (
-                                    <Spin size="small" />
-                                ) : (
-                                    historyTasks
-                                        .filter((task) => !query.trim() || task.prompt.toLowerCase().includes(query.trim().toLowerCase()))
-                                        .slice(0, 30)
-                                        .map((task) => <TaskRow key={task.id} task={task} kind={kind} modelLabel={taskModelLabel(task)} busy={taskBusyId === task.id} onOpen={() => void openDetail(task)} onRetry={() => void retryTask(task)} />)
-                                )}
-                                {!tasksLoading && !historyTasks.length ? <p className="workbench-list-empty">完成的作品会保留在这里</p> : null}
-                            </div>
-                        </section>
-                    </aside>
                 </section>
             </div>
 
@@ -1659,13 +1615,12 @@ function ParameterChips({ label, value, options, onChange }: { label: string; va
 function QuickGoalCard({ tool, kind, onClick }: { tool: WorkbenchTool; kind: WorkbenchKind; onClick: () => void }) {
     const visual = toolVisual(tool, kind);
     return (
-        <button type="button" className={`workbench-goal-card is-${visual.tone}`} onClick={onClick}>
+        <button type="button" className={`workbench-goal-card is-${visual.tone}`} title={tool.subtitle || visual.label} onClick={onClick}>
             <span className="workbench-goal-icon">{tool.coverUrl || tool.iconUrl ? <img src={tool.coverUrl || tool.iconUrl} alt="" /> : visual.icon}</span>
             <span className="workbench-goal-copy">
                 <strong>{tool.name}</strong>
-                <small>{tool.subtitle || visual.label}</small>
+                <small>{tool.categoryId ? workbenchCategoryLabel(tool.categoryId) : visual.label}</small>
             </span>
-            <span className="workbench-goal-arrow">→</span>
         </button>
     );
 }
@@ -1728,29 +1683,57 @@ function ReferenceCard({ reference, kind, onRemove, onRoleChange }: { reference:
     );
 }
 
-function TaskRow({ task, kind, modelLabel, busy, onOpen, onCancel, onRetry }: { task: GenerationTask; kind: WorkbenchKind; modelLabel: string; busy: boolean; onOpen: () => void; onCancel?: () => void; onRetry?: () => void }) {
+function TaskTile({ task, kind, modelLabel, busy, onOpen, onCancel, onRetry }: { task: GenerationTask; kind: WorkbenchKind; modelLabel: string; busy: boolean; onOpen: () => void; onCancel?: () => void; onRetry?: () => void }) {
     const url = taskPreview(task);
+    const pending = task.status === "queued" || task.status === "running";
+    const video = task.previewKind === "video" || kind === "video";
     return (
-        <article className="workbench-task-row">
-            <button type="button" className="workbench-task-main" onClick={onOpen}>
-                <span className="workbench-task-thumb">{url && task.previewKind !== "video" ? <MediaPreview src={url} kind="image" alt="" className="size-full object-cover" /> : kind === "video" ? <Video /> : <FileImage />}</span>
-                <span className="workbench-task-copy">
-                    <strong>{modelLabel}</strong>
-                    <small>{task.prompt}</small>
-                    <em>
-                        {displayTaskState(task)} · {elapsedLabel(task)}
-                    </em>
+        <article className={`workbench-tile is-${task.status}`}>
+            <button type="button" className="workbench-tile-main" onClick={onOpen} aria-label={`查看任务：${task.prompt || modelLabel}`}>
+                <span className="workbench-tile-media">
+                    {url && task.status === "succeeded" ? (
+                        video ? (
+                            <video src={url} muted playsInline preload="metadata" />
+                        ) : (
+                            <MediaPreview src={url} kind="image" alt="" className="size-full object-cover" />
+                        )
+                    ) : pending ? (
+                        <span className="workbench-tile-pending">
+                            <LoaderCircle className="animate-spin" />
+                            <span>{displayTaskState(task)}</span>
+                        </span>
+                    ) : (
+                        <span className="workbench-tile-placeholder">
+                            {kind === "video" ? <Video /> : <FileImage />}
+                            <span>{displayTaskState(task)}</span>
+                        </span>
+                    )}
+                    {pending ? <span className="workbench-tile-progress" style={{ width: `${Math.max(8, task.progress || 0)}%` }} /> : null}
+                </span>
+                <span className="workbench-tile-copy">
+                    <strong>{task.prompt || modelLabel}</strong>
+                    <small>
+                        {modelLabel} · {elapsedLabel(task)}
+                    </small>
                 </span>
             </button>
-            {onCancel ? (
-                <Tooltip title="取消任务">
-                    <Button type="text" aria-label="取消任务" icon={<X className="size-3.5" />} loading={busy} onClick={onCancel} />
-                </Tooltip>
-            ) : null}
-            {onRetry ? (
-                <Tooltip title="重试任务">
-                    <Button type="text" aria-label="重试任务" icon={busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />} disabled={busy} onClick={onRetry} />
-                </Tooltip>
+            {onCancel || onRetry ? (
+                <div className="workbench-tile-actions">
+                    {onCancel ? (
+                        <Tooltip title="取消任务">
+                            <button type="button" aria-label="取消任务" disabled={busy} onClick={onCancel}>
+                                {busy ? <LoaderCircle className="animate-spin" /> : <X />}
+                            </button>
+                        </Tooltip>
+                    ) : null}
+                    {onRetry ? (
+                        <Tooltip title="用相同参数再生成一次">
+                            <button type="button" aria-label="再次生成" disabled={busy} onClick={onRetry}>
+                                {busy ? <LoaderCircle className="animate-spin" /> : <RotateCcw />}
+                            </button>
+                        </Tooltip>
+                    ) : null}
+                </div>
             ) : null}
         </article>
     );

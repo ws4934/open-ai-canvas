@@ -22,6 +22,9 @@ const PAGE_TITLES: Record<string, string> = {
     skills: "技能",
     plugins: "插件",
     settings: "设置",
+    wallet: "积分",
+    "toolbox/image": "图片生成",
+    "toolbox/video": "视频生成",
 };
 
 export function WorkspaceTopBar({ sidebarOpen, onToggleSidebar }: { sidebarOpen: boolean; onToggleSidebar: () => void }) {
@@ -32,8 +35,8 @@ export function WorkspaceTopBar({ sidebarOpen, onToggleSidebar }: { sidebarOpen:
     const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
     const { availableMicrocredits } = useWalletBalance(user?.id, creditsEnabled);
     const { pathname } = useLocation();
-    const slug = pathname.split("/").filter(Boolean)[0];
-    const pageTitle = slug ? PAGE_TITLES[slug] || brandName : PAGE_TITLES.home;
+    const segments = pathname.split("/").filter(Boolean);
+    const pageTitle = segments.length ? PAGE_TITLES[segments.slice(0, 2).join("/")] || PAGE_TITLES[segments[0]] || brandName : PAGE_TITLES.home;
     const balance = availableMicrocredits === null ? "--" : (availableMicrocredits / 1_000_000).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
 
     return (
