@@ -217,7 +217,6 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
     if (!parameters.length) return null;
     return (
         <div className="space-y-3">
-            <p className="text-xs leading-relaxed text-foreground/55">选择此模型支持的参数和范围。生成界面同步显示启用项，标记“可计价”的参数可用于规格价格。</p>
             {parameters.map((field) => {
                 const definition = definitions.find((p) => p.name === field.name) || field;
                 const isResolution = field.name === "imageResolution" && field.type === "string";
@@ -293,7 +292,7 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
                                 ) : null}
                                 {(field.type === "number" || field.type === "integer") && !definition.values?.length ? (
                                     <div className="grid grid-cols-2 gap-2">
-                                        <label className="space-y-1.5 text-xs">
+                                        <label className="grid gap-1.5 text-xs">
                                             <span>最小值</span>
                                             <InputNumber
                                                 className="w-full"
@@ -305,7 +304,7 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
                                                 onChange={(min) => update(field.name, { min: min ?? definition.min })}
                                             />
                                         </label>
-                                        <label className="space-y-1.5 text-xs">
+                                        <label className="grid gap-1.5 text-xs">
                                             <span>最大值</span>
                                             <InputNumber
                                                 className="w-full"
@@ -319,7 +318,7 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
                                         </label>
                                     </div>
                                 ) : null}
-                                <div className="space-y-1.5 text-xs">
+                                <div className="flex flex-col items-start gap-1.5 text-xs">
                                     <span>默认值</span>
                                     <ImageParameterInput field={field} value={field.default} disabled={disabled} onChange={(value) => update(field.name, { default: value })} />
                                 </div>

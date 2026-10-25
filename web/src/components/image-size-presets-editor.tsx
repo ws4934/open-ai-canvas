@@ -93,6 +93,20 @@ export function ImageSizePresetsEditor({
             setDrafts((current) => ({ ...current, [tier]: "" }));
         }
     };
+    const presetForValue = (value: string) => presets.find((item) => (profile.size.parameter === "aspect_ratio" ? item.ratio === value : item.size === value));
+    // 支持值可能包含协议声明的全部像素尺寸；先列已启用比例对应的尺寸，其余折叠，避免几十个按钮平铺。
+    const primaryCandidates = defaultOptions.filter((value) => value === "auto" || value === profile.size.default || presetForValue(value));
+    const primaryDefaults = primaryCandidates.some((value) => value !== "auto") ? primaryCandidates : defaultOptions;
+    const otherDefaults = defaultOptions.filter((value) => !primaryDefaults.includes(value));
+    const renderDefaultOption = (value: string) => {
+        const preset = presetForValue(value);
+        const label = value === "auto" ? "自动" : preset && profile.size.parameter === "size" ? `${grouped ? preset.tier.toUpperCase() + " · " : ""}${preset.ratio}` : value;
+        return (
+            <button key={value} type="button" disabled={disabled} aria-pressed={profile.size.default === value} title={value} aria-label={`默认输出 ${label} ${value}`} onClick={() => onChange({ ...profile.size, default: value })}>
+                {label}
+            </button>
+        );
+    };
     return (
         <div className="image-size-presets-editor">
             <p className="image-size-editor-intro">点选支持的比例，再次点击可移除。已有精确尺寸保持不变，有换算规则时自动填入。</p>
@@ -135,8 +149,9 @@ export function ImageSizePresetsEditor({
                                 {ratios.map((ratio) => {
                                     const selected = items.find((item) => item.ratio === ratio);
                                     const dimensions = selected || candidate(tier, ratio);
+                                    const tierLabel = grouped ? `${tier.toUpperCase()} ` : "";
                                     return (
-                                        <div key={ratio} className="image-size-preset-option-wrap">
+                                        <div key={ratio} className={`image-size-preset-row${selected ? " is-selected" : ""}`}>
                                             <button
                                                 type="button"
                                                 disabled={disabled}
@@ -146,41 +161,38 @@ export function ImageSizePresetsEditor({
                                                 title={`${ratio}${dimensions.width && dimensions.height ? ` · ${dimensions.width} × ${dimensions.height} px` : ""}${selected ? " · 点击移除" : " · 点击添加"}`}
                                                 onClick={() => update(tier, selected ? items.filter((item) => item.ratio !== ratio).map((item) => item.ratio) : [...items.map((item) => item.ratio), ratio])}
                                             >
-                                                <span className="image-size-preset-option-label">
-                                                    <span>{ratio}</span>
-                                                    {selected ? <Check size={12} aria-hidden="true" /> : <Plus size={12} aria-hidden="true" />}
+                                                <span className="image-size-preset-check" aria-hidden="true">
+                                                    {selected ? <Check size={12} /> : null}
                                                 </span>
-                                                <small>{dimensions.width && dimensions.height ? `${dimensions.width} × ${dimensions.height}` : "设置尺寸"}</small>
+                                                <span className="image-size-preset-ratio">{ratio}</span>
                                             </button>
                                             {selected ? (
-                                                <div className="image-size-preset-dimensions" aria-label={`${tier.toUpperCase()} ${ratio} 精确像素`}>
-                                                    <label>
-                                                        <span>宽</span>
-                                                        <InputNumber
-                                                            controls={false}
-                                                            min={1}
-                                                            precision={0}
-                                                            value={selected.width || null}
-                                                            disabled={disabled}
-                                                            aria-label={`${grouped ? tier.toUpperCase() + " " : ""}${ratio} 宽度像素`}
-                                                            onChange={(value) => editDimensions(tier, ratio, "width", value)}
-                                                        />
-                                                    </label>
+                                                <div className="image-size-preset-dimensions" aria-label={`${tierLabel}${ratio} 精确像素`}>
+                                                    <InputNumber
+                                                        controls={false}
+                                                        min={1}
+                                                        precision={0}
+                                                        placeholder="宽"
+                                                        value={selected.width || null}
+                                                        disabled={disabled}
+                                                        aria-label={`${tierLabel}${ratio} 宽度像素`}
+                                                        onChange={(value) => editDimensions(tier, ratio, "width", value)}
+                                                    />
                                                     <span aria-hidden="true">×</span>
-                                                    <label>
-                                                        <span>高</span>
-                                                        <InputNumber
-                                                            controls={false}
-                                                            min={1}
-                                                            precision={0}
-                                                            value={selected.height || null}
-                                                            disabled={disabled}
-                                                            aria-label={`${grouped ? tier.toUpperCase() + " " : ""}${ratio} 高度像素`}
-                                                            onChange={(value) => editDimensions(tier, ratio, "height", value)}
-                                                        />
-                                                    </label>
+                                                    <InputNumber
+                                                        controls={false}
+                                                        min={1}
+                                                        precision={0}
+                                                        placeholder="高"
+                                                        value={selected.height || null}
+                                                        disabled={disabled}
+                                                        aria-label={`${tierLabel}${ratio} 高度像素`}
+                                                        onChange={(value) => editDimensions(tier, ratio, "height", value)}
+                                                    />
                                                 </div>
-                                            ) : null}
+                                            ) : (
+                                                <span className="image-size-preset-suggested">{dimensions.width && dimensions.height ? `${dimensions.width} × ${dimensions.height}` : null}</span>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -224,16 +236,16 @@ export function ImageSizePresetsEditor({
                     <span>用户选择模型时的初始尺寸</span>
                 </div>
                 <div className="image-size-default-options" role="group" aria-label="默认输出">
-                    {defaultOptions.map((value) => {
-                        const preset = presets.find((item) => (profile.size.parameter === "aspect_ratio" ? item.ratio === value : item.size === value));
-                        const label = value === "auto" ? "自动" : preset && profile.size.parameter === "size" ? `${grouped ? preset.tier.toUpperCase() + " · " : ""}${preset.ratio}` : value;
-                        return (
-                            <button key={value} type="button" disabled={disabled} aria-pressed={profile.size.default === value} title={value} aria-label={`默认输出 ${label} ${value}`} onClick={() => onChange({ ...profile.size, default: value })}>
-                                {label}
-                            </button>
-                        );
-                    })}
+                    {primaryDefaults.map(renderDefaultOption)}
                 </div>
+                {otherDefaults.length ? (
+                    <details className="image-size-default-more">
+                        <summary>其他支持尺寸（{otherDefaults.length}）</summary>
+                        <div className="image-size-default-options" role="group" aria-label="其他默认输出">
+                            {otherDefaults.map(renderDefaultOption)}
+                        </div>
+                    </details>
+                ) : null}
             </div>
         </div>
     );

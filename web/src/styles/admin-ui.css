@@ -9224,6 +9224,11 @@
     gap: 10px;
 }
 
+/* 图片模型只有图片引用与通用限制两张卡，按两列铺满，不留出第三列空位。 */
+.admin-model-editor-references .admin-capability-reference-grid.is-two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .admin-model-editor-modal .admin-capability-reference-card,
 .admin-model-editor-modal .admin-capability-protocol-card {
     min-width: 0;
@@ -9839,6 +9844,9 @@
         justify-content: flex-end;
     }
     .admin-model-editor-modal .admin-capability-reference-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .admin-model-editor-references .admin-capability-reference-grid.is-two {
         grid-template-columns: minmax(0, 1fr);
     }
     .admin-model-editor-modal .admin-capability-protocol-grid {

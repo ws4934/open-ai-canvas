@@ -997,6 +997,11 @@
     background: var(--admin-switch-on) !important;
 }
 
+/* 自研开关（role=switch）开启态默认墨色；后台与 AntD 开关统一为语义绿，避免同一表单两种开关。 */
+:is([data-admin-root], .admin-drawer, .admin-modal-root) button[role="switch"][data-state="on"] {
+    background: var(--admin-switch-on);
+}
+
 [data-admin-root] .ant-form-item {
     margin-bottom: 14px;
 }

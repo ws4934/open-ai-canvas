@@ -480,11 +480,12 @@ function ImageCapabilityEditor({ value, onChange, protocol, model, imageParamete
     if (section !== "references" && profile.parameters) {
         const definitions = imageParameters || profile.parameters;
         const size = profile.parameters.find((p) => p.name === "size");
-        return <div className="space-y-4">
+        return <div className="space-y-3">
+            <p className="text-xs leading-relaxed text-foreground/55">选择此模型支持的参数和范围。生成界面同步显示启用项，标记“可计价”的参数可用于规格价格。</p>
             <ImageParameterSchemaEditor definitions={definitions} parameters={profile.parameters.filter((p) => p.name === "imageResolution")} disabled={disabled} onChange={(parameters) => onChange?.({ version: 1, image: updateImageParameterSchema(profile, profile.parameters!.map((p) => parameters.find((next) => next.name === p.name) || p), definitions) })} />
             {size ? <ImageParameterSizeEditor profile={profile} definition={definitions.find((p) => p.name === "size") || size} disabled={disabled} onChange={(image) => onChange?.({ version: 1, image })} /> : null}
             <ImageParameterSchemaEditor definitions={definitions} parameters={profile.parameters.filter((p) => p.name !== "size" && p.name !== "imageResolution")} disabled={disabled} onChange={(parameters) => onChange?.({ version: 1, image: updateImageParameterSchema(profile, profile.parameters!.map((p) => parameters.find((next) => next.name === p.name) || p)) })} />
-            <ImageResponseFormatEditor value={profile.responseFormat} disabled={disabled} onChange={(responseFormat) => update({ responseFormat })} />
+            <ImageResponseFormatEditor card value={profile.responseFormat} disabled={disabled} onChange={(responseFormat) => update({ responseFormat })} />
         </div>;
     }
 
@@ -788,8 +789,34 @@ function ParameterField({ label, description, supported, disabled, onChange }: {
     );
 }
 
-function ImageResponseFormatEditor({ value, disabled, onChange }: { value: ImageCapabilityConfig["responseFormat"]; disabled: boolean; onChange: (value: ImageCapabilityConfig["responseFormat"]) => void }) {
+function ImageResponseFormatEditor({ value, disabled, onChange, card = false }: { value: ImageCapabilityConfig["responseFormat"]; disabled: boolean; onChange: (value: ImageCapabilityConfig["responseFormat"]) => void; card?: boolean }) {
     const defaultValue: ImageResponseFormat = value.default || "auto";
+    const formatOptions = [
+        { label: "自动", value: "auto" },
+        { label: "Base64", value: "b64_json" },
+        { label: "URL", value: "url" },
+    ];
+    if (card) {
+        // 与参数清单里的其他参数同一种卡片：标题行右侧开关，启用后在下方选默认值。
+        return (
+            <section className="admin-image-response-format-editor space-y-3 rounded-lg border border-border p-4">
+                <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <span className="text-sm font-medium">响应格式</span>
+                        <span className="ml-2 text-xs text-foreground/50">response_format</span>
+                    </div>
+                    <Switch aria-label="response_format支持" disabled={disabled} checked={value.supported} onChange={(supported) => onChange({ supported, default: supported ? defaultValue : "auto" })} />
+                </div>
+                <p className="text-xs text-foreground/55">是否向上游发送响应格式；关闭后由上游自动决定</p>
+                {value.supported ? (
+                    <div className="grid gap-1.5 text-xs">
+                        <span>默认值</span>
+                        <SegmentedControl block disabled={disabled} value={defaultValue} options={formatOptions} onChange={(next) => onChange({ supported: true, default: next as ImageResponseFormat })} />
+                    </div>
+                ) : null}
+            </section>
+        );
+    }
     return (
         <div className="admin-image-response-format-editor space-y-2">
             <ParameterField
