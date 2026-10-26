@@ -7,6 +7,50 @@ import (
 	"yingce/backend/internal/model"
 )
 
+func TestReviewRefundRechecksNewMediaCheckpoint(t *testing.T) {
+	for _, field := range []string{"media_recovery_json", "execution_diagnostic_json"} {
+		t.Run(field, func(t *testing.T) {
+			repo, db := newRefundedBillingRecoveryRepository(t)
+			connection, _ := db.DB()
+			t.Cleanup(func() { _ = connection.Close() })
+			if err := db.AutoMigrate(&model.Task{}); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Create(&model.Task{ID: "task", UserID: "user", Status: model.TaskStatusFailed}).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Create(&model.CreditAccount{UserID: "user", ReservedMicrocredits: 100}).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Create(&model.BillingOrder{ID: "order", UserID: "user", TaskID: "task", IdempotencyKey: "order", Status: model.BillingStatusUncertain, AmountMicrocredits: 100}).Error; err != nil {
+				t.Fatal(err)
+			}
+			candidates, err := repo.AutoRefundableBillingOrders(100)
+			if err != nil || len(candidates) != 1 {
+				t.Fatalf("candidates: %+v %v", candidates, err)
+			}
+			value := "encrypted-work"
+			if field == "execution_diagnostic_json" {
+				value = `{"code": "result_persistence_failed"}`
+			}
+			if err := db.Model(&model.Task{}).Where("id = ?", "task").Update(field, value).Error; err != nil {
+				t.Fatal(err)
+			}
+			if changed, err := repo.RefundReviewBillingOrder("order", "auto"); err != nil || changed {
+				t.Fatalf("delivered work refunded: %v %v", changed, err)
+			}
+			candidates, err = repo.AutoRefundableBillingOrders(100)
+			if err != nil || len(candidates) != 0 {
+				t.Fatalf("protected order still scanned: %+v %v", candidates, err)
+			}
+			var account model.CreditAccount
+			if err := db.First(&account, "user_id = ?", "user").Error; err != nil || account.ReservedMicrocredits != 100 {
+				t.Fatalf("balance changed: %+v %v", account, err)
+			}
+		})
+	}
+}
+
 func TestReviewRefundRechecksCandidateAndPreservesManualResolution(t *testing.T) {
 	repo, db := newRefundedBillingRecoveryRepository(t)
 	connection, _ := db.DB()

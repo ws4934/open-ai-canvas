@@ -283,6 +283,7 @@ export function CanvasAppearanceEditor({ value, onChange, disabled, onUploading 
                                 width={Math.round(value.avatarHeight * 0.75)}
                                 height={value.avatarHeight}
                                 reducedMotion={reducedMotion}
+                                renderPriority={1}
                                 fallback={<FluidOrb size={60} color="#7164f6" />}
                                 onReady={() => {
                                     setReadyURL(url);

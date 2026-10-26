@@ -209,7 +209,7 @@
     flex: 1 1 auto;
     grid-template-columns: 38px minmax(0, 1fr) auto;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     min-width: 0;
     padding: 6px 8px 6px 6px;
     border: 0;
@@ -422,7 +422,7 @@
 .workbench-preset-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
 }
 .workbench-preset-chip {
     display: inline-flex;
@@ -540,7 +540,7 @@
 }
 .workbench-reference-add {
     align-content: center;
-    gap: 6px;
+    gap: 8px;
     padding: 6px;
     border: 1px dashed var(--wb-edge-strong);
     background: transparent;
@@ -616,7 +616,7 @@
     right: 0;
     bottom: 0;
     left: 0;
-    padding: 3px;
+    padding: 4px;
     background: var(--wb-danger);
     color: #fff;
     font-size: 11px;
@@ -661,7 +661,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     min-width: 0;
 }
 .workbench-reference-slot-title strong {
@@ -688,7 +688,7 @@
     line-height: 16px;
 }
 .workbench-reference-slot-meta > span + span::before {
-    padding-right: 6px;
+    padding-right: 8px;
     content: "·";
 }
 .workbench-reference-slot .workbench-reference-grid {
@@ -728,7 +728,7 @@
     display: grid;
     grid-template-columns: 34px minmax(0, 1fr);
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     width: 100%;
     min-height: 58px;
     padding: 10px 12px;
@@ -824,7 +824,7 @@
 .workbench-chip-field > div {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
 }
 .workbench-chip-field button {
     min-width: 52px;
@@ -1095,7 +1095,7 @@
     height: 64px;
     margin-bottom: 8px;
     place-items: center;
-    border-radius: 18px;
+    border-radius: 16px;
     background: var(--wb-surface);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
     color: var(--wb-text-soft);
@@ -1658,7 +1658,7 @@
     min-height: 340px;
     place-items: center;
     overflow: hidden;
-    border-radius: 14px;
+    border-radius: 12px;
     background: #141417;
 }
 .workbench-detail-media > video {
@@ -1673,7 +1673,7 @@
 }
 .workbench-detail-info h3 {
     margin: 0;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 650;
 }
 .workbench-detail-info > label {
@@ -1708,7 +1708,7 @@
 .workbench-detail-info dl div {
     display: flex;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
     font-size: 12px;
 }
 .workbench-detail-info dt {

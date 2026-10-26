@@ -1,4 +1,5 @@
-import { App, Button, Space, Tag, Tooltip } from "antd";
+import { App, Button, Space, Tag } from "antd";
+import { AntTooltip as Tooltip } from "@/components/ui/base/tooltip/ant-tooltip";
 import type { ColumnsType } from "antd/es/table";
 import { RefreshCw, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -97,7 +98,7 @@ export default function AgentLessonsPanel() {
             render: (_, record) => (
                 <div className="flex flex-col gap-0.5">
                     <span className="font-medium">{authorLabel(record)}</span>
-                    {record.authorUserId ? <span className="text-[10px] opacity-60">{record.authorUserId}</span> : null}
+                    {record.authorUserId ? <span className="text-[var(--fs-label)] opacity-60">{record.authorUserId}</span> : null}
                 </div>
             ),
         },
@@ -114,7 +115,7 @@ export default function AgentLessonsPanel() {
             render: (value: string, record) => (
                 <div className="flex flex-col gap-0.5">
                     <span className="font-medium">{value}</span>
-                    {record.source ? <span className="text-[10px] opacity-60">来源：{record.source}</span> : null}
+                    {record.source ? <span className="text-[var(--fs-label)] opacity-60">来源：{record.source}</span> : null}
                 </div>
             ),
         },

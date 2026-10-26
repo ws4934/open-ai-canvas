@@ -47,6 +47,9 @@ func (r *Repository) DeleteDetachedResources(resources []model.Resource, deletio
 			if err := New(tx).requireNoFeedbackResourceReferences(resource.UserID, resourceIDs); err != nil {
 				return err
 			}
+			if err := New(tx).requireNoDramaResourceReferences(resource.UserID, resourceIDs); err != nil {
+				return err
+			}
 			var assetDocuments []string
 			if err := tx.Model(&model.Asset{}).Where("user_id = ?", resource.UserID).Pluck("payload_json", &assetDocuments).Error; err != nil {
 				return err

@@ -67,6 +67,11 @@ func (r *Repository) OtherAssetResourceReferences(userID string, excludedAssetID
 		return snapshot, err
 	}
 	snapshot.Direct = append(snapshot.Direct, feedback...)
+	drama, err := r.DramaResourceReferences(userID, nil)
+	if err != nil {
+		return snapshot, err
+	}
+	snapshot.Direct = append(snapshot.Direct, drama...)
 	var assets []model.Asset
 	if err := r.db.Where("user_id = ? AND id NOT IN ?", userID, excludedAssetIDs).Find(&assets).Error; err != nil {
 		return snapshot, err
@@ -142,6 +147,11 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 		return snapshot, err
 	}
 	snapshot.Direct = append(snapshot.Direct, history...)
+	drama, err := r.DramaResourceReferences(userID, resourceIDs)
+	if err != nil {
+		return snapshot, err
+	}
+	snapshot.Direct = append(snapshot.Direct, drama...)
 	var leases []model.CloudAgentResourceLease
 	if err := r.db.Where("user_id = ? AND resource_id IN ? AND expires_at > ?", userID, resourceIDs, time.Now()).Find(&leases).Error; err != nil {
 		return snapshot, err
@@ -472,6 +482,9 @@ func (r *Repository) DeleteAssetsAndResources(userID string, assetIDs []string, 
 				return err
 			}
 			if err := New(tx).requireNoFeedbackResourceReferences(userID, resourceIDs); err != nil {
+				return err
+			}
+			if err := New(tx).requireNoDramaResourceReferences(userID, resourceIDs); err != nil {
 				return err
 			}
 		}

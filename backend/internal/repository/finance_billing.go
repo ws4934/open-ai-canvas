@@ -111,6 +111,23 @@ func (r *Repository) BillingOrdersByTaskIDs(userID string, taskIDs []string) (ma
 
 const billingReviewTimeout = 40 * time.Minute
 
+// AutoRefundableBillingOrders 返回审核队列中可以自动退回的订单。上游已确认生成作品
+// 的订单（任务带作品检查点，或结果保存失败）不在其中：作品可能已经交付或稍后补交付，
+// 自动退款会让平台承担上游费用，同时让用户的“重试保存”失效。
+func (r *Repository) AutoRefundableBillingOrders(limit int) ([]model.BillingOrder, error) {
+	var items []model.BillingOrder
+	err := r.db.Model(&model.BillingOrder{}).
+		Joins("LEFT JOIN tasks ON tasks.id = billing_orders.task_id").
+		Where(
+			"billing_orders.status = ? OR (billing_orders.status = ? AND billing_orders.updated_at < ?) OR (billing_orders.status = ? AND tasks.status IN ?)",
+			model.BillingStatusUncertain, model.BillingStatusRunning, time.Now().Add(-billingReviewTimeout), model.BillingStatusReserved,
+			[]model.TaskStatus{model.TaskStatusFailed, model.TaskStatusCancelled},
+		).
+		Where("tasks.id IS NULL OR (COALESCE(tasks.media_recovery_json, '') = '' AND COALESCE(tasks.execution_diagnostic_json, '') NOT LIKE ?)", `%result_persistence_failed%`).
+		Select("billing_orders.*").Order("billing_orders.created_at desc").Limit(limit).Find(&items).Error
+	return items, err
+}
+
 func (r *Repository) AdminBillingOrders(status string, keyword string, limit int, offset int) ([]model.BillingOrder, int64, error) {
 	var items []model.BillingOrder
 	var total int64
@@ -655,15 +672,22 @@ func (r *Repository) refundBillingOrder(id string, errorText string, reviewOnly 
 			return nil
 		}
 		if reviewOnly {
+			var task model.Task
+			if order.TaskID != "" {
+				taskErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "status", "media_recovery_json", "execution_diagnostic_json").First(&task, "id = ?", order.TaskID).Error
+				if taskErr != nil && !errors.Is(taskErr, gorm.ErrRecordNotFound) {
+					return taskErr
+				}
+			}
+			// The candidate scan can precede a newly saved work checkpoint. Recheck
+			// under the task row lock shared with SaveTaskMediaCheckpoint.
+			if strings.TrimSpace(task.MediaRecoveryJSON) != "" || strings.Contains(task.ExecutionDiagnosticJSON, "result_persistence_failed") {
+				return nil
+			}
 			eligible := order.Status == model.BillingStatusUncertain ||
 				order.Status == model.BillingStatusRunning && order.UpdatedAt.Before(time.Now().Add(-billingReviewTimeout))
 			if order.Status == model.BillingStatusReserved {
-				var count int64
-				if err := tx.Model(&model.Task{}).Where("id = ? AND status IN ?", order.TaskID,
-					[]model.TaskStatus{model.TaskStatusFailed, model.TaskStatusCancelled}).Count(&count).Error; err != nil {
-					return err
-				}
-				eligible = count > 0
+				eligible = task.Status == model.TaskStatusFailed || task.Status == model.TaskStatusCancelled
 			}
 			if !eligible {
 				return nil

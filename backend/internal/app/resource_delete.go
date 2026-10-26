@@ -120,7 +120,7 @@ func (s *Service) deleteUserAssetsWithResources(userID string, ids []string, pur
 		retainedResourceIDs := map[string]struct{}{}
 		for _, reference := range snapshot.Direct {
 			if _, exists := ownedIDSet[reference.ResourceID]; exists {
-				if reference.Kind == "素材" || reference.Kind == "反馈" {
+				if reference.Kind == "素材" || reference.Kind == "反馈" || reference.Kind == "短剧" {
 					retainedResourceIDs[reference.ResourceID] = struct{}{}
 					continue
 				}
@@ -195,7 +195,7 @@ func (s *Service) deleteUserAssetsWithResources(userID string, ids []string, pur
 			return BadAuthRequest("素材仍被画布历史版本引用，已保留文件")
 		}
 		if errors.Is(err, repository.ErrResourceCleanupStillReferenced) {
-			return BadAuthRequest("素材文件仍被反馈引用，已保留文件，请刷新后重试")
+			return BadAuthRequest("素材文件仍被反馈或短剧引用，已保留文件，请刷新后重试")
 		}
 		return fmt.Errorf("素材记录删除失败，请重试：%w", err)
 	}

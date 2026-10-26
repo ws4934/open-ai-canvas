@@ -84,6 +84,16 @@ func TestCanvasAgentActivityIndexed(t *testing.T) {
 func testCanvasAgentHistoryPlan(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if err := db.Transaction(func(tx *gorm.DB) error {
+		// With only about 1,000 narrow rows PostgreSQL may legitimately prefer a
+		// sequential scan. Include ordinary historical generations so this tests
+		// the selective reservation index at realistic mixed-workload cardinality.
+		history := make([]model.Task, 5000)
+		for i := range history {
+			history[i] = model.Task{ID: fmt.Sprintf("ordinary-history-%d", i), UserID: "history", ProjectID: "history-canvas", Type: "canvas_text", Operation: "text", Status: model.TaskStatusSucceeded}
+		}
+		if err := tx.CreateInBatches(history, 100).Error; err != nil {
+			return err
+		}
 		for i := range 1000 {
 			id := fmt.Sprintf("pi-history-%d", i)
 			if err := tx.Create(&model.Task{ID: id, UserID: "history", ProjectID: "history-canvas", Operation: "cloud_agent", Status: model.TaskStatusTextReplay}).Error; err != nil {

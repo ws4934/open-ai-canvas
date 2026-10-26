@@ -130,6 +130,9 @@ func (r *Repository) CreateTaskWithCreditReservation(task *model.Task, order *mo
 		if err := enforceActiveTaskLimit(tx, task.UserID, activeTaskLimit); err != nil {
 			return err
 		}
+		if err := repo.requireDramaTaskBudget(task, order); err != nil {
+			return err
+		}
 		if err := reserveBillingOrder(tx, order); err != nil {
 			return err
 		}
@@ -176,6 +179,9 @@ func (r *Repository) RetryTaskWithBilling(userID string, prepared *model.Task, o
 			return err
 		}
 		if order != nil {
+			if err := New(tx).requireDramaTaskBudget(prepared, order); err != nil {
+				return err
+			}
 			if err := reserveBillingOrder(tx, order); err != nil {
 				return err
 			}
