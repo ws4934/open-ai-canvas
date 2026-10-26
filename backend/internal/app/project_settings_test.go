@@ -4,29 +4,18 @@ import (
 	"testing"
 	"time"
 
+	"yingce/backend/internal/database"
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/repository"
 
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func newProjectSettingsTestService(t *testing.T) (*Service, *gorm.DB) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file:"+newID()+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.AutoMigrate(
-		&model.Project{}, &model.ProjectUnit{}, &model.Resource{}, &model.Asset{}, &model.AssetVersion{}, &model.AssetRepresentation{},
-		&model.CanvasProject{}, &model.StyleProfile{}, &model.ProjectAssetCandidate{}, &model.WorkflowInstance{}, &model.WorkflowStepInstance{},
-		&model.CanvasSnapshot{}, &model.CanvasSnapshotResource{},
-		&model.Shot{}, &model.ShotArtifact{}, &model.VoiceProfile{},
-		&model.Task{}, &model.TaskLog{}, &model.Result{},
-		&model.CreationRun{}, &model.CreationSubmission{},
-		&model.CloudAgentResourceLease{}, &model.Tool{}, &model.WorkbenchTool{},
-		&model.Announcement{}, &model.AnnouncementImageDraft{}, &model.UserFeedback{},
-	); err != nil {
+	db := newSQLiteTestDB(t)
+	// Reference discovery spans all persisted domains, including drama media.
+	if err := database.MigrateSchema(db); err != nil {
 		t.Fatal(err)
 	}
 	return &Service{repo: repository.New(db)}, db
