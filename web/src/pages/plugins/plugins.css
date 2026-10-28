@@ -252,19 +252,6 @@
     margin-top: var(--space-3);
 }
 
-.plugin-section-empty-hint {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 140px;
-    margin-top: var(--space-3);
-    border-radius: var(--plugins-card-radius);
-    border: 1px dashed var(--user-border);
-    background: color-mix(in srgb, var(--foreground) 2%, transparent);
-    color: color-mix(in srgb, var(--foreground) 45%, transparent);
-    font-size: var(--fs-label);
-}
-
 .plugin-card {
     display: flex;
     min-width: 0;
