@@ -55,6 +55,43 @@ func seedMediaTask(t *testing.T, db *gorm.DB, config providerConfig) *model.Task
 	return task
 }
 
+func TestMediaRecoveryKeepsAllImagesInTaskAndListPreview(t *testing.T) {
+	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
+	s, db := newMediaRecoveryTestService(t)
+	picture := mediaTestPNG(t)
+	var downloads atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("unexpected method %s", r.Method)
+		}
+		downloads.Add(1)
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(picture)
+	}))
+	defer server.Close()
+	config := providerConfig{BaseURL: server.URL}
+	task := seedMediaTask(t, db, config)
+	ctx := context.WithValue(withProviderAnalytics(context.Background(), s, *task), mediaExecutionTaskKey{}, *task)
+	result, handled, err := recoverProtocolMedia(ctx, config, "image", []protocol.MediaReference{{URL: server.URL + "/first.png"}, {URL: server.URL + "/second.png"}})
+	if err != nil || !handled {
+		t.Fatalf("recover image outputs: handled=%v err=%v", handled, err)
+	}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task.ResultJSON, task.Status = string(raw), model.TaskStatusSucceeded
+	summary := taskSummaryForOutput(*task)
+	if downloads.Load() != 2 || len(summary.PreviewImages) != 2 || summary.PreviewImages[0] == summary.PreviewImages[1] {
+		t.Fatalf("lost generated images: downloads=%d result=%s previews=%v", downloads.Load(), raw, summary.PreviewImages)
+	}
+	for _, url := range summary.PreviewImages {
+		if !strings.HasPrefix(url, "/api/resources/") || strings.Contains(url, server.URL) {
+			t.Fatalf("preview did not use the persisted resource: %s", url)
+		}
+	}
+}
+
 func TestMediaRecoveryDownloadFailureResumesSameTaskAfterRestart(t *testing.T) {
 	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
 	s, db := newMediaRecoveryTestService(t)

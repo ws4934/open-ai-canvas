@@ -1164,36 +1164,24 @@ func completeCloudAgentMediaNode(repo *repository.Repository, userID, canvasID, 
 		if stringValue(meta["taskId"]) != task.ID {
 			return "", &cloudAgentMediaWritebackError{error: creationConflict("目标节点的任务绑定已变化，未覆盖现有内容"), reason: "task_binding_changed"}
 		}
-		meta["taskStatus"] = string(task.Status)
-		meta["status"] = "error"
-		meta["errorDetails"] = cloudAgentSafeMediaTaskError(task)
 		if task.Status == model.TaskStatusSucceeded {
-			id, _ := taskOutputResource(task.ResultJSON, task.Type)
-			resource, e := repo.ResourceForUser(userID, id)
-			if e != nil || resource.Status != "ready" || !strings.HasPrefix(resource.MimeType, stringValue(node["type"])+"/") {
+			if err := applyCloudAgentMediaOutputs(repo, userID, doc, node, task); err != nil {
+				var writebackErr *cloudAgentMediaWritebackError
+				if !errors.As(err, &writebackErr) || writebackErr.reason != "result_resource_unavailable" {
+					return stringValue(node["id"]), err
+				}
+				meta["taskStatus"] = string(task.Status)
 				meta["status"] = "error"
-				meta["errorDetails"] = "生成结果没有可用的账号资源，未写入媒体地址"
+				meta["errorDetails"] = err.Error()
 				if saveErr := saveCloudAgentDocument(repo, canvas, doc, policy); saveErr != nil {
 					return stringValue(node["id"]), saveErr
 				}
-				return stringValue(node["id"]), &cloudAgentMediaWritebackError{error: BadAuthRequest("生成结果没有可用的账号资源，未写入媒体地址"), reason: "result_resource_unavailable"}
+				return stringValue(node["id"]), err
 			}
-			meta["content"], meta["storageKey"], meta["status"] = resourceFileURL(id), "resource:"+id, "success"
-			// 完成交易已登记的首个产物，与 Agent 回写的首个资源共用身份。
-			assetID := generationMediaAssetID(task.ID, 0)
-			delete(meta, "assetId")
-			if _, err := repo.AssetForUser(userID, assetID); err == nil {
-				meta["assetId"] = assetID
-			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return "", err
-			}
-			meta["naturalWidth"], meta["naturalHeight"] = resource.Width, resource.Height
-			if resource.Width > 0 && resource.Height > 0 {
-				if width, ok := node["width"].(float64); ok && width > 0 {
-					node["height"] = width * float64(resource.Height) / float64(resource.Width)
-				}
-			}
-			delete(meta, "errorDetails")
+		} else {
+			meta["taskStatus"] = string(task.Status)
+			meta["status"] = "error"
+			meta["errorDetails"] = cloudAgentSafeMediaTaskError(task)
 		}
 		return stringValue(node["id"]), saveCloudAgentDocument(repo, canvas, doc, policy)
 	}

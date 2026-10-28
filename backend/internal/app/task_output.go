@@ -36,6 +36,7 @@ type TaskSummary struct {
 	PreviewURL                string                     `json:"previewUrl,omitempty"`
 	PreviewKind               string                     `json:"previewKind,omitempty"`
 	PreviewPosterURL          string                     `json:"previewPosterUrl,omitempty"`
+	PreviewImages             []string                   `json:"previewImages,omitempty"`
 	Attempts                  int                        `json:"attempts"`
 	StartedAt                 *time.Time                 `json:"startedAt"`
 	CompletedAt               *time.Time                 `json:"completedAt"`
@@ -129,6 +130,7 @@ func taskSummaryForOutput(task model.Task) TaskSummary {
 		PreviewURL:                previewURL,
 		PreviewKind:               previewKind,
 		PreviewPosterURL:          previewPosterURL,
+		PreviewImages:             taskImagePreviews(task.ResultJSON),
 		Attempts:                  task.Attempts,
 		StartedAt:                 task.StartedAt,
 		CompletedAt:               task.CompletedAt,
@@ -193,7 +195,23 @@ func taskClientContext(raw string) *TaskClientContext {
 	return context
 }
 
-// 列表只暴露首个可访问媒体地址，避免把完整生成结果和内嵌数据带回前端。
+// 列表只暴露可访问的媒体地址，不携带完整生成结果或内嵌数据。
+func taskImagePreviews(raw string) []string {
+	var payload struct {
+		Images []any `json:"images"`
+	}
+	if json.Unmarshal([]byte(raw), &payload) != nil {
+		return nil
+	}
+	var previews []string
+	for _, image := range payload.Images {
+		if url, kind := findTaskMediaPreview(image, "image"); url != "" && kind == "image" {
+			previews = append(previews, url)
+		}
+	}
+	return previews
+}
+
 func taskMediaPreview(raw string, taskType string) (string, string) {
 	previewURL, previewKind, _ := taskMediaPreviewWithPoster(raw, taskType)
 	return previewURL, previewKind

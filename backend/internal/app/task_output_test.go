@@ -65,6 +65,67 @@ func TestTaskSummaryCarriesSafeFailureReasonsForAllTaskKinds(t *testing.T) {
 	}
 }
 
+func TestTaskSummaryKeepsEveryGeneratedImagePreview(t *testing.T) {
+	task := model.Task{ID: "multi-image", Type: "canvas_image", Status: model.TaskStatusSucceeded, ResultJSON: `{"mode":"image","images":[{"dataUrl":"/api/resources/first/file","url":"/api/resources/first/file"},{"dataUrl":"/api/resources/second/file","url":"/api/resources/second/file"}]}`}
+	encoded, err := json.Marshal(taskSummaryForOutput(task))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var summary struct {
+		PreviewURL    string   `json:"previewUrl"`
+		PreviewImages []string `json:"previewImages"`
+	}
+	if err := json.Unmarshal(encoded, &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.PreviewURL != "/api/resources/first/file" || len(summary.PreviewImages) != 2 || summary.PreviewImages[1] != "/api/resources/second/file" {
+		t.Fatalf("multiple generated images collapsed in summary: %s", encoded)
+	}
+}
+
+func TestTaskImagePreviewsSkipInlineDataAndKeepOrder(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw string
+		want      int
+	}{
+		{"all images", `{"images":[{"url":"/api/resources/first/file"},{"dataUrl":"https://cdn.example.test/second.png"},"/api/resources/third/file"]}`, 3},
+		{"no duplicate url fields", `{"images":[{"url":"/api/resources/first/file","dataUrl":"/api/resources/first/file"}]}`, 1},
+		{"unusable data", `{"images":[{"dataUrl":"data:image/png;base64,AAAA"},{"url":"file:///tmp/private.png"},{"url":"/api/resources/last/file"}]}`, 1},
+		{"video poster is not an image output", `{"video":{"url":"https://cdn.example.test/video.mp4","posterUrl":"https://cdn.example.test/poster.png"}}`, 0},
+		{"malformed", `{`, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := taskImagePreviews(tc.raw); len(got) != tc.want {
+				t.Fatalf("image previews = %v, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWorkbenchTaskListKeepsImagePreviewsAfterDatabaseRead(t *testing.T) {
+	s, db, _, _ := creationTestService(t)
+	admin := &model.User{ID: "multi-image-admin", Role: model.UserRoleAdmin, Status: model.UserStatusActive}
+	if err := db.Create(admin).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateFeatureAvailability(admin, FeatureAvailability{ImageWorkbenchEnabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	task := model.Task{ID: "saved-multi-image", UserID: "user", Type: "canvas_image", WorkbenchKind: "image", Status: model.TaskStatusSucceeded, ResultJSON: `{"images":[{"url":"/api/resources/first/file"},{"url":"/api/resources/second/file"}]}`}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		tasks, err := s.WorkbenchTasks("user", "image", false, 100)
+		if err != nil || len(tasks) != 1 {
+			t.Fatalf("workbench list: tasks=%v err=%v", tasks, err)
+		}
+		if len(tasks[0].PreviewImages) != 2 || tasks[0].PreviewImages[1] != "/api/resources/second/file" {
+			t.Fatalf("reloaded list lost the second image: %+v", tasks[0])
+		}
+	}
+}
+
 func TestTaskSummaryFailureProjectionMatchesDetail(t *testing.T) {
 	for _, tc := range []struct{ name, raw, want string }{
 		{"network", `Post "https://private.example/v1/images": dial tcp 10.0.0.1:443: connect: connection refused`, taskErrorNetworkMessage},

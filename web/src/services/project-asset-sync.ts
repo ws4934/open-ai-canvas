@@ -1,6 +1,7 @@
 import { canvasNodeToAsset, declaredCanvasNodeAssetCategory, findCanvasNodeAsset, requiresMaterializedCanvasAsset, type CanvasAssetSource } from "@/lib/canvas/canvas-node-asset";
 import { canvasVideoAssetPreviewUrl } from "@/lib/canvas/canvas-media-preview";
 import { readImageMeta } from "@/lib/image-utils";
+import { generationTaskImageUrls } from "@/lib/generation-task-media";
 import { parseBackendGenerationResult, type BackendGenerationResult } from "@/services/api/generation-task";
 import { ApiError } from "@/services/api/request";
 import { linkProjectAsset, moveProjectAsset, updateProjectAssetCategory } from "@/services/api/projects";
@@ -350,8 +351,9 @@ async function syncAssetToProject(assetId: string, domainProjectId: string, cate
 
 function generationTaskResult(task: GenerationTask): BackendGenerationResult {
     if (task.resultJson) return parseBackendGenerationResult(task);
-    if (!task.previewUrl) return {};
-    return task.previewKind === "video" ? { mode: "video", video: { dataUrl: task.previewUrl } } : { mode: "image", images: [{ dataUrl: task.previewUrl }] };
+    if (task.previewKind === "video" || task.type.includes("video")) return task.previewUrl ? { mode: "video", video: { dataUrl: task.previewUrl } } : {};
+    const images = generationTaskImageUrls(task);
+    return images.length ? { mode: "image", images: images.map((dataUrl) => ({ dataUrl })) } : {};
 }
 
 export function projectGenerationTaskResult(task: GenerationTask, result?: BackendGenerationResult): GenerationTask {
@@ -380,11 +382,26 @@ export function projectGenerationTaskResult(task: GenerationTask, result?: Backe
               ]
             : (task.outputs?.map((output) => ({ ...output })) ?? []);
 
+    const outputsByIndex = new Map(task.outputs?.map((output) => [output.outputIndex, output]));
+    const projectedOutputs = outputs.map((output) => {
+        const previous = outputsByIndex.get(output.outputIndex);
+        const sameArtifact = !previous?.providerArtifactRef || !output.providerArtifactRef || previous.providerArtifactRef === output.providerArtifactRef;
+        return previous?.mediaType === output.mediaType && sameArtifact ? { ...previous, ...output } : output;
+    });
+    // 摘要不是完整产物清单，不能用缺失的预览删掉已知输出或其素材绑定。
+    if (!result && !task.resultJson) {
+        for (const previous of task.outputs || []) {
+            if (!projectedOutputs.some((output) => output.outputIndex === previous.outputIndex)) projectedOutputs.push({ ...previous });
+        }
+        projectedOutputs.sort((left, right) => left.outputIndex - right.outputIndex);
+    }
+    const inferredResult = !task.resultJson && (projectedResult.images?.length || projectedResult.video || projectedResult.audio) ? projectedResult : undefined;
+    const resultToStore = result ?? inferredResult;
     return {
         ...task,
-        ...(result ? { resultJson: JSON.stringify(result) } : {}),
-        outputs,
-        ...(task.status === "succeeded" && outputs.length && !outputs.every((output) => output.materializedAssetId) ? { resultState: "PENDING_MATERIALIZATION" as const } : {}),
+        ...(resultToStore ? { resultJson: JSON.stringify(resultToStore) } : {}),
+        outputs: projectedOutputs,
+        ...(task.status === "succeeded" && projectedOutputs.length && !projectedOutputs.every((output) => output.materializedAssetId) ? { resultState: "PENDING_MATERIALIZATION" as const } : {}),
     };
 }
 

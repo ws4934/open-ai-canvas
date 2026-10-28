@@ -30,6 +30,8 @@ import { useUserStore } from "@/stores/use-user-store";
 
 import { workbenchCategoryLabel, workbenchCategories } from "./workbench-catalog";
 import { missingWorkbenchInput, workbenchPromptRequired, workbenchVideoOperation } from "./workbench-input";
+import { WorkbenchImageGallery } from "./workbench-image-gallery";
+import { generationTaskImageUrls, generationTaskPreviewUrl } from "@/lib/generation-task-media";
 import "./workbench.css";
 import "./workbench-count-picker.css";
 
@@ -107,16 +109,6 @@ export function workbenchTaskSnapshot(task: GenerationTask): WorkbenchTaskSnapsh
         parameters: rawParameters as Record<string, unknown>,
         references,
     };
-}
-
-function taskPreview(task: GenerationTask) {
-    if (task.previewUrl) return task.previewUrl;
-    try {
-        const result = task.resultJson ? (JSON.parse(task.resultJson) as { images?: Array<{ url?: string; dataUrl?: string }>; video?: { url?: string; dataUrl?: string } }) : null;
-        return task.previewKind === "video" ? result?.video?.url || result?.video?.dataUrl || "" : result?.images?.[0]?.url || result?.images?.[0]?.dataUrl || "";
-    } catch {
-        return "";
-    }
 }
 
 function elapsedLabel(task: GenerationTask) {
@@ -846,7 +838,10 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         return isModelIdLike(display) ? "生成模型" : display;
     };
     const resultTask = resultHidden ? null : activeTask || tasks.find((task) => task.status === "succeeded") || null;
-    const resultUrl = resultTask ? taskPreview(resultTask) : "";
+    const resultUrl = resultTask ? generationTaskPreviewUrl(resultTask) : "";
+    const resultImages = resultTask ? generationTaskImageUrls(resultTask) : [];
+    const detailUrl = detailTask ? generationTaskPreviewUrl(detailTask) : "";
+    const detailImages = detailTask ? generationTaskImageUrls(detailTask) : [];
     const normalizedQuery = query.trim().toLowerCase();
     // 主舞台已展示的任务不再在作品网格里重复出现。
     const galleryTasks = [...activeTasks, ...historyTasks].filter((task) => task.id !== resultTask?.id && (!normalizedQuery || task.prompt.toLowerCase().includes(normalizedQuery))).slice(0, 60);
@@ -1360,16 +1355,18 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                 ) : resultTask.status === "succeeded" && resultUrl ? (
                                     <div className="workbench-result-media">
                                         {resultTask.previewKind === "video" || kind === "video" ? (
-                                            <video src={resultUrl} controls playsInline />
+                                            <>
+                                                <video src={resultUrl} controls playsInline />
+                                                <div className="workbench-result-caption">
+                                                    <span>{taskModelLabel(resultTask)}</span>
+                                                    <Button size="small" icon={<Expand className="size-3.5" />} onClick={() => void openDetail(resultTask)}>
+                                                        查看详情
+                                                    </Button>
+                                                </div>
+                                            </>
                                         ) : (
-                                            <MediaPreview src={resultUrl} kind="image" alt="生成结果" className="size-full object-contain" fallbackLabel="结果暂不可用" />
+                                            <WorkbenchImageGallery key={resultTask.id} images={resultImages} caption={taskModelLabel(resultTask)} onOpen={() => void openDetail(resultTask)} />
                                         )}
-                                        <div className="workbench-result-caption">
-                                            <span>{taskModelLabel(resultTask)}</span>
-                                            <Button size="small" icon={<Expand className="size-3.5" />} onClick={() => void openDetail(resultTask)}>
-                                                查看详情
-                                            </Button>
-                                        </div>
                                     </div>
                                 ) : (
                                     <div className={`workbench-result-error is-${resultTask.status}`} role={resultTask.status === "failed" ? "alert" : undefined}>
@@ -1426,12 +1423,12 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             >
                 {detailTask ? (
                     <div className="workbench-detail-grid">
-                        <div className={`workbench-detail-media${taskPreview(detailTask) ? "" : " is-empty"}`}>
-                            {taskPreview(detailTask) ? (
+                        <div className={`workbench-detail-media${detailUrl ? "" : " is-empty"}`}>
+                            {detailUrl ? (
                                 detailTask.previewKind === "video" || kind === "video" ? (
-                                    <video src={taskPreview(detailTask)} controls playsInline />
+                                    <video src={detailUrl} controls playsInline />
                                 ) : (
-                                    <MediaPreview src={taskPreview(detailTask)} kind="image" alt="生成结果" className="size-full object-contain" />
+                                    <WorkbenchImageGallery key={detailTask.id} images={detailImages} />
                                 )
                             ) : (
                                 <div className="workbench-guide-empty">{displayTaskState(detailTask)}</div>
@@ -1697,7 +1694,8 @@ function ReferenceCard({ reference, kind, onRemove, onRoleChange }: { reference:
 }
 
 function TaskTile({ task, kind, modelLabel, busy, onOpen, onCancel, onRetry }: { task: GenerationTask; kind: WorkbenchKind; modelLabel: string; busy: boolean; onOpen: () => void; onCancel?: () => void; onRetry?: () => void }) {
-    const url = taskPreview(task);
+    const url = generationTaskPreviewUrl(task);
+    const images = generationTaskImageUrls(task);
     const pending = task.status === "queued" || task.status === "running";
     const video = task.previewKind === "video" || kind === "video";
     return (
@@ -1727,6 +1725,7 @@ function TaskTile({ task, kind, modelLabel, busy, onOpen, onCancel, onRetry }: {
                         </span>
                     )}
                     {pending ? <span className="workbench-tile-progress" style={{ width: `${Math.max(8, task.progress || 0)}%` }} /> : null}
+                    {task.status === "succeeded" && images.length > 1 ? <span className="workbench-tile-count">{images.length} 张</span> : null}
                 </span>
                 <span className="workbench-tile-copy">
                     <strong>{task.prompt || modelLabel}</strong>
