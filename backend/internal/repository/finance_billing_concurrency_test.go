@@ -50,7 +50,7 @@ func newBillingConcurrencyRepository(t *testing.T) (*Repository, *gorm.DB, strin
 	connection, _ := db.DB()
 	connection.SetMaxOpenConns(8)
 	t.Cleanup(func() { _ = connection.Close() })
-	if err := db.AutoMigrate(&model.CreditAccount{}, &model.BillingOrder{}, &model.CreditLedgerEntry{}, &model.Task{}); err != nil {
+	if err := db.AutoMigrate(&model.CreditAccount{}, &model.BillingOrder{}, &model.CreditLedgerEntry{}, &model.Task{}, &model.DramaProduction{}, &model.CanvasProject{}); err != nil {
 		t.Fatal(err)
 	}
 	return New(db), db, schema

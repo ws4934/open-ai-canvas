@@ -1,7 +1,7 @@
 import { createClientUUID } from "@/lib/client-id";
 import { App, Button, Input, InputNumber, Modal, Progress, Segmented, Select, Spin, Switch } from "antd";
 import { AntTooltip as Tooltip } from "@/components/ui/base/tooltip/ant-tooltip";
-import { Check, Camera, ChevronDown, ChevronUp, Clapperboard, Expand, FileImage, ImagePlus, Images, LoaderCircle, Mic, Palette, RefreshCw, RotateCcw, Search, ShoppingBag, Sparkles, Upload, UserRound, Video, X } from "lucide-react";
+import { ArrowUp, Check, Camera, ChevronDown, ChevronUp, Clapperboard, Expand, FileImage, ImagePlus, Images, LoaderCircle, Mic, Palette, RefreshCw, RotateCcw, Search, ShoppingBag, Upload, UserRound, Video, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
@@ -154,7 +154,7 @@ function toolVisual(tool: WorkbenchTool, kind: WorkbenchKind) {
     if (text.includes("场景") || text.includes("氛围") || text.includes("背景")) return { icon: <Images />, tone: "scene", label: "场景与氛围" };
     if (text.includes("风格") || text.includes("海报") || text.includes("视觉")) return { icon: <Palette />, tone: "style", label: "风格与视觉" };
     if (text.includes("主图") || text.includes("商品") || text.includes("电商") || text.includes("白底")) return { icon: <ShoppingBag />, tone: "product", label: "商品出品" };
-    return { icon: kind === "image" ? <Camera /> : <Sparkles />, tone: "creative", label: "创意生成" };
+    return { icon: kind === "image" ? <Camera /> : <Clapperboard />, tone: "creative", label: "创意生成" };
 }
 
 export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
@@ -341,7 +341,9 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                 audioCount: references.filter((reference) => reference.kind === "audio").length,
                 characterCount: 0,
             },
-            ...(kind === "image" ? { imageSize: ratio, options: { size: ratio, quality, ...(imageProfile?.resolution.supported ? { imageResolution } : {}), count: selectedCount } } : { videoSeconds: seconds, options: { size: ratio, videoSeconds: Number(seconds), vquality: videoQuality } }),
+            ...(kind === "image"
+                ? { imageSize: ratio, options: { size: ratio, quality, ...(imageProfile?.resolution.supported ? { imageResolution } : {}), count: selectedCount } }
+                : { videoSeconds: seconds, options: { size: ratio, videoSeconds: Number(seconds), vquality: videoQuality } }),
         }),
         [capability, imageProfile, imageResolution, kind, prompt, quality, ratio, references, seconds, selectedCount, videoQuality],
     );
@@ -974,7 +976,15 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             ) : (
                 <div className="workbench-tool-grid">
                     {filteredTools.map((item) => (
-                        <ToolCard key={item.id} tool={item} selected={item.id === tool?.id} onClick={() => { chooseTool(item); setToolLibraryOpen(false); }} />
+                        <ToolCard
+                            key={item.id}
+                            tool={item}
+                            selected={item.id === tool?.id}
+                            onClick={() => {
+                                chooseTool(item);
+                                setToolLibraryOpen(false);
+                            }}
+                        />
                     ))}
                     {!filteredTools.length ? <div className="workbench-picker-state">没有找到匹配的创作工具</div> : null}
                 </div>
@@ -1261,7 +1271,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                         disabled={(promptRequired && !prompt.trim()) || Boolean(missingInput) || !selectedModel || references.some((reference) => reference.uploading || Boolean(reference.error))}
                                         onClick={() => void submit()}
                                     >
-                                        {busy ? null : <Sparkles />}
+                                        {busy ? null : <ArrowUp />}
                                         <span>{kind === "image" ? "生成图片" : "生成视频"}</span>
                                     </Button>
                                 </div>
@@ -1500,7 +1510,7 @@ function CountPicker({ value, max, onChange }: { value: string; max: number; onC
 
     const handleStepUp = (e: React.MouseEvent) => {
         e.stopPropagation();
-        const base = current >= 4 ? current : (parseInt(draftValue, 10) || 4);
+        const base = current >= 4 ? current : parseInt(draftValue, 10) || 4;
         const next = Math.min(limit, base + 1);
         setDraftValue(String(next));
         onChange(String(next));
@@ -1508,7 +1518,7 @@ function CountPicker({ value, max, onChange }: { value: string; max: number; onC
 
     const handleStepDown = (e: React.MouseEvent) => {
         e.stopPropagation();
-        const base = current >= 4 ? current : (parseInt(draftValue, 10) || 4);
+        const base = current >= 4 ? current : parseInt(draftValue, 10) || 4;
         const next = Math.max(1, base - 1);
         setDraftValue(String(next));
         onChange(String(next));
@@ -1529,13 +1539,13 @@ function CountPicker({ value, max, onChange }: { value: string; max: number; onC
             e.currentTarget.blur();
         } else if (e.key === "ArrowUp") {
             e.preventDefault();
-            const base = current >= 4 ? current : (parseInt(draftValue, 10) || 4);
+            const base = current >= 4 ? current : parseInt(draftValue, 10) || 4;
             const next = Math.min(limit, base + 1);
             setDraftValue(String(next));
             onChange(String(next));
         } else if (e.key === "ArrowDown") {
             e.preventDefault();
-            const base = current >= 4 ? current : (parseInt(draftValue, 10) || 4);
+            const base = current >= 4 ? current : parseInt(draftValue, 10) || 4;
             const next = Math.max(1, base - 1);
             setDraftValue(String(next));
             onChange(String(next));
@@ -1547,21 +1557,12 @@ function CountPicker({ value, max, onChange }: { value: string; max: number; onC
             <span>生成张数</span>
             <div>
                 {Array.from({ length: Math.min(3, limit) }, (_, index) => index + 1).map((item) => (
-                    <button
-                        key={item}
-                        type="button"
-                        aria-pressed={current === item}
-                        className={current === item ? "is-active" : ""}
-                        onClick={() => onChange(String(item))}
-                    >
+                    <button key={item} type="button" aria-pressed={current === item} className={current === item ? "is-active" : ""} onClick={() => onChange(String(item))}>
                         {item}
                     </button>
                 ))}
                 {limit >= 4 ? (
-                    <div
-                        className={`workbench-count-stepper ${isSelected ? "is-active" : ""}`}
-                        onClick={handleSelectStepper}
-                    >
+                    <div className={`workbench-count-stepper ${isSelected ? "is-active" : ""}`} onClick={handleSelectStepper}>
                         <input
                             type="text"
                             inputMode="numeric"
@@ -1578,26 +1579,10 @@ function CountPicker({ value, max, onChange }: { value: string; max: number; onC
                             }}
                         />
                         <div className="workbench-count-stepper-controls">
-                            <button
-                                type="button"
-                                tabIndex={-1}
-                                onClick={handleStepUp}
-                                disabled={current >= limit && isSelected}
-                                className="workbench-count-stepper-btn"
-                                title="增加 1 张"
-                                aria-label="增加 1 张"
-                            >
+                            <button type="button" tabIndex={-1} onClick={handleStepUp} disabled={current >= limit && isSelected} className="workbench-count-stepper-btn" title="增加 1 张" aria-label="增加 1 张">
                                 <ChevronUp className="size-2.5" />
                             </button>
-                            <button
-                                type="button"
-                                tabIndex={-1}
-                                onClick={handleStepDown}
-                                disabled={current <= 1 && isSelected}
-                                className="workbench-count-stepper-btn"
-                                title="减少 1 张"
-                                aria-label="减少 1 张"
-                            >
+                            <button type="button" tabIndex={-1} onClick={handleStepDown} disabled={current <= 1 && isSelected} className="workbench-count-stepper-btn" title="减少 1 张" aria-label="减少 1 张">
                                 <ChevronDown className="size-2.5" />
                             </button>
                         </div>

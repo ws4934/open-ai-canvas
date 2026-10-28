@@ -19,6 +19,10 @@
     overflow: hidden;
 }
 
+:is(.workbench-shell, .workbench-picker-modal, .workbench-settings-modal, .workbench-detail-modal) {
+    --user-primary: var(--user-accent, var(--workspace-accent));
+}
+
 .workbench-shell,
 .workbench-picker-modal,
 .workbench-detail-modal {

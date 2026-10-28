@@ -101,6 +101,9 @@ func TestDramaResourceWritesRejectForeignMissingAndUnreadyResources(t *testing.T
 		if err := s.repo.CreateDramaTake(&model.DramaTake{ID: "take-" + id, ProjectID: project, OwnerID: "segment", ResourceID: id}); err == nil {
 			t.Fatalf("invalid take resource accepted: %s", id)
 		}
+		if applied, _, err := s.repo.AdoptDramaSegmentVideo(model.DramaSegment{ID: "segment", ProjectID: project, EpisodeID: "episode", Revision: 1}, map[string]any{"video_resource_id": id}, false); err == nil || applied {
+			t.Fatalf("canvas adoption accepted invalid resource %s: applied=%t err=%v", id, applied, err)
+		}
 		for name, update := range map[string]func() (bool, error){
 			"cast": func() (bool, error) {
 				return s.repo.UpdateDramaCastIf("cast", []string{model.DramaMediaRunning}, map[string]any{"image_resource_id": id})

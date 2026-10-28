@@ -97,6 +97,10 @@ func TestDramaResourcesRemainReferencedUntilProjectReferencesRemoved(t *testing.
 	if err != nil || len(refs) != 5 {
 		t.Fatalf("drama references: %+v %v", refs, err)
 	}
+	allRefs, err := s.repo.DramaResourceReferences("owner", nil)
+	if err != nil || len(allRefs) != 5 {
+		t.Fatalf("full reference inventory lost drama resources: %+v %v", allRefs, err)
+	}
 	refs, err = s.repo.DramaResourceReferences("other", []string{resource.ID})
 	if err != nil || len(refs) != 0 {
 		t.Fatalf("cross-user references: %+v %v", refs, err)

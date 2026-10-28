@@ -15,6 +15,7 @@ test("image/video workbench retains two columns and the unified results gallery 
     expect(page).toContain('aria-label="作品"');
     expect(page).toContain('aria-label="历史作品"');
     expect(page).toContain("switchToolPrompt(next)");
+    expect(page.match(/className="workbench-submit"/g)).toHaveLength(1);
     expect(css).toMatch(/\.workbench-columns\s*\{[^}]*grid-template-columns:\s*minmax\(360px, 420px\) minmax\(0, 1fr\)/);
     expect(css).not.toContain(".workbench-history-column");
 });
@@ -53,4 +54,21 @@ test("admin feedback and memory lists retain the shared toolbar and table surfac
         expect(page).toContain("toolbar={");
         expect(page).toContain("<AdminSearchInput");
     }
+});
+
+test("docked Agent layout retains the admin boundary and bound-run controls", () => {
+    const layout = source("layouts/user-layout.tsx");
+    expect(layout).toContain("adminWorkspace ? (");
+    expect(layout).toContain("paddingRight: agentDock.width");
+    const panel = source("components/canvas/canvas-cloud-agent-panel.tsx");
+    expect(panel).toContain("const otherAgentRunning = !running && Boolean(canvasAgent && canvasAgent.runId !== run?.id)");
+    expect(panel).toContain("run?.canvasId === canvasId ? approvalTargetGenerating : undefined");
+    expect(panel).toContain('data-agent-resize="dock"');
+});
+
+test("debounced Agent cache writes keep account and conversation scope guards", () => {
+    const panel = source("components/canvas/canvas-cloud-agent-panel.tsx");
+    expect(panel).toContain("conversationAutosaveRef.current = { timer: setTimeout(save, delay), save, since }");
+    expect(panel).toContain("if (!accountIsCurrent() || !isCurrentScope(activeConversationId)) return");
+    expect(panel).toMatch(/\(\) => \(canvasId \? \(?canvasEditLeases\.agent\(canvasId\) \?\? null\)? : null\)/);
 });

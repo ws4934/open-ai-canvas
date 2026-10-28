@@ -111,6 +111,12 @@ func (s *Service) deleteUserAssetsWithResources(userID string, ids []string, pur
 		if deleteReferencedResources {
 			// 彻底删除保留其他素材和反馈复用的资源，不扫描任务和画布。
 			snapshot, snapshotErr = s.repo.OtherAssetResourceReferences(userID, assetIDs)
+			if snapshotErr == nil {
+				// 短剧表直接持有的媒体同样保留：素材记录只是它在素材库里的入口。
+				var dramaReferences []repository.ResourceDirectReference
+				dramaReferences, snapshotErr = s.repo.DramaResourceReferences(userID, ownedIDs)
+				snapshot.Direct = append(snapshot.Direct, dramaReferences...)
+			}
 		} else {
 			snapshot, snapshotErr = s.repo.ResourceReferenceSnapshotExcludingAssets(userID, assetIDs, ownedIDs)
 		}
@@ -120,7 +126,7 @@ func (s *Service) deleteUserAssetsWithResources(userID string, ids []string, pur
 		retainedResourceIDs := map[string]struct{}{}
 		for _, reference := range snapshot.Direct {
 			if _, exists := ownedIDSet[reference.ResourceID]; exists {
-				if reference.Kind == "素材" || reference.Kind == "反馈" || reference.Kind == "短剧" {
+				if reference.Kind == "素材" || reference.Kind == "反馈" || reference.Kind == repository.DramaResourceReferenceKind {
 					retainedResourceIDs[reference.ResourceID] = struct{}{}
 					continue
 				}

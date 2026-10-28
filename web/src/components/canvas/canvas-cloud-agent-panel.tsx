@@ -1,7 +1,8 @@
 import { createClientUUID } from "@/lib/client-id";
 import { useAgentConversationScope } from "@/hooks/use-agent-conversation-scope";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
-import { Button } from "antd";
+import { App, Button } from "antd";
+import { appQueryClient } from "@/lib/query-client";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { MoveDiagonal2 } from "lucide-react";
 import { saveAs } from "file-saver";
@@ -37,7 +38,9 @@ import { agentApprovalMatchesSettings, agentApprovalTargetGenerating } from "@/l
 import { appendAgentPromptPrefill } from "@/lib/canvas/agent-prompt-prefill";
 import type { CanvasNodeData } from "@/types/canvas";
 import type { AgentMediaSettings } from "@/services/api/agent";
-import { addSkill, listAddedSkills, listSkillLibraryCategories, listSkills, listSkillPresets, type Skill, type SkillCategory, type SkillLibraryCategory, type SkillPreset } from "@/services/api/skills";
+import { addSkill, listAddedSkills, listSkillLibraryCategories, listSkills, listSkillPresets, setSkillAgentMode, type Skill, type SkillAgentMode, type SkillCategory, type SkillLibraryCategory, type SkillPreset } from "@/services/api/skills";
+import { SkillRecommendationsModal } from "@/components/skills/skill-recommendations-modal";
+import { reconcileSkillSelection } from "@/services/skill-runtime";
 import {
     clearCloudAgentPendingSubmission,
     cloudAgentConversationServerId,
@@ -69,6 +72,7 @@ import { CanvasAgentSkillLibraryModal } from "./canvas-agent-skill-library-modal
 import { useSkillCuration, curationQuery } from "@/components/skills/skill-curation-browser";
 import { CanvasCloudAgentSettings, type AgentContextKey } from "./canvas-cloud-agent-settings";
 import { useAgentPanelLayout } from "./use-agent-panel-layout";
+import { useAgentPanelDock } from "./use-agent-panel-dock";
 import "./canvas-cloud-agent.css";
 import { appendAgentError, appendUniqueMessage, applyAgentEvent, positiveNumber, type ApprovalState } from "./canvas-cloud-agent-events";
 import { AgentContextRing, AgentConversation, AgentHeader, AgentHistory, AgentLauncher, ComposerControls } from "./canvas-cloud-agent-panel-parts";
@@ -84,6 +88,8 @@ function approvalStateFromRun(nextRun: AgentRun | null): ApprovalState | null {
 }
 
 const EMPTY_IDS: string[] = [];
+const CONVERSATION_AUTOSAVE_DELAY_MS = 600;
+const CONVERSATION_AUTOSAVE_MAX_WAIT_MS = 3000;
 const EMPTY_REFERENCES: CanvasResourceReference[] = [];
 
 /**
@@ -92,19 +98,19 @@ const EMPTY_REFERENCES: CanvasResourceReference[] = [];
  * 离开画布后下一轮不再携带画布 ID（后端只开放无画布工具）。
  */
 export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
-    const canvasContext = useGlobalAgentStore((state) => state.canvas);
+    // 只订阅渲染要用的字段。画布每次选中、拖动或编辑都会重发上下文；订阅整份会让面板和全部消息跟着重渲染。
+    // 选中节点只在发送时读取，审批目标节点状态只在有审批时订阅（见 approvalTargetGenerating）。
+    const canvasId = useGlobalAgentStore((state) => state.canvas?.canvasId ?? "");
+    const domainProjectId = useGlobalAgentStore((state) => state.canvas?.domainProjectId);
+    const nodeCount = useGlobalAgentStore((state) => state.canvas?.nodeCount ?? 0);
+    const references = useGlobalAgentStore((state) => state.canvas?.references ?? EMPTY_REFERENCES);
+    const prefillRequest = useGlobalAgentStore((state) => state.canvas?.prefillRequest ?? null);
+    const onFocusNode = useGlobalAgentStore((state) => state.canvas?.onFocusNode);
     const open = useGlobalAgentStore((state) => state.open);
     const onOpen = useGlobalAgentStore((state) => state.openAgent);
     const onCollapse = useGlobalAgentStore((state) => state.closeAgent);
-    const canvasId = canvasContext?.canvasId ?? "";
-    const domainProjectId = canvasContext?.domainProjectId;
-    const nodeCount = canvasContext?.nodeCount ?? 0;
-    const selectedNodeIds = canvasContext?.selectedNodeIds ?? EMPTY_IDS;
-    const references = canvasContext?.references ?? EMPTY_REFERENCES;
-    const prefillRequest = canvasContext?.prefillRequest ?? null;
-    const onFocusNode = canvasContext?.onFocusNode;
-    const canvasNodes = canvasContext?.canvasNodes;
-    const runningNodeId = canvasContext?.runningNodeId;
+    const setDocked = useGlobalAgentStore((state) => state.setDocked);
+    const dock = useAgentPanelDock();
     const userId = useUserStore((state) => state.user?.id);
     const accountScope = getActiveUserScope();
     const accountIsCurrent = () => getActiveUserScope() === accountScope && useUserStore.getState().user?.id === userId;
@@ -129,7 +135,10 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const [profileSaving, setProfileSaving] = useState(false);
     const [profileError, setProfileError] = useState<string>();
     const profileRequestRef = useRef(0);
+    const { message: appMessage } = App.useApp();
     const [skills, setSkills] = useState<Skill[]>([]);
+    // 读到技能库后才允许剔除失效技能；读失败保留已选。
+    const [skillCatalogReady, setSkillCatalogReady] = useState(false);
     const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
     const [marketSkills, setMarketSkills] = useState<Skill[]>([]);
     const [skillSearch, setSkillSearch] = useState("");
@@ -141,12 +150,15 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const [libraryCategories, setLibraryCategories] = useState<SkillLibraryCategory[]>([]);
     const [skillTag, setSkillTag] = useState("all");
     const [skillsOpen, setSkillsOpen] = useState(false);
+    const [skillRecommendationsOpen, setSkillRecommendationsOpen] = useState(false);
     const curationState = useSkillCuration(skillsOpen);
     const [platformCategory, setPlatformCategory] = useState("");
     const skillBrowseKey = JSON.stringify([userId, skillTag, debouncedSkillSearch, platformCategory, curationState.curation?.revision, curationState.curation?.enabled]);
     const skillBrowseKeyRef = useRef(skillBrowseKey);
     skillBrowseKeyRef.current = skillBrowseKey;
-    useEffect(() => { if (curationState.curation?.enabled) setSkillTag("all"); }, [curationState.curation?.enabled]);
+    useEffect(() => {
+        if (curationState.curation?.enabled) setSkillTag("all");
+    }, [curationState.curation?.enabled]);
     const [busy, setBusy] = useState(false);
     const [approvalSubmitting, setApprovalSubmitting] = useState(false);
     const [undoStates, setUndoStates] = useState<Record<string, AgentCanvasUndoState>>({});
@@ -155,6 +167,9 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const [stopping, setStopping] = useState(false);
     const [withdrawingInterjectionId, setWithdrawingInterjectionId] = useState<string | null>(null);
     const [approval, setApproval] = useState<ApprovalState | null>(null);
+    const approvalDetail = approval?.detail;
+    // 选择器返回节点对象本身：没有审批或目标节点没变时引用不变，不会触发重渲染。
+    const approvalTargetGenerating = useGlobalAgentStore((state) => (approvalDetail ? agentApprovalTargetGenerating(approvalDetail, state.canvas?.canvasNodes, state.canvas?.runningNodeId) : undefined));
     const [permissionMode, setPermissionMode] = useState<AgentPermissionMode>("request_approval");
     const [contextScope, setContextScope] = useState<AgentContextKey[]>(["canvas"]);
     const [maxCredits, setMaxCredits] = useState("200");
@@ -177,6 +192,14 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const cloudRunTransitionRef = useRef<string | null>(null);
     const historyRestoreScope = useRef("");
     const hydratedAccount = useRef("");
+    const conversationAutosaveRef = useRef<{ timer: ReturnType<typeof setTimeout>; save: () => void; since: number } | null>(null);
+    // 显式保存的快照总是更新；先丢掉还没写的旧快照，避免它晚到时覆盖（例如把刚删除的对话写回去）。
+    const cancelConversationAutosave = () => {
+        const pending = conversationAutosaveRef.current;
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        conversationAutosaveRef.current = null;
+    };
     const [planMinimized, setPlanMinimized] = useState(false);
     const planItems = useMemo(() => latestAgentPlanItems(messages), [messages]);
     const planTerminal = useMemo(() => latestAgentPlanTerminal(messages), [messages]);
@@ -187,7 +210,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const presetApplyingRef = useRef<string | null>(null);
     // 连接器条默认展示，关闭后本次会话内不再显示。
     const [connectorsVisible, setConnectorsVisible] = useState(true);
-    const panelLayout = useAgentPanelLayout();
+    const panelLayout = useAgentPanelLayout(dock);
     const lastSeqRef = useRef(0);
     const replayCursorRef = useRef({ runId: "", seq: 0 });
     const canvasSyncRef = useRef<ReturnType<typeof createAgentCanvasSync> | null>(null);
@@ -214,16 +237,26 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const conversationScope = activeConversationId;
     const { currentScope, isCurrentScope } = useAgentConversationScope(conversationScope);
     const running = Boolean(run?.cleanupPending) || run?.status === "running" || run?.status === "queued" || run?.status === "waiting_approval";
-    useSyncExternalStore(canvasEditLeases.subscribe, canvasEditLeases.snapshot, () => 0);
-    const canvasAgent = canvasId ? canvasEditLeases.agent(canvasId) : null;
-    // Another canvas can block a new turn, never control of the already-bound run.
+    // 只订阅本画布的 Agent 活动。租约每次续期、保存确认都会通知；按整体版本号订阅会让面板跟着画布编辑反复重渲染。
+    // agent() 在内容不变时返回同一个对象，useSyncExternalStore 据此跳过渲染。
+    const canvasAgent = useSyncExternalStore(
+        canvasEditLeases.subscribe,
+        () => (canvasId ? (canvasEditLeases.agent(canvasId) ?? null) : null),
+        () => null,
+    );
+    // A different canvas can block a new turn, never control of the bound run.
     const otherAgentRunning = !running && Boolean(canvasAgent && canvasAgent.runId !== run?.id);
-    useEffect(() => () => { conversationLoadControllerRef.current?.abort(); }, []);
+    useEffect(
+        () => () => {
+            conversationLoadControllerRef.current?.abort();
+        },
+        [],
+    );
     const cloudLiveState = useRef({ activeConversationId, run, prompt, messages, busy, running, approvalSubmitting, canvasId, pendingHydrated });
     cloudLiveState.current = { activeConversationId, run, prompt, messages, busy, running, approvalSubmitting, canvasId, pendingHydrated };
     const canvasCloudConversation = useMemo(() => canvasCloudAgentConversation(conversations, canvasId, canvasAgent?.runId), [conversations, canvasId, canvasAgent?.runId]);
     const canvasCloudConversationIsCurrent = Boolean(canvasCloudConversation && (canvasCloudConversation.id === activeConversationId || cloudAgentConversationServerId(canvasCloudConversation) === run?.conversationId));
-    const restoredModelResolution = useMemo(() => restoredModel ? resolveCloudAgentModel(restoredModel, selectableModelsByCapability(config, "text")) : null, [config, restoredModel]);
+    const restoredModelResolution = useMemo(() => (restoredModel ? resolveCloudAgentModel(restoredModel, selectableModelsByCapability(config, "text")) : null), [config, restoredModel]);
     const modelRestoreError = restoredModelResolution?.problem === "ambiguous" ? "原会话模型对应多个渠道，请先手动选择模型后继续。" : restoredModelResolution?.problem === "unavailable" ? "原会话模型当前不可用，请先手动选择模型后继续。" : "";
     const selectedModel = useMemo(() => {
         if (restoredModelResolution) return restoredModelResolution.model;
@@ -232,6 +265,8 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         return textModels.includes(preferred) ? preferred : textModels[0] || "";
     }, [config, restoredModelResolution]);
     const installedSkills = useMemo(() => skills.filter((skill) => skill.isAdded), [skills]);
+    // 消息和输入框共用的引用表：每次渲染都新建会让全部消息重新解析 Markdown。
+    const conversationReferences = useMemo(() => [...(run && run.canvasId !== canvasId ? EMPTY_REFERENCES : references), ...buildSkillMentionReferences(installedSkills)], [references, installedSkills, run?.canvasId, canvasId]);
     const installedSkillIds = useMemo(() => new Set(installedSkills.map((skill) => skill.skillId)), [installedSkills]);
 
     const [createdSkills, setCreatedSkills] = useState<Skill[]>([]);
@@ -374,7 +409,21 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     );
     const status = run?.status || "idle";
     const statusLabel =
-        status === "waiting_approval" ? "等待审批" : status === "queued" ? "排队中" : status === "running" ? "运行中" : status === "completed" ? "已完成" : status === "failed" ? "异常" : status === "cancelled" ? "已停止" : status === "rejected" ? "已拒绝" : "待命";
+        status === "waiting_approval"
+            ? "等待审批"
+            : status === "queued"
+              ? "排队中"
+              : status === "running"
+                ? "运行中"
+                : status === "completed"
+                  ? "已完成"
+                  : status === "failed"
+                    ? "异常"
+                    : status === "cancelled"
+                      ? "已停止"
+                      : status === "rejected"
+                        ? "已拒绝"
+                        : "待命";
     const statusColor = status === "failed" ? "#e66b6b" : status === "rejected" || status === "cancelled" ? theme.node.muted : status === "waiting_approval" ? "#d6a24a" : status === "running" || status === "queued" ? "#69c29b" : theme.node.muted;
 
     useEffect(() => {
@@ -432,15 +481,19 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     useEffect(() => {
         let active = true;
         setSkills([]);
+        setSkillCatalogReady(false);
         const refresh = () => {
             void listAddedSkills()
                 .then((result) => {
                     if (!active) return;
                     setSkills(result.skills);
+                    setSkillCatalogReady(true);
                     setMessages((current) => current.filter((message) => message.id !== "skills-load-error"));
                 })
                 .catch((cause) => {
-                    if (active) setMessages((current) => appendAgentError(current, "skills-load-error", cause, "技能库读取失败"));
+                    if (!active) return;
+                    setSkillCatalogReady(false);
+                    setMessages((current) => appendAgentError(current, "skills-load-error", cause, "技能库读取失败"));
                 });
         };
         refresh();
@@ -452,6 +505,15 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             window.removeEventListener("focus", refresh);
         };
     }, [open, userId]);
+
+    // 本地对话会留着已删除技能的 ID，按当前技能库剔除，避免发送时整轮被拒。
+    useEffect(() => {
+        if (!skillCatalogReady) return;
+        const reconciled = reconcileSkillSelection(selectedSkillIds, skills);
+        if (!reconciled.removedSkillIds.length) return;
+        setSelectedSkillIds(reconciled.skillIds);
+        void appMessage.warning(`已取消 ${reconciled.removedSkillIds.length} 个已失效的技能：该技能已被删除或取消安装`);
+    }, [appMessage, selectedSkillIds, skillCatalogReady, skills]);
 
     useEffect(() => {
         if (view !== "settings" && !skillsOpen) return;
@@ -600,6 +662,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                     setConversations([initialConversation]);
                     setSelectedSkillIds(initialSkillIds);
                     pendingSubmission.current = null;
+                    cancelConversationAutosave();
                     await saveCloudAgentConversations(initialConversationId, [initialConversation], accountScope);
                 }
                 if (active) setPendingHydrated(true);
@@ -626,10 +689,11 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         let timer: ReturnType<typeof setTimeout>;
         const controller = new AbortController();
         setCloudHistoryReady(false);
-        const refresh = async () => {
+        // 后台轮询（定时、回到前台、恢复联网）不切换加载状态：每 4 秒一次的两次重渲染会让面板和画布周期性掉帧。
+        const refresh = async (background = false) => {
             if (!active || refreshing || !accountIsCurrent()) return;
             refreshing = true;
-            setCloudHistoryLoading(true);
+            if (!background) setCloudHistoryLoading(true);
             try {
                 const cache = conversationSnapshots.current;
                 const selected = cache.find((item) => item.id === cloudLiveState.current.activeConversationId);
@@ -651,13 +715,23 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 const candidate = currentCloud?.run?.id !== live.run?.id ? currentCloud || latestCanvasCandidate : latestCanvasCandidate || currentCloud;
                 const blocked = live.busy || live.approvalSubmitting || submissionRequestRef.current || Boolean(pendingSubmission.current) || Boolean(cloudOpeningRef.current) || !live.pendingHydrated;
                 const decision = cloudAgentFollowDecision({ current, candidate, canvasId, blocked });
-                if (!candidate?.run || decision !== "current" && decision !== "switch") return;
+                if (!candidate?.run || (decision !== "current" && decision !== "switch")) return;
                 const sameRun = candidate.id === live.activeConversationId && candidate.run.id === live.run?.id;
                 if (sameRun && (candidate.lastEventSeq || 0) < lastSeqRef.current) return;
                 if (sameRun && (candidate.run.revision || 0) <= (live.run?.revision || 0) && candidate.run.status === live.run?.status && Boolean(candidate.run.cleanupPending) === Boolean(live.run?.cleanupPending)) return;
                 // 未知 POST 身份属于原本地对话；切换前必须先读出，不能用目录发现覆盖它。
                 const pending = candidate.id === live.activeConversationId ? null : await loadCloudAgentPendingSubmission(candidate.id, accountScope);
-                if (!active || !accountIsCurrent() || cloudLiveState.current.activeConversationId !== live.activeConversationId || cloudLiveState.current.prompt !== live.prompt || submissionRequestRef.current || pendingSubmission.current || cloudOpeningRef.current || cloudLiveState.current.canvasId !== canvasId) return;
+                if (
+                    !active ||
+                    !accountIsCurrent() ||
+                    cloudLiveState.current.activeConversationId !== live.activeConversationId ||
+                    cloudLiveState.current.prompt !== live.prompt ||
+                    submissionRequestRef.current ||
+                    pendingSubmission.current ||
+                    cloudOpeningRef.current ||
+                    cloudLiveState.current.canvasId !== canvasId
+                )
+                    return;
                 const sameConversation = decision === "current";
                 currentScope.current = candidate.id;
                 cloudRunTransitionRef.current = candidate.run.id;
@@ -674,7 +748,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 setMessages(candidate.messages);
                 setUndoStates({});
                 const nextApproval = approvalStateFromRun(candidate.run);
-                setApproval((previous) => previous?.approvalId && previous.approvalId === nextApproval?.approvalId ? { ...nextApproval, reason: previous.reason } : nextApproval);
+                setApproval((previous) => (previous?.approvalId && previous.approvalId === nextApproval?.approvalId ? { ...nextApproval, reason: previous.reason } : nextApproval));
                 if (!sameRun) {
                     setContextUsage(emptyAgentContextUsage(candidate.run.id));
                     setConnectionStatus("connecting");
@@ -690,14 +764,18 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             } finally {
                 refreshing = false;
                 if (active) {
-                    setCloudHistoryLoading(false);
+                    if (!background) setCloudHistoryLoading(false);
                     clearTimeout(timer);
                     // 后台标签页不轮询；回到前台由 visibilitychange 立即补一次并恢复定时。
-                    timer = setTimeout(() => { if (document.visibilityState !== "hidden") void refresh(); }, 4000);
+                    timer = setTimeout(() => {
+                        if (document.visibilityState !== "hidden") void refresh(true);
+                    }, 4000);
                 }
             }
         };
-        const wake = () => { if (document.visibilityState !== "hidden") void refresh(); };
+        const wake = () => {
+            if (document.visibilityState !== "hidden") void refresh(true);
+        };
         void refresh();
         window.addEventListener("focus", wake);
         window.addEventListener("online", wake);
@@ -735,12 +813,43 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         });
     }, [activeConversationId, historyHydrated, pendingHydrated, messages, permissionMode, prompt, run, selectedModel, restoredModel, selectedSkillIds, userId, accountScope]);
 
+    // 本机对话缓存只用于界面恢复。输入和流式事件会高频改动对话，每次都把全部对话序列化写入
+    // IndexedDB 会占满主线程；这里合并后再写，连续变化时最长 3 秒也会落一次。显式保存（发送前、删除）
+    // 先取消待写的旧快照，页面隐藏或面板卸载时立即补写。
     useEffect(() => {
         if (!isCurrentScope(activeConversationId) || !historyHydrated || !pendingHydrated || hydratedAccount.current !== `${userId}:${accountScope}`) return;
-        void saveCloudAgentConversations(activeConversationId, conversations, accountScope).catch((cause) => {
-            if (accountIsCurrent()) setCloudHistoryError(cause instanceof Error ? cause.message : "本机对话缓存保存失败");
-        });
+        const previous = conversationAutosaveRef.current;
+        if (previous) clearTimeout(previous.timer);
+        const since = previous?.since ?? Date.now();
+        const save = () => {
+            if (conversationAutosaveRef.current?.save === save) conversationAutosaveRef.current = null;
+            if (!accountIsCurrent() || !isCurrentScope(activeConversationId)) return;
+            void saveCloudAgentConversations(activeConversationId, conversations, accountScope).catch((cause) => {
+                if (accountIsCurrent()) setCloudHistoryError(cause instanceof Error ? cause.message : "本机对话缓存保存失败");
+            });
+        };
+        const delay = Math.max(0, Math.min(CONVERSATION_AUTOSAVE_DELAY_MS, since + CONVERSATION_AUTOSAVE_MAX_WAIT_MS - Date.now()));
+        conversationAutosaveRef.current = { timer: setTimeout(save, delay), save, since };
     }, [activeConversationId, conversations, historyHydrated, pendingHydrated, userId, accountScope]);
+
+    useEffect(() => {
+        const flush = () => {
+            const pending = conversationAutosaveRef.current;
+            if (!pending) return;
+            clearTimeout(pending.timer);
+            pending.save();
+        };
+        const flushWhenHidden = () => {
+            if (document.visibilityState === "hidden") flush();
+        };
+        window.addEventListener("pagehide", flush);
+        document.addEventListener("visibilitychange", flushWhenHidden);
+        return () => {
+            window.removeEventListener("pagehide", flush);
+            document.removeEventListener("visibilitychange", flushWhenHidden);
+            flush();
+        };
+    }, []);
 
     useEffect(() => {
         if (!run?.id) return;
@@ -760,14 +869,18 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                     lastSeqRef.current = event.seq;
                     replayCursorRef.current = { runId: run.id, seq: event.seq };
                 }
-                setMessages((current) => current.some((item) => item.id === `stream-error-${run.id}`) ? current.filter((item) => item.id !== `stream-error-${run.id}`) : current);
+                setMessages((current) => (current.some((item) => item.id === `stream-error-${run.id}`) ? current.filter((item) => item.id !== `stream-error-${run.id}`) : current));
                 setContextUsage((current) => reduceAgentContextUsage(current, event));
                 applyAgentEvent(event, setMessages, setRun, setApproval, setPrompt);
                 canvasSyncRef.current?.receive(event);
+                // 采用到短剧改的是短剧数据而不是画布：刷新短剧侧栏、过期标记与制作台缓存。
+                if (event.type === "tool_completed" && event.payload?.toolName === "drama_adopt_canvas_media") void appQueryClient.invalidateQueries({ queryKey: ["drama"] });
             },
             {
                 after,
-                onConnectionChange: (next) => { if (isCurrentScope(conversationScope) && cloudRunTransitionRef.current === run.id) setConnectionStatus(next); },
+                onConnectionChange: (next) => {
+                    if (isCurrentScope(conversationScope) && cloudRunTransitionRef.current === run.id) setConnectionStatus(next);
+                },
                 onError: (cause) => {
                     if (!accountIsCurrent() || !isCurrentScope(conversationScope) || cloudRunTransitionRef.current !== run.id) return;
                     canvasSyncRef.current?.reconcile();
@@ -788,7 +901,9 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             queued = true;
             setConnectionEpoch((value) => value + 1);
         };
-        const wake = () => { if (document.visibilityState !== "hidden") reconnect(); };
+        const wake = () => {
+            if (document.visibilityState !== "hidden") reconnect();
+        };
         window.addEventListener("online", reconnect);
         window.addEventListener("focus", wake);
         document.addEventListener("visibilitychange", wake);
@@ -846,7 +961,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     };
 
     const submit = async (override?: string, options?: CloudAgentMessagePresentation & { requiresVision?: boolean }) => {
-        if (!accountIsCurrent() || cloudOpeningRef.current || canvasId && !cloudHistoryReady && !pendingSubmission.current?.request || modelRestoreError && !pendingSubmission.current?.request) return;
+        if (!accountIsCurrent() || cloudOpeningRef.current || (canvasId && !cloudHistoryReady && !pendingSubmission.current?.request) || (modelRestoreError && !pendingSubmission.current?.request)) return;
         const activity = canvasId ? canvasEditLeases.agent(canvasId) : null;
         if (!running && activity && activity.runId !== run?.id && !pendingSubmission.current?.request) return;
         const draft = (override ?? prompt).trim();
@@ -870,6 +985,8 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             const effectiveModel = options?.requiresVision ? selectImageInspectionModel(config, selectedModel) : selectedModel;
             if (options?.requiresVision && !effectiveModel) throw new Error("当前没有配置支持图片输入的文本模型，请在模型能力设置中为一个文本模型开启图片输入后重试");
             const pending = pendingSubmission.current;
+            // 目录已读到就以技能库为准，防止刷新与发送之间带出失效 ID。
+            const usableSkillIds = skillCatalogReady ? reconcileSkillSelection(selectedSkillIds, installedSkills).skillIds : selectedSkillIds;
             // An ambiguous previous POST owns its body/key until reconciled.
             // Editing model settings or prompt must not silently create a new charge.
             if (pending?.request && pending.request.prompt !== value) throw new Error("上一条请求结果待确认，请先原样重试上一条消息，再发送新要求");
@@ -886,6 +1003,9 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 const agentConfig = { ...config, model: effectiveModel };
                 const requestConfig = resolveModelRequestConfig(agentConfig, effectiveModel);
                 const logicalModelId = logicalModelIDForConfig(agentConfig);
+                // 发送时才读当前选中节点：面板不订阅选区，点选节点不会让对话重渲染。
+                const liveCanvas = useGlobalAgentStore.getState().canvas;
+                const selectedNodeIds = canvasId && liveCanvas?.canvasId === canvasId ? liveCanvas.selectedNodeIds : EMPTY_IDS;
                 const input = {
                     canvasId,
                     prompt: value,
@@ -893,7 +1013,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                     profileRevision: profileView.revision,
                     model: modelOptionName(effectiveModel) || undefined,
                     ...(logicalModelId ? { logicalModelId } : requestConfig.channelId ? { channelId: requestConfig.channelId, channelModelKey: modelOptionName(effectiveModel) || undefined } : {}),
-                    skillIds: [...new Set([...selectedSkillIds, ...resolveSkillMentions(value, installedSkills).map((skill) => skill.skillId)])],
+                    pinnedSkillIds: [...new Set([...usableSkillIds, ...resolveSkillMentions(value, installedSkills).map((skill) => skill.skillId)])].slice(0, 16),
                     focusNodeIds: canvasId ? selectedNodeIds.slice(0, 8) : [],
                     focusNodeOmittedCount: canvasId ? Math.max(0, selectedNodeIds.length - 8) : 0,
                     permissionMode,
@@ -924,21 +1044,28 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             const existing = conversations.find((item) => item.id === activeConversationId);
             // Persist a discoverable conversation before POST as well as its key;
             // otherwise a reload of a brand-new chat can orphan the pending record.
-            await waitForCanvasSync(saveCloudAgentConversations(activeConversationId, [
-                {
-                    ...existing,
-                    id: activeConversationId,
-                    title: cloudAgentConversationTitle(nextMessages),
-                    messages: nextMessages,
-                    run,
-                    model: request.model || effectiveModel || undefined,
-                    permissionMode,
-                    skillIds: selectedSkillIds,
-                    createdAt: existing?.createdAt || now,
-                    updatedAt: now,
-                },
-                ...conversations.filter((item) => item.id !== activeConversationId),
-            ], accountScope));
+            cancelConversationAutosave();
+            await waitForCanvasSync(
+                saveCloudAgentConversations(
+                    activeConversationId,
+                    [
+                        {
+                            ...existing,
+                            id: activeConversationId,
+                            title: cloudAgentConversationTitle(nextMessages),
+                            messages: nextMessages,
+                            run,
+                            model: request.model || effectiveModel || undefined,
+                            permissionMode,
+                            skillIds: usableSkillIds,
+                            createdAt: existing?.createdAt || now,
+                            updatedAt: now,
+                        },
+                        ...conversations.filter((item) => item.id !== activeConversationId),
+                    ],
+                    accountScope,
+                ),
+            );
             if (!isCurrentScope(scope)) return;
             setPrompt("");
             prefilledSubmissionRef.current = null;
@@ -950,7 +1077,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 replayCursorRef.current = { runId: result.run.id, seq: 0 };
                 cloudRunTransitionRef.current = result.run.id;
                 setRun(result.run);
-                setConversations((current) => current.map((item) => item.id === activeConversationId ? { ...item, serverConversationId: result.run.conversationId, run: result.run, lastEventSeq: 0 } : item));
+                setConversations((current) => current.map((item) => (item.id === activeConversationId ? { ...item, serverConversationId: result.run.conversationId, run: result.run, lastEventSeq: 0 } : item)));
             }
             // A confirmed response may retire only its original account's key,
             // even after navigation or sign-out. Current UI still stays fenced.
@@ -964,7 +1091,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 setPrompt(value);
                 const status = (cause as { status?: number }).status;
                 const reason = (cause as { reason?: string }).reason;
-                if (reason === "agent_conversation_stale_parent" || !pendingRequest?.request && (reason === "canvas_agent_busy" || (status && [400, 401, 403, 404, 422].includes(status)))) {
+                if (reason === "agent_conversation_stale_parent" || (!pendingRequest?.request && (reason === "canvas_agent_busy" || (status && [400, 401, 403, 404, 422].includes(status))))) {
                     // These admission responses explicitly rejected the write.
                     // stale_parent is checked after same-key replay, so even an
                     // original retry has now been confirmed unaccepted. Other
@@ -975,12 +1102,15 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                         if (!isCurrentScope(scope)) return;
                         pendingSubmission.current = null;
                         if (reason === "agent_conversation_stale_parent") {
-                            const correctedMessages = appendUniqueMessage(cloudLiveState.current.messages.filter((item) => item.id !== rejectedMessageId), {
-                                id: `stale-parent-${activeConversationId}-${run?.id || "initial"}`,
-                                role: "system",
-                                text: "另一端已接续新一轮，正在同步对话。输入已保留，请确认最新上下文后再发送。",
-                            });
-                            const corrected = conversationSnapshots.current.map((item) => item.id === activeConversationId ? { ...item, messages: correctedMessages, draft: value } : item);
+                            const correctedMessages = appendUniqueMessage(
+                                cloudLiveState.current.messages.filter((item) => item.id !== rejectedMessageId),
+                                {
+                                    id: `stale-parent-${activeConversationId}-${run?.id || "initial"}`,
+                                    role: "system",
+                                    text: "另一端已接续新一轮，正在同步对话。输入已保留，请确认最新上下文后再发送。",
+                                },
+                            );
+                            const corrected = conversationSnapshots.current.map((item) => (item.id === activeConversationId ? { ...item, messages: correctedMessages, draft: value } : item));
                             conversationSnapshots.current = corrected;
                             setConversations(corrected);
                             setMessages(correctedMessages);
@@ -1025,10 +1155,12 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             if (!result.accepted) throw new Error("服务端没有确认撤销");
             if (!isCurrentScope(scope)) return;
             setUndoStates((current) => ({ ...current, [key]: { status: "done" } }));
-            setMessages((current) => current.map((item) => {
-                const detail = item.detail as { runId?: string; callId?: string } | undefined;
-                return detail?.runId === target.runId && detail.callId === target.stepId ? { ...item, detail: { ...detail, undoStatus: "undone" } } : item;
-            }));
+            setMessages((current) =>
+                current.map((item) => {
+                    const detail = item.detail as { runId?: string; callId?: string } | undefined;
+                    return detail?.runId === target.runId && detail.callId === target.stepId ? { ...item, detail: { ...detail, undoStatus: "undone" } } : item;
+                }),
+            );
             try {
                 const [, snapshot] = await Promise.all([refreshCanvasAfterAgent(target.canvasId), getAgentRun(activeRun.id, AbortSignal.timeout(10_000))]);
                 if (isCurrentScope(scope)) {
@@ -1125,15 +1257,25 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         }
     };
 
+    // 安装只进技能库，不再自动固定：已安装且允许自动使用的技能，Agent 会按任务自己查找。
     const installSkill = async (skill: Skill) => {
         if (skill.isAdded) return;
         try {
             const result = await addSkill(skill.skillId);
             setSkills((current) => [...current.filter((item) => item.skillId !== skill.skillId), result.skill]);
             setMarketSkills((current) => current.map((item) => (item.skillId === skill.skillId ? result.skill : item)));
-            setSelectedSkillIds((current) => (current.includes(skill.skillId) ? current : [...current, skill.skillId]));
         } catch (cause) {
             setMessages((current) => appendAgentError(current, `skill-error-${Date.now()}`, cause, "添加 Skill 失败"));
+        }
+    };
+
+    const changeSkillAgentMode = async (skill: Skill, mode: SkillAgentMode) => {
+        try {
+            const result = await setSkillAgentMode(skill.skillId, mode);
+            const nextMode = result.skill.agentMode || mode;
+            setSkills((current) => current.map((item) => (item.skillId === skill.skillId ? { ...item, agentMode: nextMode } : item)));
+        } catch (cause) {
+            void appMessage.error(cause instanceof Error ? cause.message : "技能使用方式保存失败");
         }
     };
 
@@ -1242,7 +1384,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         const id = cloudAgentConversationServerId(conversation);
         if (!id) {
             const selected = { ...conversation, localSelectedCanvasId: canvasId || "global" };
-            setConversations((current) => current.map((item) => item.id === selected.id ? selected : item));
+            setConversations((current) => current.map((item) => (item.id === selected.id ? selected : item)));
             restoreConversation(selected);
             return;
         }
@@ -1261,7 +1403,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             const matching = next.find((item) => cloudAgentConversationServerId(item) === id);
             if (!matching) throw new Error("云端对话尚未确认，请刷新后重试");
             const restored = { ...matching, localSelectedCanvasId: openingCanvas || "global" };
-            setConversations(next.map((item) => item.id === restored.id ? restored : item));
+            setConversations(next.map((item) => (item.id === restored.id ? restored : item)));
             restoreConversation(restored);
         } catch (cause) {
             if (!controller.signal.aborted && accountIsCurrent() && cloudOpeningRef.current === token) setCloudHistoryError(cause instanceof Error ? cause.message : "云端对话读取失败");
@@ -1278,7 +1420,10 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         const next = conversations.filter((item) => item.id !== id);
         setConversations(next);
         if (id === activeConversationId) newConversation();
-        void saveCloudAgentConversations(id === activeConversationId ? null : activeConversationId, next, accountScope).catch((cause) => { if (accountIsCurrent()) setCloudHistoryError(String(cause)); });
+        cancelConversationAutosave();
+        void saveCloudAgentConversations(id === activeConversationId ? null : activeConversationId, next, accountScope).catch((cause) => {
+            if (accountIsCurrent()) setCloudHistoryError(String(cause));
+        });
     };
 
     return (
@@ -1287,11 +1432,11 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             <AnimatePresence>
                 {open ? (
                     <motion.aside
-                        initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 20, scale: 0.975 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.985 }}
+                        initial={reducedMotion ? { opacity: 0 } : dock.active ? { opacity: 0, x: 24 } : { opacity: 0, y: 20, scale: 0.975 }}
+                        animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+                        exit={reducedMotion ? { opacity: 0 } : dock.active ? { opacity: 0, x: 24 } : { opacity: 0, y: 12, scale: 0.985 }}
                         transition={{ duration: reducedMotion ? 0 : 0.26, ease: [0.16, 1, 0.3, 1] }}
-                        className="canvas-agent-panel fixed z-[calc(var(--z-toast)+1)] flex min-w-0 flex-col overflow-hidden"
+                        className={`canvas-agent-panel fixed z-[calc(var(--z-toast)+1)] flex min-w-0 flex-col overflow-hidden${dock.active ? " is-docked" : ""}`}
                         style={
                             { ...panelLayout.style, "--agent-surface-base": theme.node.panel, "--agent-ink": theme.node.text, "--agent-accent": theme.accent.primary, "--agent-shadow-color": theme.spatial.shadow } as CSSProperties &
                                 Record<`--${string}`, string>
@@ -1303,19 +1448,38 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                         {...panelLayout.pointerHandlers}
                         onWheel={(event) => event.stopPropagation()}
                     >
-                        <div data-agent-resize="north" className="absolute inset-x-5 top-0 z-10 hidden h-2 cursor-n-resize touch-none sm:block" />
-                        <div data-agent-resize="west" className="absolute bottom-5 left-0 top-5 z-10 hidden w-2 cursor-w-resize touch-none sm:block" />
-                        <button
-                            type="button"
-                            aria-label="调整 Agent 面板大小"
-                            title="拖动调整宽高，也可用方向键调整"
-                            data-agent-resize="northwest"
-                            className="agent-panel-resize-corner absolute left-1 top-1 z-10 hidden size-5 cursor-nw-resize touch-none place-items-center rounded-md opacity-60 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 sm:grid"
-                            onKeyDown={panelLayout.onResizeKeyDown}
-                            style={{ color: theme.node.muted }}
-                        >
-                            <MoveDiagonal2 className="size-3" aria-hidden="true" />
-                        </button>
+                        {dock.active ? (
+                            // 停靠时只保留左边缘：拖动或用左右方向键调宽，画布同步让出空间。
+                            <div
+                                role="separator"
+                                tabIndex={0}
+                                aria-orientation="vertical"
+                                aria-label="调整 Agent 面板宽度"
+                                aria-valuenow={dock.width}
+                                aria-valuemin={dock.bounds.min}
+                                aria-valuemax={dock.bounds.max}
+                                title="拖动调整宽度，也可用左右方向键调整"
+                                data-agent-resize="dock"
+                                className="agent-panel-dock-resizer"
+                                onKeyDown={panelLayout.onResizeKeyDown}
+                            />
+                        ) : (
+                            <>
+                                <div data-agent-resize="north" className="absolute inset-x-5 top-0 z-10 hidden h-2 cursor-n-resize touch-none sm:block" />
+                                <div data-agent-resize="west" className="absolute bottom-5 left-0 top-5 z-10 hidden w-2 cursor-w-resize touch-none sm:block" />
+                                <button
+                                    type="button"
+                                    aria-label="调整 Agent 面板大小"
+                                    title="拖动调整宽高，也可用方向键调整"
+                                    data-agent-resize="northwest"
+                                    className="agent-panel-resize-corner absolute left-2 top-2 z-10 hidden size-5 cursor-nw-resize touch-none place-items-center rounded-md opacity-60 transition-opacity hover:opacity-100 focus-visible:outline focus-visible:outline-2 sm:grid"
+                                    onKeyDown={panelLayout.onResizeKeyDown}
+                                    style={{ color: theme.node.muted }}
+                                >
+                                    <MoveDiagonal2 className="size-3" aria-hidden="true" />
+                                </button>
+                            </>
+                        )}
                         <AnimatePresence mode="wait" initial={false}>
                             {view === "settings" ? (
                                 <motion.div key="settings" className="flex min-h-0 flex-1" initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 18 }} transition={{ duration: reducedMotion ? 0 : 0.18 }}>
@@ -1352,6 +1516,8 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         onSkillSearch={setSkillSearch}
                                         onSkillToggle={(id) => setSelectedSkillIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))}
                                         onSkillInstall={installSkill}
+                                        onSkillAgentModeChange={changeSkillAgentMode}
+                                        onOpenSkillRecommendations={() => setSkillRecommendationsOpen(true)}
                                         onLoadMoreSkills={loadMoreSkills}
                                         onMaxCreditsChange={setMaxCredits}
                                         onMaxGenerationTasksChange={setMaxGenerationTasks}
@@ -1360,7 +1526,19 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                 </motion.div>
                             ) : view === "history" ? (
                                 <motion.div key="history" className="flex min-h-0 flex-1" initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 18 }} transition={{ duration: reducedMotion ? 0 : 0.18 }}>
-                                    <AgentHistory conversations={conversations} activeConversationId={activeConversationId} theme={theme} onBack={() => setView("chat")} onNew={newConversation} onOpen={(conversation) => void openConversation(conversation)} onDelete={deleteConversation} loading={cloudHistoryLoading} error={cloudHistoryError} openingId={cloudOpeningId} onRefresh={() => setCloudRefreshEpoch((value) => value + 1)} />
+                                    <AgentHistory
+                                        conversations={conversations}
+                                        activeConversationId={activeConversationId}
+                                        theme={theme}
+                                        onBack={() => setView("chat")}
+                                        onNew={newConversation}
+                                        onOpen={(conversation) => void openConversation(conversation)}
+                                        onDelete={deleteConversation}
+                                        loading={cloudHistoryLoading}
+                                        error={cloudHistoryError}
+                                        openingId={cloudOpeningId}
+                                        onRefresh={() => setCloudRefreshEpoch((value) => value + 1)}
+                                    />
                                 </motion.div>
                             ) : (
                                 <motion.div key="chat" className="flex min-h-0 flex-1 flex-col" initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }} transition={{ duration: reducedMotion ? 0 : 0.18 }}>
@@ -1394,12 +1572,18 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         }}
                                         onSettings={() => setView("settings")}
                                         onResetLayout={panelLayout.reset}
+                                        docked={dock.active}
+                                        onToggleDock={dock.available ? () => setDocked(!dock.active) : undefined}
                                         onCollapse={onCollapse}
                                     />
-                                    {cloudHistoryError || canvasId && !cloudHistoryReady ? (
+                                    {cloudHistoryError || (canvasId && !cloudHistoryReady) ? (
                                         <div role="status" className="flex items-center justify-between gap-2 px-5 py-2 text-xs" style={{ color: theme.node.muted }}>
                                             <span>{cloudHistoryError ? "云端对话暂时未同步，本机草稿已保留。" : "正在同步此画布的云端对话…"}</span>
-                                            {cloudHistoryError ? <Button size="small" loading={cloudHistoryLoading} onClick={() => setCloudRefreshEpoch((value) => value + 1)}>重新同步</Button> : null}
+                                            {cloudHistoryError ? (
+                                                <Button size="small" loading={cloudHistoryLoading} onClick={() => setCloudRefreshEpoch((value) => value + 1)}>
+                                                    重新同步
+                                                </Button>
+                                            ) : null}
                                         </div>
                                     ) : null}
                                     {run && connectionStatus !== "connected" ? (
@@ -1417,26 +1601,47 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         theme={theme}
                                         messages={messages}
                                         onFocusNode={run && run.canvasId !== canvasId ? undefined : onFocusNode}
-                                        references={[...(run && run.canvasId !== canvasId ? EMPTY_REFERENCES : references), ...buildSkillMentionReferences(installedSkills)]}
                                         onUndo={busy || running ? undefined : (target) => void undoCanvasStep(target)}
                                         undoStates={undoStates}
+                                        references={conversationReferences}
                                         busy={busy || running}
                                         approval={approval}
-                                        approvalTargetGenerating={approval && run?.canvasId === canvasId ? agentApprovalTargetGenerating(approval.detail, canvasNodes, runningNodeId) : undefined}
+                                        approvalTargetGenerating={approval && run?.canvasId === canvasId ? approvalTargetGenerating : undefined}
                                         nodeCount={canvasId ? nodeCount : null}
+                                        installedSkillCount={skillCatalogReady ? installedSkills.length : null}
                                         approvalSubmitting={otherAgentRunning || approvalSubmitting || connectionStatus !== "connected"}
                                         onChooseSkill={() => setSkillsOpen(true)}
+                                        onOpenSkillRecommendations={() => setSkillRecommendationsOpen(true)}
                                         onDraftPrompt={(draft) => setPrompt((current) => (current.trim() ? `${current}\n\n${draft}` : draft))}
                                         onApprovalReasonChange={(reason) => setApproval((current) => (current ? { ...current, reason } : current))}
                                         onApprove={(settings) => void submitApproval("approve", settings)}
                                         onReject={() => void submitApproval("reject")}
                                         onWithdrawInterjection={running && !otherAgentRunning && connectionStatus === "connected" ? (messageId) => void withdrawInterjection(messageId) : undefined}
                                         withdrawingInterjectionId={withdrawingInterjectionId}
+                                        // ask_user 提问条在输入区上方时不再重复出选项卡片。
+                                        onReplyOption={pendingQuestion ? undefined : (text) => void submit(text)}
+                                        replyOptionsDisabled={
+                                            otherAgentRunning ||
+                                            Boolean(pendingSubmission.current?.request) ||
+                                            Boolean(run && connectionStatus !== "connected") ||
+                                            !historyHydrated ||
+                                            !pendingHydrated ||
+                                            Boolean(canvasId && !cloudHistoryReady) ||
+                                            Boolean(cloudOpeningId) ||
+                                            Boolean(modelRestoreError)
+                                        }
                                     />
                                     {canvasCloudConversation && !canvasCloudConversationIsCurrent ? (
                                         <div role="status" className="flex items-center justify-between gap-2 px-5 py-2 text-xs" style={{ color: theme.node.muted }}>
                                             <span>此画布有可接续的云端对话。{prompt.trim() ? "未发送内容会保留在原对话。" : "手机、电脑可查看同一进度。"}</span>
-                                            <Button size="small" loading={cloudOpeningId === canvasCloudConversation.id} disabled={busy || running || !pendingHydrated || Boolean(pendingSubmission.current) || Boolean(cloudOpeningId)} onClick={() => void openConversation(canvasCloudConversation)}>接续此画布对话</Button>
+                                            <Button
+                                                size="small"
+                                                loading={cloudOpeningId === canvasCloudConversation.id}
+                                                disabled={busy || running || !pendingHydrated || Boolean(pendingSubmission.current) || Boolean(cloudOpeningId)}
+                                                onClick={() => void openConversation(canvasCloudConversation)}
+                                            >
+                                                接续此画布对话
+                                            </Button>
                                         </div>
                                     ) : otherAgentRunning ? (
                                         <div role="status" className="px-5 py-2 text-xs" style={{ color: theme.node.muted }}>
@@ -1464,11 +1669,30 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         />
                                     ) : null}
                                     {pendingQuestion ? <AgentQuestionBar question={pendingQuestion} theme={theme} disabled={otherAgentRunning || approvalSubmitting || connectionStatus !== "connected"} onAnswer={(label) => void submit(label)} /> : null}
-                                    {historyHydrated && !pendingHydrated ? <div className="flex items-center gap-2 px-5 py-2 text-xs" role="status"><span>提交记录尚未确认，输入保留；画布可继续编辑。</span><Button size="small" onClick={() => setHistoryRestoreAttempt((attempt) => attempt + 1)}>重新读取记录</Button></div> : null}
-                                    {modelRestoreError ? <div className="px-5 py-2 text-xs" role="status" style={{ color: theme.node.muted }}>{modelRestoreError}</div> : null}
+                                    {historyHydrated && !pendingHydrated ? (
+                                        <div className="flex items-center gap-2 px-5 py-2 text-xs" role="status">
+                                            <span>提交记录尚未确认，输入保留；画布可继续编辑。</span>
+                                            <Button size="small" onClick={() => setHistoryRestoreAttempt((attempt) => attempt + 1)}>
+                                                重新读取记录
+                                            </Button>
+                                        </div>
+                                    ) : null}
+                                    {modelRestoreError ? (
+                                        <div className="px-5 py-2 text-xs" role="status" style={{ color: theme.node.muted }}>
+                                            {modelRestoreError}
+                                        </div>
+                                    ) : null}
                                     <AgentChatComposer
                                         prompt={prompt}
-                                        submitDisabled={otherAgentRunning && !pendingSubmission.current?.request || Boolean(run && connectionStatus !== "connected" && !pendingSubmission.current?.request) || !historyHydrated || !pendingHydrated || Boolean(canvasId && !cloudHistoryReady && !pendingSubmission.current?.request) || Boolean(cloudOpeningId) || Boolean(modelRestoreError && !pendingSubmission.current?.request)}
+                                        submitDisabled={
+                                            (otherAgentRunning && !pendingSubmission.current?.request) ||
+                                            Boolean(run && connectionStatus !== "connected" && !pendingSubmission.current?.request) ||
+                                            !historyHydrated ||
+                                            !pendingHydrated ||
+                                            Boolean(canvasId && !cloudHistoryReady && !pendingSubmission.current?.request) ||
+                                            Boolean(cloudOpeningId) ||
+                                            Boolean(modelRestoreError && !pendingSubmission.current?.request)
+                                        }
                                         sending={busy}
                                         running={running}
                                         placeholder={running ? "运行中可直接插话，会在它下一步生效" : "输入操作指导；用 @ 引用画布节点，用 / 或 、 引用 Skills"}
@@ -1477,7 +1701,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         onSubmit={() => void submit()}
                                         onStop={!otherAgentRunning && run?.id && running ? stop : undefined}
                                         stopping={stopping}
-                                        references={[...references, ...buildSkillMentionReferences(installedSkills)]}
+                                        references={conversationReferences}
                                         slashSkills={installedSkills}
                                         includeAssetLibrary={false}
                                         submitAccessory={<AgentContextRing view={presentAgentContextUsage(contextUsage)} theme={theme} />}
@@ -1505,7 +1729,10 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             <CanvasAgentSkillLibraryModal
                 curationState={curationState}
                 platformCategory={platformCategory}
-                onPlatformCategoryChange={(value) => { setPlatformCategory(value); setSkillTag("all"); }}
+                onPlatformCategoryChange={(value) => {
+                    setPlatformCategory(value);
+                    setSkillTag("all");
+                }}
                 open={skillsOpen}
                 theme={theme}
                 installedSkills={installedSkills}
@@ -1529,6 +1756,8 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 onInstall={installSkill}
                 onLoadMore={loadMoreSkills}
             />
+            {/* 安装结果通过 canvas-skills-changed 事件刷新技能库，这里不重复拉取。 */}
+            <SkillRecommendationsModal open={skillRecommendationsOpen} onClose={() => setSkillRecommendationsOpen(false)} />
         </>
     );
 });

@@ -22,9 +22,10 @@ writeFileSync(
     stub,
     `
 import React from ${JSON.stringify(import.meta.resolve("react"))};
-export const fixture = { pathname: "/create", user: { id: "account-a" }, mounts: 0, unmounts: 0 };
+export const fixture = { pathname: "/create", user: { id: "account-a" }, dock: { active: true, width: 400 }, mounts: 0, unmounts: 0 };
 export const useLocation = () => ({ pathname: fixture.pathname });
 export const useUserStore = selector => selector(fixture);
+export const useAgentPanelDock = () => fixture.dock;
 export const ConfigProvider = ({ children }) => React.createElement(React.Fragment, null, children);
 export const AppWorkspaceShell = ConfigProvider;
 export const cn = (...names) => names.filter(Boolean).join(" ");
@@ -75,6 +76,10 @@ test("one account keeps its Agent mounted across product, canvas and admin route
             expect(host.querySelectorAll("[data-agent]")).toHaveLength(1);
             expect(fixture.mounts).toBe(1);
             expect(fixture.unmounts).toBe(0);
+            const workspace = host.querySelector<HTMLElement>(".app-user-workspace");
+            if (pathname.startsWith("/canvas/")) expect(workspace?.style.paddingRight).toBe("400px");
+            else if (pathname.startsWith("/admin/")) expect(workspace).toBeNull();
+            else expect(workspace?.style.paddingRight).toBe("");
         }
         fixture.user = { id: "account-b" };
         await render();
@@ -124,7 +129,7 @@ test("late continuations stop on conversation changes, account switches before r
 test("run controls and old node references do not borrow a different page's canvas", () => {
     const source = readFileSync(new URL("../src/components/canvas/canvas-cloud-agent-panel.tsx", import.meta.url), "utf8");
     expect(source).toContain("const otherAgentRunning = !running &&");
-    expect(source).toContain("approval && run?.canvasId === canvasId ? agentApprovalTargetGenerating");
+    expect(source).toContain("approval && run?.canvasId === canvasId ? approvalTargetGenerating : undefined");
     expect(source).toContain("onFocusNode={run && run.canvasId !== canvasId ? undefined : onFocusNode}");
     expect(source).toContain("pending && pending.canvasId !== canvasId");
     expect(source).toContain("prefillRequest.canvasId !== canvasId");

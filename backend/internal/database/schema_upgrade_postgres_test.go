@@ -12,9 +12,10 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestPostgresSchema71FreshAndUpgrade60(t *testing.T) {
-	for _, upgrade := range []bool{false, true} {
-		t.Run(fmt.Sprintf("upgrade60=%v", upgrade), func(t *testing.T) {
+func TestPostgresCurrentSchemaFreshAndUpgrade(t *testing.T) {
+	for _, from := range []int64{0, 60, 71} {
+		t.Run(fmt.Sprintf("from=%d", from), func(t *testing.T) {
+			upgrade := from > 0
 			dsn := os.Getenv("CANVAS_TEST_POSTGRES_DSN")
 			if dsn == "" {
 				t.Skip("CANVAS_TEST_POSTGRES_DSN is not configured")
@@ -25,7 +26,7 @@ func TestPostgresSchema71FreshAndUpgrade60(t *testing.T) {
 			}
 			baseSQL, _ := base.DB()
 			t.Cleanup(func() { _ = baseSQL.Close() })
-			schema := fmt.Sprintf("schema_v71_%d", time.Now().UnixNano())
+			schema := fmt.Sprintf("schema_upgrade_%d", time.Now().UnixNano())
 			if err := base.Exec("CREATE SCHEMA " + schema).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -50,7 +51,7 @@ func TestPostgresSchema71FreshAndUpgrade60(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, item := range schemaMigrations {
-					if item.version > 60 {
+					if item.version > from {
 						break
 					}
 					if err := item.apply(db); err != nil {
@@ -60,17 +61,43 @@ func TestPostgresSchema71FreshAndUpgrade60(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				// Restore the actual v60 boundary; the baseline uses today's models.
-				if err := db.Migrator().DropTable(&model.DramaProduction{}, &model.DramaCast{}, &model.DramaEpisode{}, &model.DramaShot{}, &model.DramaTake{}, &model.DramaSegment{}, &model.DramaJob{}, &model.UserStorageGrant{}, &model.UserStorageState{}, &model.ResourceOffloadJob{}); err != nil {
+				// The baseline uses today's models. Remove post-v71 objects so
+				// this test exercises their actual creation and column additions.
+				if err := db.Migrator().DropTable(&model.ReferralProfile{}, &model.ReferralBinding{}, &model.ReferralCommission{}, &model.UserGroup{}, &model.UserGroupChannel{}, &model.AgentMemoryDocument{}, &model.AgentMemoryDocumentRevision{}); err != nil {
 					t.Fatal(err)
 				}
-				for _, column := range []string{"Kind", "StorageBytes", "StorageDurationDays"} {
-					if err := db.Migrator().DropColumn(&model.TopupProduct{}, column); err != nil {
+				for _, column := range []struct {
+					row   any
+					field string
+				}{
+					{&model.User{}, "IsPromoter"}, {&model.User{}, "UserGroup"},
+					{&model.ChannelModel{}, "PriceCurrency"}, {&model.TopupProduct{}, "Currency"},
+					{&model.BillingOrder{}, "UserGroup"}, {&model.BillingOrder{}, "PriceCurrency"}, {&model.BillingOrder{}, "CurrencyRateMicrocredits"},
+					{&model.UserSkillState{}, "AgentMode"}, {&model.UserSkillState{}, "AgentUseCount"}, {&model.UserSkillState{}, "AgentLastUsedAt"},
+				} {
+					if err := db.Migrator().DropColumn(column.row, column.field); err != nil {
 						t.Fatal(err)
 					}
 				}
-				for _, column := range []string{"ProductKind", "StorageBytes", "StorageDurationDays"} {
-					if err := db.Migrator().DropColumn(&model.PaymentOrder{}, column); err != nil {
+				if from == 60 {
+					if err := db.Migrator().DropTable(&model.DramaProduction{}, &model.DramaCast{}, &model.DramaEpisode{}, &model.DramaShot{}, &model.DramaTake{}, &model.DramaSegment{}, &model.DramaJob{}, &model.UserStorageGrant{}, &model.UserStorageState{}, &model.ResourceOffloadJob{}); err != nil {
+						t.Fatal(err)
+					}
+					for _, column := range []string{"Kind", "StorageBytes", "StorageDurationDays"} {
+						if err := db.Migrator().DropColumn(&model.TopupProduct{}, column); err != nil {
+							t.Fatal(err)
+						}
+					}
+					for _, column := range []string{"ProductKind", "StorageBytes", "StorageDurationDays"} {
+						if err := db.Migrator().DropColumn(&model.PaymentOrder{}, column); err != nil {
+							t.Fatal(err)
+						}
+					}
+				} else {
+					if err := db.Migrator().DropColumn(&model.DramaEpisode{}, "SourceFormat"); err != nil {
+						t.Fatal(err)
+					}
+					if err := db.Migrator().DropColumn(&model.DramaSegment{}, "ReferenceCastIDsJSON"); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -100,14 +127,14 @@ func TestPostgresSchema71FreshAndUpgrade60(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			for _, table := range []any{&model.DramaProduction{}, &model.DramaCast{}, &model.DramaEpisode{}, &model.DramaShot{}, &model.DramaTake{}, &model.DramaSegment{}, &model.DramaJob{}, &model.UserStorageGrant{}, &model.UserStorageState{}, &model.ResourceOffloadJob{}} {
+			for _, table := range []any{&model.DramaProduction{}, &model.DramaCast{}, &model.DramaEpisode{}, &model.DramaShot{}, &model.DramaTake{}, &model.DramaSegment{}, &model.DramaJob{}, &model.UserStorageGrant{}, &model.UserStorageState{}, &model.ResourceOffloadJob{}, &model.UserGroup{}, &model.UserGroupChannel{}, &model.AgentMemoryDocument{}, &model.AgentMemoryDocumentRevision{}, &model.ReferralBinding{}} {
 				if !db.Migrator().HasTable(table) {
 					t.Fatalf("missing %T", table)
 				}
 			}
 			if upgrade {
 				var after []schemaMigration
-				if err := db.Where("version <= 60").Order("version").Find(&after).Error; err != nil || !reflect.DeepEqual(before, after) {
+				if err := db.Where("version <= ?", from).Order("version").Find(&after).Error; err != nil || !reflect.DeepEqual(before, after) {
 					t.Fatalf("historical ledger changed: %v", err)
 				}
 				var product model.TopupProduct
