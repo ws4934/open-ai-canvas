@@ -20,11 +20,14 @@ describe("media fallback", () => {
         const list = source("../src/pages/tasks/task-list-row.tsx");
         const grid = source("../src/pages/tasks/task-grid-card.tsx");
         const page = source("../src/pages/tasks/index.tsx");
+        const detail = source("../src/pages/tasks/task-result-media.tsx");
 
         expect(list).toContain("<MediaPreview");
         expect(list).toContain("disabled={previewUnavailable}");
         expect(grid).toContain("<MediaPreview");
-        expect(page.match(/<MediaPreview/g)).toHaveLength(2);
+        expect(page).toContain("<TaskResultMedia task={detailTask} />");
+        expect(detail).toContain("<MediaPreview");
+        expect(page).toContain("<MediaPreview");
     });
 
     test("uses the fallback in admin log thumbnails and enlarged previews", () => {
