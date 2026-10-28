@@ -115,7 +115,7 @@ func (s *Service) TaskTextReplay(userID string, taskID string, after int64) (*Te
 	result := &TextReplayResult{
 		Deltas: deltas, TextDraft: task.TextDraft,
 		Complete: task.Status == model.TaskStatusSucceeded || task.Status == model.TaskStatusFailed || task.Status == model.TaskStatusCancelled,
-		Status:   task.Status, Stage: task.Stage, Progress: task.Progress, Error: task.Error,
+		Status:   task.Status, Stage: task.Stage, Progress: task.Progress, Error: userFacingTaskErrorIfPresent(task.Error),
 	}
 	if task.Status == model.TaskStatusSucceeded {
 		result.FinalText = taskResultText(task.ResultJSON)

@@ -159,7 +159,6 @@ export function useCanvasGenerationExecutor({
                                               errorDetails: undefined,
                                               generationErrorCode: undefined,
                                               resourceReloadAvailable: undefined,
-                                              failedPromptFingerprint: undefined,
                                           },
                                       }
                                     : node,
@@ -319,7 +318,6 @@ export function useCanvasGenerationExecutor({
                                               errorDetails: undefined,
                                               generationErrorCode: undefined,
                                               resourceReloadAvailable: undefined,
-                                              failedPromptFingerprint: undefined,
                                           },
                                       }
                                     : node,
@@ -335,7 +333,7 @@ export function useCanvasGenerationExecutor({
                                 node.id === nodeId
                                     ? {
                                           ...node,
-                                          metadata: { ...node.metadata, ...canvasGenerationPromptMetadata(prompt, statusPrompt), status: NODE_STATUS_LOADING, errorDetails: undefined, generationErrorCode: undefined, resourceReloadAvailable: undefined, failedPromptFingerprint: undefined },
+                                          metadata: { ...node.metadata, ...canvasGenerationPromptMetadata(prompt, statusPrompt), status: NODE_STATUS_LOADING, errorDetails: undefined, generationErrorCode: undefined, resourceReloadAvailable: undefined },
                                       }
                                     : node,
                             ),
@@ -388,7 +386,7 @@ export function useCanvasGenerationExecutor({
                         else await executeTextGeneration(execution);
                     } catch (error) {
                         if (isGenerationCanceled(error)) return;
-                        const failure = generationFailureMetadata(error, prompt);
+                        const failure = generationFailureMetadata(error);
                         if (options?.waitForTaskCapacity && isGenerationTaskCapacityError(error)) {
                             setNodes((current) =>
                                 current.map((node) => {

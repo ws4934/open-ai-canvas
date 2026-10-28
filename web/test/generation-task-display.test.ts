@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
     canCancelGenerationTask,
+    generationTaskFailureReason,
     generationPhaseHint,
     generationPhaseLabel,
     generationPhaseStep,
@@ -12,6 +13,31 @@ import {
     mediaDeliverySummary,
 } from "@/lib/generation-task-display";
 import { resetGenerationTaskMetadata } from "@/lib/canvas/canvas-task-state";
+import { CONTENT_MODERATION_MESSAGE } from "@/lib/generation-error";
+
+describe("任务失败原因", () => {
+    test("显示明确失败原因，而不是失败阶段", () => {
+        expect(generationTaskFailureReason({ status: "failed", stage: "任务失败", error: "参考图片的尺寸不符合要求，请调整后重试。" })).toBe("参考图片的尺寸不符合要求，请调整后重试。");
+        expect(generationTaskFailureReason({ status: "failed", errorCode: "content_policy_violation" })).toBe(CONTENT_MODERATION_MESSAGE);
+        expect(generationTaskFailureReason({ status: "failed", errorCode: "sensitive_words_detected", error: "任务失败" })).toBe(CONTENT_MODERATION_MESSAGE);
+    });
+
+    test("未提供原因时明确告知，而不是把状态当成原因", () => {
+        for (const stage of [undefined, "任务失败", "生成失败", "failed", "provider_failed"]) {
+            expect(generationTaskFailureReason({ status: "failed", stage })).toContain("未返回具体原因");
+        }
+        expect(generationTaskFailureReason({ status: "failed", stage: "计费准备失败" })).toBe("计费准备失败");
+        expect(generationTaskFailureReason({ status: "failed", stage: "调用生成模型" })).toContain("未返回具体原因");
+        expect(generationTaskFailureReason({ status: "failed", stage: "正在生成" })).toContain("未返回具体原因");
+    });
+
+    test("活跃和成功任务不误报失败，取消仍保持取消语义", () => {
+        for (const status of ["queued", "running", "succeeded"] as const) {
+            expect(generationTaskFailureReason({ status, error: "旧错误" })).toBe("");
+        }
+        expect(generationTaskFailureReason({ status: "cancelled" })).toBe("任务已取消");
+    });
+});
 
 describe("作品保存阶段", () => {
     test("分别表达生成、下载、上传和登记，不把保存失败当成生成失败", () => {

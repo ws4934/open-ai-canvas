@@ -17,7 +17,7 @@ import (
 // 其余可读的供应商原因原样保留，而不是统一成"生成失败"。
 
 const (
-	taskErrorModerationMessage = "内容审核未通过，本次平台积分未扣除或已退还。请修改提示词后重新生成。"
+	taskErrorModerationMessage = "内容审核未通过，可重试或调整提示词、参考素材后重新生成。"
 	taskErrorDefaultMessage    = "生成失败，请稍后重试。"
 	taskErrorNetworkMessage    = "网络异常。"
 	// 上游已返回 5xx：链路是通的，故障在模型服务一侧，不能说成网络异常。
@@ -39,16 +39,23 @@ func userFacingTaskError(raw string) string {
 	return sanitizeUserVisibleError(classifyUserFacingTaskError(raw))
 }
 
+func userFacingTaskErrorIfPresent(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	return userFacingTaskError(raw)
+}
+
 func classifyUserFacingTaskError(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return taskErrorDefaultMessage
 	}
+	if taskErrorIsModeration(raw) {
+		return taskErrorModerationMessage
+	}
 	if index := strings.Index(raw, "；上游："); index >= 0 {
 		prefix := strings.TrimSpace(raw[:index])
-		if taskErrorIsModeration(prefix) {
-			return taskErrorModerationMessage
-		}
 		if hint := actionableUpstreamReason(raw[index+len("；上游："):]); hint != "" {
 			if prefix != "" {
 				return prefix + "；" + hint
@@ -60,9 +67,6 @@ func classifyUserFacingTaskError(raw string) string {
 		}
 		return taskErrorDefaultMessage
 	}
-	if taskErrorIsModeration(raw) {
-		return taskErrorModerationText(raw)
-	}
 	providerMessage := taskErrorStructuredProviderMessage(raw)
 	if providerMessage == "" {
 		providerMessage = taskErrorWrappedProviderMessage(raw)
@@ -72,7 +76,7 @@ func classifyUserFacingTaskError(raw string) string {
 		display = providerMessage
 	}
 	if taskErrorIsModeration(display) {
-		return taskErrorModerationText(display)
+		return taskErrorModerationMessage
 	}
 	if message := taskErrorStorageMessage(raw); message != "" {
 		return message
@@ -184,11 +188,7 @@ func cloudAgentReadableMessage(message string) bool {
 }
 
 func taskErrorIsModeration(value string) bool {
-	return strings.Contains(strings.ToLower(value), "sensitive_words_detected") || strings.Contains(value, "内容审核未通过")
-}
-
-func taskErrorModerationText(raw string) string {
-	return taskErrorModerationMessage
+	return isContentModerationFailure(value)
 }
 
 func taskErrorStorageMessage(value string) string {
@@ -203,7 +203,8 @@ func taskErrorStorageMessage(value string) string {
 	return ""
 }
 
-// Only known upstream failure classes become user hints; never echo upstream text.
+// Prefer known failure classes, then retain short, readable messages after the
+// same credential/diagnostic filtering used for provider errors and Agent output.
 func actionableUpstreamReason(value string) string {
 	lower := strings.ToLower(value)
 	image := strings.Contains(lower, "image") || strings.Contains(lower, "图片") || strings.Contains(lower, "file") || strings.Contains(lower, "参考图")
@@ -215,6 +216,9 @@ func actionableUpstreamReason(value string) string {
 		return "当前模型暂无可用渠道，请更换模型或联系管理员。"
 	case image && (strings.Contains(lower, "unsupported size") || strings.Contains(lower, "图片尺寸不支持") || strings.Contains(lower, "unsupported format") || strings.Contains(lower, "图片格式不支持")):
 		return "参考图片的尺寸或格式不符合模型要求，请调整图片后重试。"
+	}
+	if detail := providerErrorDetail(value); detail != "" && cloudAgentReadableMessage(detail) {
+		return detail
 	}
 	return ""
 }

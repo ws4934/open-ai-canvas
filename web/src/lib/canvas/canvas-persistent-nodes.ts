@@ -17,7 +17,6 @@ const pollingFields: (keyof CanvasNodeMetadata)[] = [
     "errorDetails",
     "generationErrorCode",
     "resourceReloadAvailable",
-    "failedPromptFingerprint",
 ];
 const projections = new WeakMap<CanvasNodeData, CanvasNodeData>();
 const serialized = new WeakMap<CanvasNodeData, string>();

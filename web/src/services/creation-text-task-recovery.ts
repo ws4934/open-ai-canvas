@@ -1,5 +1,6 @@
 import { parseBackendGenerationResult } from "@/services/api/generation-task";
 import type { GenerationTask } from "@/services/api/task-center";
+import { generationTaskFailureReason } from "@/lib/generation-task-display";
 
 export type RecoverableCreationTextMessage = {
     mode?: string;
@@ -39,5 +40,5 @@ export function recoverCreationTextTask(message: RecoverableCreationTextMessage,
         return { status: "cancelled", content: "已停止", error: undefined, taskIds: nextTaskIds };
     }
     const failed = matches.find((task) => task.status === "failed");
-    return { status: "error", content: "生成失败", error: failed?.error || "文本任务已失败", taskIds: nextTaskIds };
+    return { status: "error", content: "生成失败", error: failed ? generationTaskFailureReason(failed) : "文本任务已失败", taskIds: nextTaskIds };
 }

@@ -135,7 +135,6 @@ export async function executeImageGeneration(
             imageBatchExpanded: count > 1 ? true : undefined,
             generationErrorCode: undefined,
             resourceReloadAvailable: undefined,
-            failedPromptFingerprint: undefined,
         },
     };
     const childNodes: CanvasNodeData[] = childIds.map((id, index) => ({
@@ -155,7 +154,6 @@ export async function executeImageGeneration(
             ...skillMetadata,
             generationErrorCode: undefined,
             resourceReloadAvailable: undefined,
-            failedPromptFingerprint: undefined,
         },
     }));
     const connectsSelf = !isExistingImageNode || referenceImages.some((img) => img.id === nodeId);
@@ -277,7 +275,7 @@ export async function executeImageGeneration(
                 return true;
             } catch (error) {
                 if (isGenerationCanceled(error)) return false;
-                const failure = generationFailureMetadata(error, prompt);
+                const failure = generationFailureMetadata(error);
                 if (!representativeFailure || failure.generationErrorCode === CONTENT_MODERATION_ERROR_CODE) representativeFailure = failure;
                 hasFailure = true;
                 failureCount += 1;
@@ -313,7 +311,7 @@ export async function executeImageGeneration(
                     metadata: {
                         ...node.metadata,
                         status: hasSuccess ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR,
-                        ...(hasSuccess ? { errorDetails: undefined, generationErrorCode: undefined, failedPromptFingerprint: undefined } : representativeFailure || { errorDetails: "全部图片生成失败" }),
+                        ...(hasSuccess ? { errorDetails: undefined, generationErrorCode: undefined } : representativeFailure || { errorDetails: "全部图片生成失败" }),
                     },
                 };
             }
@@ -325,7 +323,7 @@ export async function executeImageGeneration(
                         ...node.metadata,
                         status: hasSuccess ? NODE_STATUS_SUCCESS : NODE_STATUS_ERROR,
                         batchFailedCount: count > 1 ? failureCount : undefined,
-                        ...(hasSuccess ? { errorDetails: undefined, generationErrorCode: undefined, failedPromptFingerprint: undefined } : representativeFailure || { errorDetails: "全部图片生成失败" }),
+                        ...(hasSuccess ? { errorDetails: undefined, generationErrorCode: undefined } : representativeFailure || { errorDetails: "全部图片生成失败" }),
                     },
                 };
             }

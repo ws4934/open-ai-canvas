@@ -65,9 +65,6 @@ func (w *taskLifecycleCoordinator) retryTask(userID string, id string) (*model.T
 		}
 		return nil, err
 	}
-	if isContentModerationFailure(task.Error) {
-		return nil, BadAuthRequest(contentModerationRetryMessage)
-	}
 	decryptedInput, err := s.decryptTaskInputJSON(task.InputJSON)
 	if err != nil {
 		return nil, err

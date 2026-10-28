@@ -23,6 +23,8 @@ func TestUserFacingTaskErrorMatchesCanvasNodeClassification(t *testing.T) {
 		{"provider json", `接口请求失败：{"error":{"message":"图片尺寸不支持"}}`, "图片尺寸不支持"},
 		{"model unavailable hint", `模型服务暂时不可用（HTTP 503）；上游：{"error":{"code":"model_not_found","message":"request id abc"}}`, "模型服务暂时不可用（HTTP 503）；当前模型暂无可用渠道，请更换模型或联系管理员。"},
 		{"large image hint", `模型服务拒绝请求；上游：image file too large: 25MB`, "模型服务拒绝请求；参考图片超过模型支持的大小限制，请压缩图片后重试。"},
+		{"readable provider detail", "模型服务拒绝请求；上游：参考图片只能使用 PNG 格式，请转换后重试。", "模型服务拒绝请求；参考图片只能使用 PNG 格式，请转换后重试。"},
+		{"sensitive provider detail", "模型服务拒绝请求；上游：鉴权失败，api_key=private-key", "模型服务拒绝请求"},
 		{"moderation", "sensitive_words_detected", taskErrorModerationMessage},
 		{"storage", "参考图片上传失败：bucket denied", "参考素材上传到对象存储失败，请检查对象存储配置后重试。"},
 		{"readable chinese", "模型服务拒绝了请求，请检查模型和参数", "模型服务拒绝了请求，请检查模型和参数"},

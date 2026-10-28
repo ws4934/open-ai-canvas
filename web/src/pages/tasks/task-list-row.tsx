@@ -5,7 +5,7 @@ import { Eye, FileText, FolderKanban, Image as ImageIcon, Play, RotateCcw, Video
 import { useState } from "react";
 
 import { MediaPreview } from "@/components/media-preview";
-import { CONTENT_MODERATION_ERROR_CODE, generationErrorMessage, isContentModerationError } from "@/lib/generation-error";
+import { generationErrorMessage } from "@/lib/generation-error";
 import { formatTaskKind, generationTaskShowsProgress, generationTaskStageLabel, generationTaskStatusLabel } from "@/lib/generation-task-display";
 import type { GenerationTask } from "@/services/api/task-center";
 import type { AiConfig } from "@/stores/use-config-store";
@@ -37,7 +37,6 @@ export function TaskListRow({
     const context = getTaskCanvasContext(task, canvasById, projectNameById);
     const isActive = task.status === "queued" || task.status === "running";
     const isFailed = isTaskFailed(task);
-    const retryDisabled = task.errorCode === CONTENT_MODERATION_ERROR_CODE || isContentModerationError(task.error);
     const stageLabel = generationTaskStageLabel(task);
     const showsProgress = generationTaskShowsProgress(task);
     return (
@@ -87,14 +86,13 @@ export function TaskListRow({
                     <IconButton size="sm" variant="ghost" icon={Eye} aria-label="查看详情" onClick={onOpen} />
                 </Tooltip>
                 {isFailed ? (
-                    <Tooltip title={retryDisabled ? "内容审核失败，无法自动重试" : task.canRecoverMedia ? "重试保存，不重新生成" : "重试任务"}>
+                    <Tooltip title={task.canRecoverMedia ? "重试保存，不重新生成" : "重试任务"}>
                         <Button
                             type="text"
                             size="small"
                             icon={<RotateCcw className="size-3.5" />}
                             aria-label={task.canRecoverMedia ? "重试保存" : "重试任务"}
                             loading={actingId === task.id}
-                            disabled={retryDisabled}
                             onClick={onRetry}
                         />
                     </Tooltip>

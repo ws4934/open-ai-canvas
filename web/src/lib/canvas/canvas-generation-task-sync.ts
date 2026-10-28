@@ -65,7 +65,6 @@ export function imageMetadata(image: UploadedImage): CanvasNodeMetadata {
         errorDetails: undefined,
         generationErrorCode: undefined,
         resourceReloadAvailable: undefined,
-        failedPromptFingerprint: undefined,
     };
 }
 
@@ -93,7 +92,6 @@ export function videoMetadata(video: UploadedFile): CanvasNodeMetadata {
         errorDetails: undefined,
         generationErrorCode: undefined,
         resourceReloadAvailable: undefined,
-        failedPromptFingerprint: undefined,
     };
 }
 
@@ -108,7 +106,6 @@ export function audioMetadata(audio: UploadedFile): CanvasNodeMetadata {
         errorDetails: undefined,
         generationErrorCode: undefined,
         resourceReloadAvailable: undefined,
-        failedPromptFingerprint: undefined,
     };
 }
 
@@ -274,7 +271,6 @@ export async function buildGenerationTaskNodeResult(node: CanvasNodeData, task: 
             errorDetails: undefined,
             generationErrorCode: undefined,
             resourceReloadAvailable: undefined,
-            failedPromptFingerprint: undefined,
         },
     };
 }
@@ -736,6 +732,5 @@ function completedTaskMetadata(task: GenerationTask): CanvasNodeMetadata {
         errorDetails: undefined,
         resourceReloadAvailable: undefined,
         generationErrorCode: undefined,
-        failedPromptFingerprint: undefined,
     };
 }

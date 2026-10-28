@@ -84,6 +84,80 @@ func TestOrdinaryFailedAndCancelledTasksKeepRetryIdentity(t *testing.T) {
 	}
 }
 
+func TestContentModerationTasksCanRetryUnchangedInput(t *testing.T) {
+	for _, taskType := range []string{"canvas_image", "canvas_video", "canvas_audio", "canvas_text", "timeline_render", "timeline_transcription"} {
+		t.Run(taskType, func(t *testing.T) {
+			s, db, _, _ := creationTestService(t)
+			task := model.Task{
+				ID: "moderation-" + taskType, UserID: "user", Type: taskType,
+				Status: model.TaskStatusFailed, Error: "content_policy_violation：内容未通过上游安全审核",
+				Prompt: "原始提示词", InputJSON: `{"prompt":"原始提示词"}`, RouteRun: 1,
+			}
+			if err := db.Create(&task).Error; err != nil {
+				t.Fatal(err)
+			}
+			retried, err := s.RetryTask(task.UserID, task.ID)
+			if err != nil {
+				t.Fatalf("moderation failure should allow manual retry: %v", err)
+			}
+			stored, err := s.repo.TaskForUser(task.UserID, task.ID)
+			if err != nil || retried.Status != model.TaskStatusQueued || stored.InputJSON != task.InputJSON || stored.Prompt != task.Prompt || stored.Error != "" || stored.RouteRun != 2 {
+				t.Fatalf("retry must retain original input and enqueue one new attempt: task=%+v err=%v", stored, err)
+			}
+			if _, err := s.RetryTask(task.UserID, task.ID); err == nil {
+				t.Fatal("duplicate retry accepted while already queued")
+			}
+		})
+	}
+}
+
+func TestContentModerationRetryCreatesNewBillingOrder(t *testing.T) {
+	s, db, _, _ := creationTestService(t)
+	task, err := s.CreateTask("user", creationTextRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.BillingOrderID == "" {
+		t.Fatal("paid fixture has no billing order")
+	}
+	if err := s.taskBilling().RefundBilling(task.BillingOrderID, "content_policy_violation"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(task).Updates(map[string]any{"status": model.TaskStatusFailed, "error": "sensitive_words_detected"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	retried, err := s.RetryTask("user", task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retried.Status != model.TaskStatusQueued || retried.BillingOrderID == "" || retried.BillingOrderID == task.BillingOrderID {
+		t.Fatalf("retry must use a new billing order: %+v", retried)
+	}
+	oldOrder, err := s.repo.BillingOrder(task.BillingOrderID)
+	if err != nil || oldOrder.Status != model.BillingStatusRefunded {
+		t.Fatalf("previous billing order changed: %+v %v", oldOrder, err)
+	}
+}
+
+func TestContentModerationRetryStillWaitsForBillingReview(t *testing.T) {
+	s, db, _, _ := creationTestService(t)
+	order := model.BillingOrder{ID: "moderation-review", UserID: "user", Status: model.BillingStatusUncertain}
+	if err := db.Create(&order).Error; err != nil {
+		t.Fatal(err)
+	}
+	task := model.Task{ID: "moderation-review", UserID: "user", Type: "canvas_image", Status: model.TaskStatusFailed, Error: "content_policy_violation", InputJSON: `{}`, BillingOrderID: order.ID}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RetryTask("user", task.ID); err == nil || !strings.Contains(err.Error(), "费用仍在核对") {
+		t.Fatalf("billing review must still prevent duplicate charges: %v", err)
+	}
+	stored, err := s.repo.TaskForUser("user", task.ID)
+	if err != nil || stored.Status != model.TaskStatusFailed || stored.BillingOrderID != order.ID || stored.Error != task.Error {
+		t.Fatalf("blocked retry changed the task: %+v %v", stored, err)
+	}
+}
+
 func TestTaskCancellationPersistsFirstSourceAndDiagnostic(t *testing.T) {
 	s, db, _ := agentMediaFixture(t)
 	task := model.Task{ID: "cancel-child", UserID: "user", AgentRunID: "parent", Status: model.TaskStatusQueued}

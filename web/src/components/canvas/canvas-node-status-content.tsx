@@ -172,7 +172,7 @@ export function ErrorContent({ node, theme, onRetry, onReloadResource, onOpenTas
                     {view.description}
                 </span>
             </span>
-            {view.kind === "uncertain" || view.kind === "moderation" ? null : (
+            {view.kind === "uncertain" ? null : (
                 <span className="canvas-gen-actions">
                     {view.kind === "recover-media" ? (
                         <button {...actionProps} className="canvas-gen-action is-primary" onClick={runAction(onRetry)}>

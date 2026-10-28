@@ -16,10 +16,11 @@ import { imageResolutionUsesQuality } from "@/lib/image-size-presets";
 import { modelCapabilityConfigFor, normalizeImageValue, normalizeVideoValue } from "@/lib/model-capabilities";
 import { creationVideoConfig } from "@/pages/create/creation-generation-config";
 import { imageQualityLabel } from "@/lib/image-quality";
+import { generationTaskFailureReason, generationTaskStatusLabel } from "@/lib/generation-task-display";
 import { modelQuoteRequest } from "@/lib/model-pricing";
 import { quoteModel } from "@/services/api/logical-models";
 import { prepareBackendGenerationTask } from "@/services/api/generation-task";
-import { createGenerationTask, cancelGenerationTask, queryGenerationTask, retryGenerationTask, type GenerationTask } from "@/services/api/task-center";
+import { createGenerationTask, cancelGenerationTask, queryGenerationTask, recoverGenerationTaskMedia, retryGenerationTask, type GenerationTask } from "@/services/api/task-center";
 import { capabilitySupportedModes, createWorkbenchTask, listWorkbenchTasks, listWorkbenchTools, normalizeWorkbenchGuide, resolveWorkbenchResourceURL, type WorkbenchKind, type WorkbenchPromptPreset, type WorkbenchTool } from "@/services/api/workbench";
 import { resourceStorageKey, resolveResourceUrl, uploadResourceFile } from "@/services/api/resources";
 import { formatCredits, requestCreditCost } from "@/constant/credits";
@@ -131,7 +132,7 @@ function displayTaskState(task: GenerationTask) {
     if (task.status === "running") return task.stage || "生成中";
     if (task.status === "succeeded") return "已完成";
     if (task.status === "cancelled") return "已取消";
-    return task.error || task.stage || "生成失败";
+    return task.mediaStage ? generationTaskStatusLabel(task) : "任务失败";
 }
 
 function revokeReferencePreview(reference: WorkbenchReference) {
@@ -799,12 +800,14 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                     // The retry response also contains the safe restore snapshot.
                 }
             }
-            const restored = await restoreTaskToComposer(restoreSource, false);
-            const next = await retryGenerationTask(task.id);
+            const recoveringMedia = Boolean(restoreSource.canRecoverMedia || restoreSource.mediaStage);
+            const restored = recoveringMedia || (await restoreTaskToComposer(restoreSource, false));
+            const next = recoveringMedia ? await recoverGenerationTaskMedia(task.id) : await retryGenerationTask(task.id);
             if (!restored) await restoreTaskToComposer(next, false);
             setTasks((current) => [next, ...current.filter((item) => item.id !== next.id)]);
             setActiveTask(next);
-            message.success("任务已重新提交");
+            setDetailTask((current) => (current?.id === task.id ? next : current));
+            message.success(recoveringMedia ? "正在恢复作品保存，不会重新生成" : "任务已重新提交");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "重试任务失败");
         } finally {
@@ -1363,15 +1366,16 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                         )}
                                         <div className="workbench-result-caption">
                                             <span>{taskModelLabel(resultTask)}</span>
-                                            <Button size="small" icon={<Expand className="size-3.5" />} onClick={() => setDetailTask(resultTask)}>
+                                            <Button size="small" icon={<Expand className="size-3.5" />} onClick={() => void openDetail(resultTask)}>
                                                 查看详情
                                             </Button>
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className={`workbench-result-error is-${resultTask.status}`}>
+                                    <div className={`workbench-result-error is-${resultTask.status}`} role={resultTask.status === "failed" ? "alert" : undefined}>
                                         <strong>{displayTaskState(resultTask)}</strong>
-                                        <Button onClick={() => setDetailTask(resultTask)}>查看任务详情</Button>
+                                        {resultTask.status === "failed" ? <p className="workbench-failure-reason">{generationTaskFailureReason(resultTask)}</p> : null}
+                                        <Button onClick={() => void openDetail(resultTask)}>查看任务详情</Button>
                                     </div>
                                 )}
                             </div>
@@ -1422,7 +1426,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             >
                 {detailTask ? (
                     <div className="workbench-detail-grid">
-                        <div className="workbench-detail-media">
+                        <div className={`workbench-detail-media${taskPreview(detailTask) ? "" : " is-empty"}`}>
                             {taskPreview(detailTask) ? (
                                 detailTask.previewKind === "video" || kind === "video" ? (
                                     <video src={taskPreview(detailTask)} controls playsInline />
@@ -1435,6 +1439,11 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                         </div>
                         <div className="workbench-detail-info">
                             <span className={`workbench-status is-${detailTask.status}`}>{displayTaskState(detailTask)}</span>
+                            {detailTask.status === "failed" ? (
+                                <p className="workbench-failure-reason" role="alert">
+                                    {generationTaskFailureReason(detailTask)}
+                                </p>
+                            ) : null}
                             <h3>{taskModelLabel(detailTask)}</h3>
                             <label>提示词</label>
                             <p className="workbench-detail-prompt">{detailTask.prompt}</p>
@@ -1460,7 +1469,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                 </Button>
                                 {detailTask.status === "failed" || detailTask.status === "cancelled" ? (
                                     <Button type="primary" loading={taskBusyId === detailTask.id} disabled={detailLoading} onClick={() => void retryTask(detailTask)}>
-                                        重新生成
+                                        {detailTask.canRecoverMedia || detailTask.mediaStage ? "重试保存" : "重新生成"}
                                     </Button>
                                 ) : null}
                             </div>
@@ -1710,6 +1719,11 @@ function TaskTile({ task, kind, modelLabel, busy, onOpen, onCancel, onRetry }: {
                         <span className="workbench-tile-placeholder">
                             {kind === "video" ? <Video /> : <FileImage />}
                             <span>{displayTaskState(task)}</span>
+                            {task.status === "failed" ? (
+                                <span className="workbench-tile-failure-reason" title={generationTaskFailureReason(task)}>
+                                    {generationTaskFailureReason(task)}
+                                </span>
+                            ) : null}
                         </span>
                     )}
                     {pending ? <span className="workbench-tile-progress" style={{ width: `${Math.max(8, task.progress || 0)}%` }} /> : null}
@@ -1731,8 +1745,8 @@ function TaskTile({ task, kind, modelLabel, busy, onOpen, onCancel, onRetry }: {
                         </Tooltip>
                     ) : null}
                     {onRetry ? (
-                        <Tooltip title="用相同参数再生成一次">
-                            <button type="button" aria-label="再次生成" disabled={busy} onClick={onRetry}>
+                        <Tooltip title={task.canRecoverMedia || task.mediaStage ? "重试保存，不重新生成" : "用相同参数再生成一次"}>
+                            <button type="button" aria-label={task.canRecoverMedia || task.mediaStage ? "重试保存" : "再次生成"} disabled={busy} onClick={onRetry}>
                                 {busy ? <LoaderCircle className="animate-spin" /> : <RotateCcw />}
                             </button>
                         </Tooltip>

@@ -1,6 +1,6 @@
 export const CONTENT_MODERATION_ERROR_CODE = "sensitive_words_detected";
 
-export const CONTENT_MODERATION_MESSAGE = "内容审核未通过，本次平台积分未扣除或已退还。请修改提示词后重新生成。";
+export const CONTENT_MODERATION_MESSAGE = "内容审核未通过，可重试或调整提示词、参考素材后重新生成。";
 
 const UPSTREAM_LINK_PLACEHOLDER = "[链接已隐藏]";
 const UPSTREAM_HOST_PLACEHOLDER = "[地址已隐藏]";
@@ -8,6 +8,9 @@ const UPSTREAM_URL_PATTERN = /https?:\/\/[^\s<>"'，。；）]+/gi;
 const UPSTREAM_NETWORK_OPERATION_PATTERN = /\b(?:dial|read|write|proxyconnect)\s+tcp\s+\S+/gi;
 const UPSTREAM_IPV4_PATTERN = /\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g;
 const USER_VISIBLE_TASK_ID_PATTERN = /\btask[_-][a-z0-9][a-z0-9_-]{2,}\b/gi;
+const CONTENT_MODERATION_PATTERN = /sensitive_words_detected|content[_ ]policy[_ ]violation|内容审核未通过|未通过(?:上游|模型服务)?安全审核|内容安全检查未通过|防护限制|请求触发了平台安全策略/i;
+const SENSITIVE_PROVIDER_DETAIL_PATTERN =
+    /余额|额度|配额|欠费|账单|充值|计费|密钥|密码|令牌|balance|quota|billing|credit|payment|funds|wallet|api[ _-]?key|authorization|bearer|cookie|(?:access|refresh|auth|session)[ _-]?token|token\s*[=:]|secret|password|credential|sk-[a-z0-9]|tenant|trace[ _-]?id|request[ _-]?id|internal stack|stack\s*trace|prompt\s*[=:]|file:\/\/|\/var\/|\/tmp\/|traceback|sql:|sqlite|postgres/i;
 
 const DEFAULT_GENERATION_ERROR_MESSAGE = "生成失败，请稍后重试。";
 const NETWORK_ERROR_MESSAGE = "网络异常。";
@@ -53,30 +56,26 @@ export function redactUpstreamAddress(value: string) {
 export type GenerationFailureMetadata = {
     errorDetails: string;
     generationErrorCode?: string;
-    failedPromptFingerprint?: string;
 };
 
-export function generationFailureMetadata(error: unknown, prompt: string): GenerationFailureMetadata {
-    const raw = rawGenerationError(error);
-    if (!isContentModerationError(raw)) return { errorDetails: generationErrorMessage(error) };
+export function generationFailureMetadata(error: unknown): GenerationFailureMetadata {
+    if (!isContentModerationError(error)) return { errorDetails: generationErrorMessage(error) };
     return {
         errorDetails: generationErrorMessage(error),
         generationErrorCode: CONTENT_MODERATION_ERROR_CODE,
-        failedPromptFingerprint: generationPromptFingerprint(prompt),
     };
 }
 
 export function generationErrorMessage(error: unknown) {
+    if (isContentModerationError(error)) return CONTENT_MODERATION_MESSAGE;
     const original = rawGenerationError(error);
     const upstreamIndex = original.indexOf("；上游：");
     if (upstreamIndex >= 0) {
         const prefix = original.slice(0, upstreamIndex).trim();
-        if (isContentModerationError(prefix)) return CONTENT_MODERATION_MESSAGE;
         const hint = actionableUpstreamReason(original.slice(upstreamIndex + "；上游：".length));
         if (hint) return sanitizeUserVisibleError(prefix ? `${prefix}；${hint}` : hint);
     }
     const raw = sanitizeUserVisibleError(original);
-    if (isContentModerationError(raw)) return contentModerationMessage(raw);
 
     const reason = structuredErrorReason(error);
     if (reason === "model_capability_not_supported") return MODEL_CAPABILITY_ERROR_MESSAGE;
@@ -86,7 +85,7 @@ export function generationErrorMessage(error: unknown) {
 
     const providerMessage = extractStructuredProviderMessage(raw) || extractWrappedProviderMessage(raw);
     const displayMessage = providerMessage || raw;
-    if (isContentModerationError(displayMessage)) return contentModerationMessage(displayMessage);
+    if (isContentModerationError(displayMessage)) return CONTENT_MODERATION_MESSAGE;
     const resourceStorageMessage = resourceStorageFailureMessage(raw) || resourceStorageFailureMessage(displayMessage);
     if (resourceStorageMessage) return resourceStorageMessage;
     if (isNetworkFailure(displayMessage)) return NETWORK_ERROR_MESSAGE;
@@ -102,10 +101,6 @@ export function generationErrorMessage(error: unknown) {
     if (keepsProviderDetail(displayMessage)) return displayMessage;
     if (isTechnicalProviderMessage(displayMessage)) return MODEL_SERVICE_ERROR_MESSAGE;
     return displayMessage || DEFAULT_GENERATION_ERROR_MESSAGE;
-}
-
-function contentModerationMessage(raw: string) {
-    return CONTENT_MODERATION_MESSAGE;
 }
 
 function sanitizeUserVisibleError(value: string) {
@@ -126,7 +121,24 @@ function actionableUpstreamReason(value: string) {
     if (image && tooLarge) return "参考图片超过模型支持的大小限制，请压缩图片后重试。";
     if (lower.includes("model_not_found") || lower.includes("model not found") || lower.includes("无可用渠道")) return "当前模型暂无可用渠道，请更换模型或联系管理员。";
     if (image && (lower.includes("unsupported size") || lower.includes("图片尺寸不支持") || lower.includes("unsupported format") || lower.includes("图片格式不支持"))) return "参考图片的尺寸或格式不符合模型要求，请调整图片后重试。";
-    return "";
+    return readableProviderDetail(value);
+}
+
+function readableProviderDetail(value: string) {
+    let detail = value.trim();
+    if (detail.startsWith("{") || detail.startsWith("[")) {
+        try {
+            detail = providerPayloadMessage(JSON.parse(detail));
+        } catch {
+            return "";
+        }
+    }
+    if (!detail || /[\r\n\x00<>\\]/.test(detail) || SENSITIVE_PROVIDER_DETAIL_PATTERN.test(detail)) return "";
+    detail = redactUpstreamAddress(detail);
+    const text = detail.replace(/\[(?:链接|地址|任务标识)已隐藏\]/g, "");
+    const han = text.match(/[\u3400-\u9fff]/g)?.length || 0;
+    if (!han || (text.match(/[a-z]/gi)?.length || 0) > han * 2 || containsInfrastructureDetails(detail) || isNetworkFailure(detail)) return "";
+    return Array.from(detail).slice(0, 240).join("");
 }
 
 export function generationErrorCode(error: unknown) {
@@ -138,18 +150,14 @@ export function generationErrorCode(error: unknown) {
 }
 
 export function isContentModerationError(value: unknown) {
-    const text = value instanceof Error ? value.message : String(value || "");
-    return text.toLowerCase().includes(CONTENT_MODERATION_ERROR_CODE) || text.includes("内容审核未通过");
+    if (CONTENT_MODERATION_PATTERN.test(rawGenerationError(value))) return true;
+    if (!value || typeof value !== "object") return false;
+    const record = value as Record<string, unknown>;
+    const nested = record.error && typeof record.error === "object" ? (record.error as Record<string, unknown>) : undefined;
+    return [record.code, record.errorCode, nested?.code].some((code) => typeof code === "string" && CONTENT_MODERATION_PATTERN.test(code));
 }
 
-export function unchangedModeratedPrompt(metadata: { errorDetails?: string; generationErrorCode?: string; failedPromptFingerprint?: string } | undefined, prompt: string) {
-    const moderationFailure = metadata?.generationErrorCode === CONTENT_MODERATION_ERROR_CODE || isContentModerationError(metadata?.errorDetails);
-    if (!moderationFailure) return false;
-    if (!metadata?.failedPromptFingerprint) return true;
-    return metadata.failedPromptFingerprint === generationPromptFingerprint(prompt);
-}
-
-// 指纹只用于识别“原样重试”，不是安全或鉴权用途。
+// 用于生成请求去重，不用于安全或鉴权。
 export function generationPromptFingerprint(value: string) {
     const normalized = value.trim().replace(/\s+/g, " ");
     let hash = 2166136261;
@@ -193,10 +201,11 @@ function isTechnicalProviderMessage(value: string) {
 function keepsProviderDetail(value: string) {
     const marker = "；上游：";
     const index = value.indexOf(marker);
-    if (index < 0) return false;
-    const detail = value.slice(index + marker.length).trim();
+    const separator = index >= 0 ? index : value.indexOf("；");
+    if (separator < 0) return false;
+    const detail = value.slice(separator + (index >= 0 ? marker.length : 1)).trim();
     if (!detail || isNetworkFailure(detail) || containsInfrastructureDetails(detail)) return false;
-    return !/\bHTTP\s*5\d{2}\b/i.test(detail);
+    return !/\bHTTP\s*5\d{2}\b/i.test(detail) && Boolean(actionableUpstreamReason(detail));
 }
 
 function extractStructuredProviderMessage(raw: string) {

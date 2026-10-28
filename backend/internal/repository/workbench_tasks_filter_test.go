@@ -61,3 +61,47 @@ func TestTasksWithWorkbenchKindRequiresMatchingTaskType(t *testing.T) {
 		}
 	}
 }
+
+func TestTaskListsSelectFailureReasons(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&model.Task{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, taskType := range []string{"canvas_image", "canvas_video", "canvas_audio", "canvas_text", model.TaskTypeTimelineRender, model.TaskTypeTimelineTranscription} {
+		kind := ""
+		if taskType == "canvas_image" {
+			kind = "image"
+		} else if taskType == "canvas_video" {
+			kind = "video"
+		}
+		task := model.Task{ID: taskType, UserID: "owner", Type: taskType, WorkbenchKind: kind, Status: model.TaskStatusFailed, Error: "失败原因：" + taskType, InputJSON: "{}"}
+		if err := db.Create(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Create(&model.Task{ID: "foreign", UserID: "other", Type: "canvas_image", WorkbenchKind: "image", Status: model.TaskStatusFailed, Error: "private-other-user", InputJSON: "{}"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := New(db)
+	for _, kind := range []string{"", "image", "video"} {
+		tasks, err := repo.TasksWithWorkbenchKind("owner", 100, "", false, kind)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := 6
+		if kind != "" {
+			want = 1
+		}
+		if len(tasks) != want {
+			t.Fatalf("%s list returned %d tasks, want %d", kind, len(tasks), want)
+		}
+		for _, task := range tasks {
+			if task.ID == "foreign" || task.Error != "失败原因："+task.Type {
+				t.Fatalf("%s list lost failure reason or user boundary: %+v", kind, task)
+			}
+		}
+	}
+}

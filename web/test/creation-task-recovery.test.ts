@@ -4,6 +4,7 @@ import { creationMessageNeedsResultSync, reconcileCreationTaskMessages, type Per
 import type { CreationConversation, CreationMessage } from "@/pages/create/creation-types";
 import { pendingCreationTaskIds } from "@/services/creation-conversation-store";
 import { recoverCreationTextTask } from "@/services/creation-text-task-recovery";
+import { CONTENT_MODERATION_MESSAGE } from "@/lib/generation-error";
 
 const runtime = { recoverCreationTextTask } as unknown as Parameters<typeof reconcileCreationTaskMessages>[0];
 const at = "2026-10-27T11:00:00.000Z";
@@ -50,6 +51,13 @@ describe("首页创作：页面没跟上 ≠ 生成失败", () => {
         const next = messageOf(reconcileCreationTaskMessages(runtime, conversations(assistant({ status: "pending" })), [task({ status: "failed", error: "作品已生成，但保存未完成：上传 OSS", mediaStage: "upload", canRecoverMedia: true })]));
         expect(next).toMatchObject({ status: "error", errorKind: "task", mediaRecoverable: true });
         expect(creationMessageNeedsResultSync(next)).toBe(false);
+    });
+
+    test("刷新恢复的图片、视频和文本失败消息保留审核原因", () => {
+        for (const mode of ["image", "video", "text"] as const) {
+            const next = messageOf(reconcileCreationTaskMessages(runtime, conversations(assistant({ mode, status: "pending" })), [task({ type: `canvas_${mode}`, status: "failed", stage: "任务失败", errorCode: "content_policy_violation" })]));
+            expect(next).toMatchObject({ status: "error", error: CONTENT_MODERATION_MESSAGE });
+        }
     });
 
     test("后端已确认失败的消息不会被之后的快照改写", () => {

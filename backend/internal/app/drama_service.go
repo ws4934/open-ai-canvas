@@ -416,7 +416,7 @@ func (s *Service) DramaEpisodeDetail(userID string, projectID string, episodeID 
 }
 
 func dramaJobView(job model.DramaJob) DramaJobView {
-	view := DramaJobView{ID: job.ID, Kind: job.Kind, Status: job.Status, Label: job.Label, Error: job.Error, EpisodeID: job.EpisodeID, ShotID: job.ShotID, TaskID: job.TaskID, CostMicrocredits: job.CostMicrocredits, Attempt: job.Attempt, CreatedAt: job.CreatedAt.Format(time.RFC3339), UpdatedAt: job.UpdatedAt.Format(time.RFC3339)}
+	view := DramaJobView{ID: job.ID, Kind: job.Kind, Status: job.Status, Label: job.Label, Error: userFacingTaskErrorIfPresent(job.Error), EpisodeID: job.EpisodeID, ShotID: job.ShotID, TaskID: job.TaskID, CostMicrocredits: job.CostMicrocredits, Attempt: job.Attempt, CreatedAt: job.CreatedAt.Format(time.RFC3339), UpdatedAt: job.UpdatedAt.Format(time.RFC3339)}
 	if job.StartedAt != nil {
 		view.StartedAt = job.StartedAt.Format(time.RFC3339)
 	}
@@ -458,6 +458,7 @@ func (s *Service) DramaJobDetail(userID string, projectID string, jobID string) 
 				}
 			}
 		}
+		view.Error = userFacingTaskErrorIfPresent(view.Error)
 		detail.Attempts = append(detail.Attempts, view)
 	}
 	return detail, nil
@@ -515,7 +516,7 @@ func dramaJobTaskView(task *model.Task, labels map[string]string) *DramaJobTaskV
 	view := &DramaJobTaskView{
 		ID: task.ID, Status: string(task.Status), Stage: task.Stage, Operation: task.Operation, Model: task.Model,
 		ModelLabel: firstNonEmpty(labels["l:"+task.LogicalModelID], labels["m:"+task.Model], task.Model),
-		Prompt:     truncateRunes(task.Prompt, 6000), Params: map[string]string{}, Error: task.Error, MediaStage: task.MediaStage,
+		Prompt:     truncateRunes(task.Prompt, 6000), Params: map[string]string{}, Error: userFacingTaskErrorIfPresent(task.Error), MediaStage: task.MediaStage,
 		CreatedAt: task.CreatedAt.Format(time.RFC3339),
 	}
 	if task.StartedAt != nil {

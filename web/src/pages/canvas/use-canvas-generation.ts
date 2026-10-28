@@ -15,6 +15,7 @@ import { cinematicStoryboardColumns, storyboardRowsFromTask } from "@/lib/canvas
 import { generationTaskMetadata } from "@/lib/canvas/canvas-project-generation";
 import { nodeGenerationPrompt } from "@/lib/canvas/generation-contract";
 import { generationFailureMetadata } from "@/lib/generation-error";
+import { generationTaskFailureReason } from "@/lib/generation-task-display";
 import { runGenerationConsumer } from "@/services/generation-consumer-lifecycle";
 import { hasRemoteUserDataSyncSession } from "@/services/user-data-sync";
 import { attachNodeEffectKey } from "@/services/generation-task-materializer";
@@ -110,7 +111,7 @@ export async function recoverCanvasGenerationTaskNode(input: {
         if (input.completed.projectId && input.completed.projectId !== input.projectId) throw new Error("生成任务不属于当前画布");
         if (!isCurrentProject()) return;
         if (input.completed.status === "failed" || input.completed.status === "cancelled") {
-            throw new Error(input.completed.error || (input.completed.status === "cancelled" ? "任务已取消" : "任务失败"));
+            throw new Error(generationTaskFailureReason(input.completed));
         }
         if (!input.continuationOnly) {
             if (input.node.type === CanvasNodeType.Script && input.completed.type === "canvas_text" && input.completed.operation === "storyboard") {
@@ -127,7 +128,6 @@ export async function recoverCanvasGenerationTaskNode(input: {
                                   errorDetails: undefined,
                                   generationErrorCode: undefined,
                                   resourceReloadAvailable: undefined,
-                                  failedPromptFingerprint: undefined,
                                   storyboard: { rows: result.rows, visibleColumns: cinematicStoryboardColumns(item.metadata?.storyboard?.visibleColumns), referenceNodeIds: item.metadata?.storyboard?.referenceNodeIds || [] },
                               },
                           }
@@ -175,7 +175,7 @@ export async function recoverCanvasGenerationTaskNode(input: {
     } catch (error) {
         if (!isCurrentProject() || (error instanceof Error && error.name === "AbortError")) return;
         if (isCanvasGenerationDurableAckError(error)) return;
-        const failure = generationFailureMetadata(error, nodeGenerationPrompt(input.node));
+        const failure = generationFailureMetadata(error);
         input.setNodes((current) =>
             current.map((item) =>
                 item.id === input.node.id
@@ -265,14 +265,14 @@ export function useCanvasGeneration({ projectId, domainProjectId, projectLoaded,
                     const failed = task.status === "failed" || task.status === "cancelled";
                     const extraction = node.metadata?.layerExtraction;
                     const rejectedLayer = extraction?.rejectedTaskId === task.id;
-                    const failure = failed ? generationFailureMetadata(task.error || (task.status === "cancelled" ? "任务已取消" : "任务失败"), nodeGenerationPrompt(node) || task.prompt || "") : undefined;
+                    const failure = failed ? generationFailureMetadata(generationTaskFailureReason(task)) : undefined;
                     return {
                         ...node,
                         metadata: {
                             ...node.metadata,
                             ...generationTaskMetadata(task),
                             status: canvasTaskBindingStatus(node, task),
-                            ...(failure || (rejectedLayer ? {} : { errorDetails: undefined, generationErrorCode: undefined, resourceReloadAvailable: undefined, failedPromptFingerprint: undefined })),
+                            ...(failure || (rejectedLayer ? {} : { errorDetails: undefined, generationErrorCode: undefined, resourceReloadAvailable: undefined })),
                         },
                     };
                 }),
@@ -482,7 +482,7 @@ export function useCanvasGeneration({ projectId, domainProjectId, projectLoaded,
                         });
                     } catch (error) {
                         if (!isCurrentProject() || (error instanceof Error && error.name === "AbortError")) return;
-                        const failure = generationFailureMetadata(error, nodeGenerationPrompt(node));
+                        const failure = generationFailureMetadata(error);
                         setNodes((current) =>
                             isCurrentProject()
                                 ? current.map((item) =>
@@ -545,7 +545,7 @@ export function useCanvasGeneration({ projectId, domainProjectId, projectLoaded,
                 setNodes((current) =>
                     current.map((item) =>
                         ownsTask(item) && item.metadata?.status === NODE_STATUS_LOADING
-                            ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails: generationFailureMetadata(error, nodeGenerationPrompt(item)).errorDetails, resourceReloadAvailable: true } }
+                            ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails: generationFailureMetadata(error).errorDetails, resourceReloadAvailable: true } }
                             : item,
                     ),
                 );

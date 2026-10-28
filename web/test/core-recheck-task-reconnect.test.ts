@@ -130,6 +130,16 @@ test("only a backend failure is a terminal task error; polling interruptions are
     if (isGenerationTaskTerminalError(terminal)) expect(terminal.task).toMatchObject({ id: running.id, status: "failed" });
 });
 
+test("terminal polling errors preserve the concrete reason and moderation code", async () => {
+    for (const failure of [{ error: "图片尺寸不支持，请调整后重试。" }, { errorCode: "content_policy_violation", error: "" }]) {
+        apiClient.defaults.adapter = async (config) => ({ config, status: 200, statusText: "", headers: {}, data: { code: 0, data: { ...running, status: "failed", stage: "任务失败", ...failure }, msg: "ok" } });
+        const terminal = await waitForGenerationTask(running.id, { initialTask: running, intervalMs: 1, timeoutMs: 1000 }).catch((error: unknown) => error);
+        expect(isGenerationTaskTerminalError(terminal)).toBe(true);
+        if (!(terminal instanceof Error)) throw new Error("missing terminal error");
+        expect(terminal.message).toContain(failure.error ? "图片尺寸不支持" : "内容审核未通过");
+    }
+});
+
 test("a failed observer restarts for an existing subscriber when network returns", async () => {
     let offline = true;
     let queries = 0;

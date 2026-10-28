@@ -1,5 +1,6 @@
 import { createClientId } from "@/lib/client-id";
 import { generationErrorMessage } from "@/lib/generation-error";
+import { generationTaskFailureReason } from "@/lib/generation-task-display";
 import type { BackendGenerationResult } from "@/services/api/generation-task";
 import type { GenerationTask } from "@/services/api/task-center";
 import { creationAttachmentKind, type CreationAttachment } from "./creation-assets";
@@ -188,7 +189,7 @@ export function reconcileCreationTaskMessages(runtime: CreationRuntime, conversa
                 content: "生成失败",
                 errorKind: "task" as const,
                 mediaRecoverable: matches.some((task) => task.status === "failed" && task.canRecoverMedia) || undefined,
-                error: generationErrorMessage(failed?.error || "任务已结束，但没有返回结果"),
+                error: failed ? generationTaskFailureReason(failed) : "任务已结束，但没有返回结果",
                 generationStatus: failed ? ("failed" as const) : message.generationStatus,
                 generationMediaStage: failed?.mediaStage,
                 taskIds: nextTaskIds,

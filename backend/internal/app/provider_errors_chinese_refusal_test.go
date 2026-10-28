@@ -13,6 +13,8 @@ func TestProviderChineseSafetyRefusalUsesModerationMessage(t *testing.T) {
 		"image refusal":  `{"error":{"message":"非常抱歉，生成的图片可能违反了关于裸露、色情或情色内容的防护限制。"}}`,
 		"policy":         `{"message":"请求触发了平台安全策略，已拦截"}`,
 		"content safety": `{"msg":"输入包含违规内容，内容安全检查未通过"}`,
+		"grok policy":    `{"error":{"code":"content_policy_violation","message":"内容未通过上游安全审核，请修改提示词或参考素材后重试。"}}`,
+		"policy code":    `{"error":{"code":"content_policy_violation","message":"request rejected"}}`,
 	} {
 		for _, status := range []int{http.StatusBadRequest, http.StatusUnprocessableEntity} {
 			got := providerHTTPError{StatusCode: status, Status: http.StatusText(status), Body: body}.Error()

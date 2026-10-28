@@ -73,7 +73,6 @@ export function cancelIncompleteImageBatch(rootId: string, childIds: string[], n
             if (!hasContent) {
                 delete metadata.errorDetails;
                 delete metadata.generationErrorCode;
-                delete metadata.failedPromptFingerprint;
             }
             if (remaining.length <= 1) {
                 delete metadata.batchFailedCount;
@@ -122,7 +121,6 @@ export function markImageBatchRetrying(rootId: string, childIds: string[], nodes
                 errorDetails: undefined,
                 generationErrorCode: undefined,
                 resourceReloadAvailable: undefined,
-                failedPromptFingerprint: undefined,
             },
         };
     });
@@ -138,7 +136,6 @@ export function restoreUnsubmittedImageBatchChild(current: CanvasNodeData, origi
             errorDetails: original.metadata?.errorDetails || "重试请求未提交",
             generationErrorCode: original.metadata?.generationErrorCode,
             resourceReloadAvailable: original.metadata?.resourceReloadAvailable,
-            failedPromptFingerprint: original.metadata?.failedPromptFingerprint,
         },
     };
 }
@@ -160,7 +157,6 @@ export function reconcileImageBatchRoot(root: CanvasNodeData, nodes: CanvasNodeD
         delete metadata.errorDetails;
         delete metadata.generationErrorCode;
         delete metadata.resourceReloadAvailable;
-        delete metadata.failedPromptFingerprint;
         if (!hasImageBatchResult(root)) metadata.status = "idle";
         return { ...root, metadata };
     }
@@ -186,7 +182,6 @@ export function reconcileImageBatchRoot(root: CanvasNodeData, nodes: CanvasNodeD
         metadata.status = "success";
         delete metadata.errorDetails;
         delete metadata.generationErrorCode;
-        delete metadata.failedPromptFingerprint;
     } else {
         delete metadata.content;
         delete metadata.producedModel;
@@ -201,7 +196,6 @@ export function reconcileImageBatchRoot(root: CanvasNodeData, nodes: CanvasNodeD
         metadata.errorDetails = failed?.metadata?.errorDetails;
         metadata.generationErrorCode = failed?.metadata?.generationErrorCode;
         metadata.resourceReloadAvailable = failed?.metadata?.resourceReloadAvailable;
-        metadata.failedPromptFingerprint = failed?.metadata?.failedPromptFingerprint;
     }
 
     return { ...root, metadata };

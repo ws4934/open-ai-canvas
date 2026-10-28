@@ -25,6 +25,16 @@ description: 信封、错误码与 OpenAPI
 
 WebSocket 与其他业务共用 Go 应用端口，外部代理需支持该路径的 Upgrade；代理不支持时，原有 HTTP operations 保存与状态轮询仍可用。完整协议见[画布操作同步](./canvas-operations-sync)，外部代理要求见[Docker 部署](/docs/overview/docker)。
 
+## 任务失败原因
+
+`GET /api/tasks` 与 `GET /api/workbench/tasks` 的任务摘要包含可选的 `error`，与 `GET /api/tasks/:id` 的详情使用相同的用户可读错误投影。列表查询保留数据库中的失败原因，`stage` 只表达执行阶段，不能替代 `error`。没有错误的任务不补造失败文案；失败但未记录具体原因时，由界面明确提示原因缺失。
+
+文本回放 `GET /api/tasks/:id/text-deltas` 和 `/api/tasks/:id/text-events` 的 `terminal` 事件返回同样的错误投影。任务、工作台、文本回放和 SSE 继续校验当前用户归属，不返回原始请求配置、凭据、上游 URL 或完整响应正文。短剧队列及提交详情也沿用同一套可读原因；后台请求明细和存储的原始失败记录保持不变。
+
+明确的 `content_policy_violation` 和内容安全审核拒绝统一识别为内容审核失败，任务摘要使用 `errorCode=sensitive_words_detected`。审核失败保留手动重试入口，允许沿用原提示词和参考素材，不强制修改输入；创作历史的单项/分组、工作台、画布节点及分镜批次规则一致。重试仍执行原有的归属、计费、幂等及审批校验，费用待核对的任务不能重复提交，已生成作品优先重试保存；供应商内部不自动重试审核拒绝。错误文案不推断退款结果，计费以实际 `billing.status` 为准。
+
+图片、视频工作台的失败主结果、历史作品与详情都显示失败原因；“查看任务详情”会查询完整任务，而不是仅打开列表摘要。
+
 ## 视频工作台的生成模式
 
 `POST /api/workbench/tasks` 的视频任务根据已校验的 `references` 推导操作类型，客户端不需要提交泛化的 `video` 操作：

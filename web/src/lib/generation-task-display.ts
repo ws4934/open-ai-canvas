@@ -1,4 +1,5 @@
 import type { GenerationTask, TaskStatus } from "@/services/api/task-center";
+import { CONTENT_MODERATION_MESSAGE, generationErrorMessage, isContentModerationError } from "@/lib/generation-error";
 
 export const statusLabel: Record<TaskStatus, string> = {
     queued: "排队中",
@@ -9,6 +10,16 @@ export const statusLabel: Record<TaskStatus, string> = {
 };
 
 type GenerationTaskDisplayTarget = Pick<GenerationTask, "status" | "stage" | "mediaStage" | "progress" | "providerRequestId" | "providerCancelStatus">;
+
+export function generationTaskFailureReason(task: Pick<GenerationTask, "status" | "error" | "errorCode" | "stage">) {
+    if (task.status !== "failed" && task.status !== "cancelled") return "";
+    if (isContentModerationError(task.errorCode) || isContentModerationError(task.error)) return CONTENT_MODERATION_MESSAGE;
+    if (task.error?.trim()) return generationErrorMessage(task.error);
+    if (task.status === "cancelled") return "任务已取消";
+    const stage = task.stage?.trim();
+    if (stage && stage !== "任务失败" && stage !== "生成失败" && /失败|异常|拒绝|超时|不足|未通过|中断|不可用|无法|不支持/.test(stage)) return generationErrorMessage(stage);
+    return "生成失败，服务未返回具体原因。请查看任务详情或联系管理员。";
+}
 
 const cancellablePreSubmissionStages = new Set(["queued", "等待队列调度", "后端接管任务", "正在准备创作"]);
 

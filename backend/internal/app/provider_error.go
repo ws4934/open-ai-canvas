@@ -11,8 +11,6 @@ import (
 
 const contentModerationErrorCode = "sensitive_words_detected"
 
-const contentModerationRetryMessage = "内容审核未通过，请修改提示词后重新生成；原任务不能直接重试"
-
 // 只提取供应商明确返回的错误码和短消息，避免把完整响应或用户输入复制到调用日志。
 func providerFailureDetails(payload map[string]any) (string, string) {
 	candidates := make([]map[string]any, 0, 3)
@@ -148,5 +146,15 @@ func normalizedProviderErrorCode(value any) string {
 }
 
 func isContentModerationFailure(value string) bool {
-	return strings.Contains(strings.ToLower(value), contentModerationErrorCode)
+	lower := strings.ToLower(value)
+	for _, marker := range []string{
+		contentModerationErrorCode, "content_policy_violation", "content policy violation",
+		"内容审核未通过", "未通过安全审核", "未通过上游安全审核", "未通过模型服务安全审核",
+		"内容安全检查未通过", "防护限制", "请求触发了平台安全策略",
+	} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }

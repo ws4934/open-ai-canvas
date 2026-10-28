@@ -1129,6 +1129,18 @@
 .workbench-result-error.is-failed strong {
     color: var(--wb-danger);
 }
+.workbench-failure-reason {
+    max-width: 40rem;
+    margin: 0;
+    color: var(--wb-text-muted);
+    font-size: var(--fs-body);
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+.workbench-detail-info > .workbench-failure-reason {
+    color: var(--wb-danger);
+}
 .workbench-generating .ant-progress {
     width: min(240px, 80%);
     margin: 6px 0 0;
@@ -1358,6 +1370,8 @@
 .workbench-tile-pending,
 .workbench-tile-placeholder {
     display: grid;
+    min-width: 0;
+    max-width: 100%;
     justify-items: center;
     gap: 6px;
     color: var(--wb-text-soft);
@@ -1370,6 +1384,18 @@
 }
 .workbench-tile.is-failed .workbench-tile-placeholder {
     color: var(--wb-danger);
+}
+.workbench-tile-failure-reason {
+    display: -webkit-box;
+    overflow: hidden;
+    padding-inline: var(--space-3);
+    color: var(--wb-text-muted);
+    font-size: var(--fs-label);
+    line-height: 1.6;
+    text-align: center;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
 }
 .workbench-tile-progress {
     position: absolute;
@@ -1664,6 +1690,10 @@
     overflow: hidden;
     border-radius: 12px;
     background: #141417;
+}
+.workbench-detail-media.is-empty {
+    background: var(--wb-muted);
+    color: var(--wb-text-muted);
 }
 .workbench-detail-media > video {
     width: 100%;

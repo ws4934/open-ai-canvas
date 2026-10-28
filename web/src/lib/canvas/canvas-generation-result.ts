@@ -15,7 +15,6 @@ const completedTaskObservationKeys = [
     "taskUpdatedAt",
     "errorDetails",
     "generationErrorCode",
-    "failedPromptFingerprint",
     "resourceReloadAvailable",
 ] as const satisfies readonly (keyof CanvasNodeMetadata)[];
 

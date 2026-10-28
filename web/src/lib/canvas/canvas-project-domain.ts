@@ -498,7 +498,6 @@ export function applyBatchPrimaryImage(root: CanvasNodeData, primary: CanvasNode
             mimeType: primary.metadata?.mimeType,
             errorDetails: primary.metadata?.errorDetails,
             generationErrorCode: primary.metadata?.generationErrorCode,
-            failedPromptFingerprint: primary.metadata?.failedPromptFingerprint,
             freeResize: primary.metadata?.freeResize,
         },
     };

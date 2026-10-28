@@ -32,6 +32,7 @@ type TaskSummary struct {
 	ProviderCancelRequestedAt *time.Time                 `json:"providerCancelRequestedAt,omitempty"`
 	ProviderCancelledAt       *time.Time                 `json:"providerCancelledAt,omitempty"`
 	ErrorCode                 string                     `json:"errorCode,omitempty"`
+	Error                     string                     `json:"error,omitempty"`
 	PreviewURL                string                     `json:"previewUrl,omitempty"`
 	PreviewKind               string                     `json:"previewKind,omitempty"`
 	PreviewPosterURL          string                     `json:"previewPosterUrl,omitempty"`
@@ -124,6 +125,7 @@ func taskSummaryForOutput(task model.Task) TaskSummary {
 		ProviderCancelRequestedAt: task.ProviderCancelRequestedAt,
 		ProviderCancelledAt:       task.ProviderCancelledAt,
 		ErrorCode:                 errorCode,
+		Error:                     userFacingTaskErrorIfPresent(task.Error),
 		PreviewURL:                previewURL,
 		PreviewKind:               previewKind,
 		PreviewPosterURL:          previewPosterURL,
@@ -295,9 +297,7 @@ func taskForOutput(task model.Task) *model.Task {
 	task.InputJSON = publicTaskInputJSON(task.InputJSON)
 	// Task.Error 可能来自历史记录中的“前置原因；上游：原文”。
 	// 普通用户任务接口只返回可行动提示，完整上游诊断留在后台请求日志。
-	if strings.TrimSpace(task.Error) != "" {
-		task.Error = userFacingTaskError(task.Error)
-	}
+	task.Error = userFacingTaskErrorIfPresent(task.Error)
 	task.ProviderCancelError = sanitizeUserVisibleError(task.ProviderCancelError)
 	// 普通任务接口只暴露前台模型身份；渠道模型和供应线路属于管理员内部信息。
 	task.LogicalModelRevisionID = ""

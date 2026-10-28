@@ -43,6 +43,118 @@ func TestTaskForOutputRedactsHistoricalFailure(t *testing.T) {
 	}
 }
 
+func TestTaskSummaryCarriesSafeFailureReasonsForAllTaskKinds(t *testing.T) {
+	for _, taskType := range []string{"canvas_image", "canvas_video", "canvas_audio", "canvas_text", model.TaskTypeTimelineRender, model.TaskTypeTimelineTranscription} {
+		t.Run(taskType, func(t *testing.T) {
+			task := model.Task{ID: "failed-task", Type: taskType, Status: model.TaskStatusFailed, Stage: "任务失败", Error: "模型服务拒绝了请求，请检查模型和参数；上游：内容未通过上游安全审核，请修改提示词或参考素材后重试。"}
+			encoded, err := json.Marshal(taskSummaryForOutput(task))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var summary map[string]any
+			if err := json.Unmarshal(encoded, &summary); err != nil {
+				t.Fatal(err)
+			}
+			if summary["error"] != taskErrorModerationMessage || summary["errorCode"] != contentModerationErrorCode {
+				t.Fatalf("failure reason missing from task summary: %s", encoded)
+			}
+			if got := taskForOutput(task).Error; got != summary["error"] {
+				t.Fatalf("list/detail failure reason differs: %q / %q", summary["error"], got)
+			}
+		})
+	}
+}
+
+func TestTaskSummaryFailureProjectionMatchesDetail(t *testing.T) {
+	for _, tc := range []struct{ name, raw, want string }{
+		{"network", `Post "https://private.example/v1/images": dial tcp 10.0.0.1:443: connect: connection refused`, taskErrorNetworkMessage},
+		{"rate limit", "HTTP 429", "服务当前繁忙，请稍后重试。"},
+		{"gateway", "HTTP 502 Bad Gateway", taskErrorUnavailableMessage},
+		{"parameter", "图片尺寸不支持，请选择 1024x1024。", "图片尺寸不支持，请选择 1024x1024。"},
+		{"image size", "模型服务拒绝请求；上游：image file too large 25MB", "模型服务拒绝请求；参考图片超过模型支持的大小限制，请压缩图片后重试。"},
+		{"structured", `接口请求失败：{"error":{"message":"图片尺寸不支持"},"headers":{"Authorization":"private-token"},"url":"https://private.example"}`, "图片尺寸不支持"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			task := model.Task{Status: model.TaskStatusFailed, Error: tc.raw}
+			summary := taskSummaryForOutput(task)
+			if summary.Error != tc.want || summary.Error != taskForOutput(task).Error {
+				t.Fatalf("list/detail failed to preserve safe reason: %q / %q", summary.Error, taskForOutput(task).Error)
+			}
+			if task.Error != tc.raw {
+				t.Fatal("error projection mutated the stored failure")
+			}
+		})
+	}
+}
+
+func TestTaskErrorProjectionKeepsAbsentErrorsEmpty(t *testing.T) {
+	for _, status := range []model.TaskStatus{model.TaskStatusQueued, model.TaskStatusRunning, model.TaskStatusSucceeded, model.TaskStatusFailed, model.TaskStatusCancelled} {
+		task := model.Task{Status: status}
+		if got := taskSummaryForOutput(task).Error; got != "" {
+			t.Fatalf("%s invented failure reason %q", status, got)
+		}
+		if got := taskForOutput(task).Error; got != "" {
+			t.Fatalf("%s detail invented failure reason %q", status, got)
+		}
+	}
+}
+
+func TestDramaJobFailureViewsKeepSafeReasons(t *testing.T) {
+	raw := "模型服务拒绝了请求，请检查模型和参数；上游：内容未通过上游安全审核，请修改提示词或参考素材后重试。"
+	job := model.DramaJob{Status: model.DramaJobFailed, Error: raw}
+	if got := dramaJobView(job).Error; got != taskErrorModerationMessage {
+		t.Fatalf("drama job lost failure reason: %q", got)
+	}
+	task := &model.Task{Type: "canvas_video", Status: model.TaskStatusFailed, Error: raw}
+	if got := dramaJobTaskView(task, nil).Error; got != taskForOutput(*task).Error {
+		t.Fatalf("drama task/detail reason differs: %q", got)
+	}
+	if job.Error != raw || task.Error != raw {
+		t.Fatal("public drama projection mutated stored errors")
+	}
+}
+
+func TestTaskListsAndWorkbenchCarryFailureReasonsFromDatabase(t *testing.T) {
+	svc, db, _, _ := creationTestService(t)
+	admin := &model.User{ID: "admin-fixture", Username: "admin-fixture", Role: model.UserRoleAdmin, Status: model.UserStatusActive}
+	if err := db.Create(admin).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UpdateFeatureAvailability(admin, FeatureAvailability{TaskCenterEnabled: true, ImageWorkbenchEnabled: true, VideoWorkbenchEnabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"image", "video", "audio", "text"} {
+		task := model.Task{ID: "failed-" + kind, UserID: "user", Type: "canvas_" + kind, WorkbenchKind: kind, Status: model.TaskStatusFailed, Stage: "任务失败", InputJSON: "{}", Error: "模型服务拒绝了请求，请检查模型和参数；上游：内容未通过上游安全审核，请修改提示词或参考素材后重试。"}
+		if err := db.Create(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, kind := range []string{"", "image", "video"} {
+		var tasks []TaskSummary
+		var err error
+		if kind == "" {
+			tasks, err = svc.Tasks("user", 100)
+		} else {
+			tasks, err = svc.WorkbenchTasks("user", kind, false, 100)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := 4
+		if kind != "" {
+			want = 1
+		}
+		if len(tasks) != want {
+			t.Fatalf("%s list returned %d tasks, want %d", kind, len(tasks), want)
+		}
+		for _, task := range tasks {
+			if task.Error != taskErrorModerationMessage || task.ErrorCode != contentModerationErrorCode {
+				t.Fatalf("%s list lost persisted failure: %+v", kind, task)
+			}
+		}
+	}
+}
+
 func TestTaskOutputIncludesOnlySafeWorkbenchRestoreData(t *testing.T) {
 	task := model.Task{InputJSON: `{"mode":"video","metadata":{"source":"workbench","workbenchKind":"video","workbenchToolId":"tool-1","workbenchPresetId":"preset-1","workbench":{"kind":"video","parameters":{"seconds":8,"ratio":"16:9","resolution":"1080p","generateAudio":true},"references":[{"resourceId":"resource-1","kind":"image","role":"first_frame","slotKey":"subject"}]}},"config":{"apiKey":"private-key","videoSeconds":"8","size":"16:9","vquality":"1080p"},"referenceImages":[{"resourceId":"resource-1","storageKey":"resource:resource-1","role":"first_frame","slotKey":"subject"}]}`}
 	publicJSON := publicTaskInputJSON(task.InputJSON)

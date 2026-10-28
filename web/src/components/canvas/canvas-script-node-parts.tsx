@@ -70,7 +70,6 @@ export function GenerationBatchDetails({ batch, rows, onRetryItem }: { batch: Ca
             </div>
             <div className="thin-scrollbar max-h-72 overflow-y-auto">
                 {batch.items.map((item) => {
-                    const requiresPromptChange = isContentModerationError(item.errorDetails);
                     return (
                         <div key={item.id} className="flex min-h-9 items-center gap-2 border-t border-foreground/10 py-2 first:border-t-0">
                             <span className="w-14 shrink-0 text-xs font-medium">镜头 {shotByRowId.get(item.rowId) || "--"}</span>
@@ -79,7 +78,7 @@ export function GenerationBatchDetails({ batch, rows, onRetryItem }: { batch: Ca
                                 {item.retryCount ? ` · 重试 ${item.retryCount}` : ""}
                             </span>
                             {item.status === "failed" ? (
-                                <Tooltip title={requiresPromptChange ? "请先修改提示词，再重试这个镜头" : "只重试这个镜头"}>
+                                <Tooltip title="只重试这个镜头">
                                     <button
                                         type="button"
                                         className="grid size-7 shrink-0 place-items-center rounded outline-none transition hover:bg-black/5 focus-visible:ring-2 dark:hover:bg-white/10"
@@ -111,7 +110,7 @@ export function generationBatchSummary(batch: CanvasGenerationBatch) {
 
 export function generationBatchItemLabel(item: CanvasGenerationBatchItem) {
     if (item.costUncertain) return "费用待确认";
-    if (isContentModerationError(item.errorDetails)) return "审核未通过，需修改提示词";
+    if (isContentModerationError(item.errorDetails)) return "审核未通过";
     const labels: Record<CanvasGenerationBatchItemStatus, string> = { waiting: "等待", submitting: "提交中", queued: "排队", running: "生成中", succeeded: "成功", failed: "失败", cancelled: "已停止" };
     return labels[item.status];
 }

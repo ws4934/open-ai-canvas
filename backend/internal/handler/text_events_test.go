@@ -109,3 +109,46 @@ func TestStreamTaskTextEventsWritesSequenceAndTerminalEvent(t *testing.T) {
 		t.Fatalf("unexpected SSE body: %q", body)
 	}
 }
+
+func TestTaskTextFailureReplayAndSSEPreserveSafeReason(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&model.Task{}, &model.TaskTextDelta{}); err != nil {
+		t.Fatal(err)
+	}
+	svc := service.New(repository.New(db), t.TempDir())
+	t.Cleanup(func() { _ = svc.Close() })
+	for id, raw := range map[string]string{
+		"moderation": "模型服务拒绝了请求，请检查模型和参数；上游：内容未通过上游安全审核，请修改提示词或参考素材后重试。",
+		"network":    `Post "https://private.example/v1/chat": dial tcp 10.0.0.1:443: connect: connection refused`,
+	} {
+		task := model.Task{ID: id, UserID: "user", Type: "canvas_text", Status: model.TaskStatusFailed, Stage: "任务失败", Error: raw}
+		if err := db.Create(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+		replay, err := svc.TaskTextReplay("user", id, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		detail, err := svc.Task("user", id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if replay.Error == "" || replay.Error != detail.Error {
+			t.Fatalf("replay/detail failure reason differs: %q / %q", replay.Error, detail.Error)
+		}
+		response := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(response)
+		c.Request = httptest.NewRequest("GET", "/api/tasks/"+id+"/text-events", nil)
+		streamTaskTextEvents(c, svc, "user", id, 0, replay)
+		body := response.Body.String()
+		if !strings.Contains(body, "event: terminal") || !strings.Contains(body, replay.Error) || strings.Contains(body, "private.example") || strings.Contains(body, "10.0.0.1") || strings.Contains(body, "；上游：") {
+			t.Fatalf("SSE lost safe failure reason: %s", body)
+		}
+		if _, err := svc.TaskTextReplay("other-user", id, 0); err == nil {
+			t.Fatal("another user read a task failure")
+		}
+	}
+}

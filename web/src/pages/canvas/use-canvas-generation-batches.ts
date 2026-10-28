@@ -6,7 +6,6 @@ import { generationBatchStatus, isGenerationCostUncertainError } from "@/lib/can
 import { createCanvasBatchInputSnapshot } from "@/lib/canvas/canvas-batch-input-snapshot";
 import { batchOutputResultPending } from "@/lib/canvas/canvas-batch-references";
 import { buildGenerationConfig, createGenerationRetryContext, generationTaskMetadata, resetGenerationTaskMetadata } from "@/lib/canvas/canvas-project-generation";
-import { unchangedModeratedPrompt } from "@/lib/generation-error";
 import { nodeGenerationPrompt } from "@/lib/canvas/generation-contract";
 import { listGenerationTasks } from "@/services/api/task-center";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
@@ -262,26 +261,17 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
             const failedItems = batch.items.filter((item) => item.status === "failed" && (!itemId || item.id === itemId));
             if (!failedItems.length) return message.info("没有需要重试的失败项");
             const nodeById = new Map(nodesRef.current.map((node) => [node.id, node]));
-            const blockedItems = failedItems.filter((item) => {
-                const node = nodeById.get(item.nodeId);
-                return unchangedModeratedPrompt(node?.metadata, item.inputSnapshot?.prompt ?? (node ? nodeGenerationPrompt(node) : ""));
-            });
-            const retryableItems = failedItems.filter((item) => !blockedItems.includes(item));
-            if (blockedItems.length) message.warning(blockedItems.some((item) => item.inputSnapshot)
-                ? `${blockedItems.length} 个任务未通过内容审核；重试保留原输入，请在表格中修改后重新生成`
-                : `${blockedItems.length} 个镜头未通过内容审核，请先修改提示词`);
-            if (!retryableItems.length) return;
             const retry = async () => {
                 const retryContexts = new Map<string, Awaited<ReturnType<typeof createGenerationRetryContext>>>();
                 await Promise.all(
-                    retryableItems.map(async (item) => {
+                    failedItems.map(async (item) => {
                         const retryNode = nodeById.get(item.nodeId);
                         if (!retryNode?.metadata?.taskId) return;
                         retryContexts.set(item.nodeId, await createGenerationRetryContext(retryNode.metadata.taskId, retryNode.metadata.attemptGroupId));
                     }),
                 );
-                const retryItemIds = new Set(retryableItems.map((item) => item.id));
-                const retryNodeIds = new Set(retryableItems.map((item) => item.nodeId));
+                const retryItemIds = new Set(failedItems.map((item) => item.id));
+                const retryNodeIds = new Set(failedItems.map((item) => item.nodeId));
                 setNodes((current) =>
                     current.map((node) => {
                         if (node.id === sourceNodeId) {
@@ -312,9 +302,9 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
                         };
                     }),
                 );
-                message.success(`已将 ${retryableItems.length} 个失败项重新加入等待队列${retryableItems.some((item) => item.inputSnapshot) ? "，沿用原任务提示词和参考图" : ""}`);
+                message.success(`已将 ${failedItems.length} 个失败项重新加入等待队列${failedItems.some((item) => item.inputSnapshot) ? "，沿用原任务提示词和参考图" : ""}`);
             };
-            if (retryableItems.some((item) => item.costUncertain)) {
+            if (failedItems.some((item) => item.costUncertain)) {
                 modal.confirm({
                     title: "重试费用状态不确定的任务？",
                     content: "部分上游请求返回 524，原任务可能已经产生费用。重试会再次提交外部模型任务。",

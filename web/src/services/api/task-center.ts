@@ -1,4 +1,5 @@
 import { generationErrorMessage } from "@/lib/generation-error";
+import { generationTaskFailureReason } from "@/lib/generation-task-display";
 import { http, apiBaseURL, type BackendEnvelope } from "@/services/api/request";
 import { consumeTaskTextStream, createTaskTextStreamParser, type TaskTextStreamEvent } from "@/services/api/task-text-stream";
 import { recordDiagnosticEvent } from "@/services/diagnostics/client-diagnostics";
@@ -414,7 +415,7 @@ export function isGenerationTaskTerminalError(error: unknown): error is Generati
 }
 
 function terminalTaskError(task: GenerationTask) {
-    return new GenerationTaskTerminalError(task.error ? generationErrorMessage(task.error) : `任务${task.status === "cancelled" ? "已取消" : "失败"}`, task);
+    return new GenerationTaskTerminalError(generationTaskFailureReason(task), task);
 }
 
 export type WaitForGenerationTaskOptions = {
