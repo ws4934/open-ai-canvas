@@ -5,7 +5,7 @@ description: GitHub Actions 发布完整程序，网页检查 Release、替换�
 
 # 网页更新与程序回退
 
-管理员打开“系统配置 → 系统更新”，点击“立即更新”。程序从 `ws4934/open-ai-canvas` 的 GitHub Release 下载新版，校验后等待正在执行的任务完成，保留上一版程序并替换文件；Docker 自动重启，页面自动重连。
+管理员打开“系统设置 → 系统更新”，点击“立即更新”。程序从 `ws4934/open-ai-canvas` 的 GitHub Release 下载新版，校验后等待正在执行的任务完成，保留上一版程序并替换文件；Docker 自动重启，页面自动重连。
 
 前端、Agent 代码与锁定依赖、完整官方插件都在同一个 Go 程序中。外部 Nginx/Caddy 只反代应用端口，不参与更新。
 
@@ -17,6 +17,8 @@ description: GitHub Actions 发布完整程序，网页检查 Release、替换�
 - 在 GitHub Actions 手动运行发布任务，填写与提交一致的版本号。
 
 发布任务固定提交，执行质量检查、前端构建、AMD64/ARM64 程序构建和镜像验收。两种架构复用前端产物；镜像使用同一批 Go 文件。资产上传到草稿 Release，全部成功后才公开。已正式发布的同名版本不覆盖，修正需使用新版本号。
+
+后端测试分为 `app-1`…`app-4` 和 `rest` 五个并行分片。`Backend checks` 汇总全部分片，并核对依赖 PostgreSQL / Redis 的用例确实执行；任一分片失败都会阻断发布。
 
 正式资产为：
 
