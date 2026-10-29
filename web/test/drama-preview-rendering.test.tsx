@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { SegmentInputs } from "@/pages/projects/studio/segment-parts";
+import { SegmentInputs, SegmentVideo } from "@/pages/projects/studio/segment-parts";
 import { Storyboard } from "@/pages/projects/studio/storyboard";
 import type { DramaSegment, DramaShot } from "@/services/api/drama";
 
@@ -19,7 +19,7 @@ const segment: DramaSegment = {
     videoStatus: "",
     videoModel: {},
     referenceMode: "auto",
-    request: { operation: "", seconds: 0, maxVideoSeconds: 0, firstFramePending: false, references: [], referenceCapacity: 0, modelMaxImages: 0, header: "", warning: "请选择视频模型" },
+    request: { operation: "", seconds: 0, maxVideoSeconds: 0, aspectRatio: "", generateAudio: false, firstFramePending: false, references: [], referenceCapacity: 0, modelMaxImages: 0, header: "", warning: "请选择视频模型" },
 };
 
 test("模型不可用预演的空参考图数组可在分镜卡片和生成依据中正常渲染", () => {
@@ -58,4 +58,14 @@ test("正常预演的参考图编号与未就绪说明仍保留", () => {
     expect(html).toContain("图1");
     expect(html).toContain("角色甲");
     expect(html).toContain("参考图未生成");
+});
+
+test("视频占位按模型实际声音能力说明，不把能力读取失败当作无声模型", () => {
+    const missing = renderToStaticMarkup(<SegmentVideo segment={segment} aspectRatio="9:16" />);
+    expect(missing).not.toContain("声音");
+    expect(missing).not.toContain("对白与音效");
+    const silent = { ...segment, request: { ...segment.request, aspectRatio: "9:16", resolution: "768p竖" } };
+    expect(renderToStaticMarkup(<SegmentVideo segment={silent} aspectRatio="9:16" />)).toContain("当前模型不生成声音");
+    const audio = { ...silent, request: { ...silent.request, generateAudio: true } };
+    expect(renderToStaticMarkup(<SegmentVideo segment={audio} aspectRatio="9:16" />)).toContain("对白与音效由视频模型生成");
 });
