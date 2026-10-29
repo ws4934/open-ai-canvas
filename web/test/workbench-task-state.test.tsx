@@ -9,15 +9,15 @@ for (const [key, value] of Object.entries({ window: dom, document: dom.document,
 }
 const { act, useState } = await import("react");
 const { createRoot } = await import("react-dom/client");
-const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+const { QueryClient, QueryClientProvider, defaultScheduler, notifyManager } = await import("@tanstack/react-query");
 const { apiClient } = await import("@/services/api/request");
 const { useUserStore } = await import("@/stores/use-user-store");
 const { useWorkbenchTasks, workbenchTaskKeys } = await import("@/pages/workbench/use-workbench-tasks");
 const { WorkbenchTaskThumbnail } = await import("@/pages/workbench/workbench-task-thumbnail");
 type GenerationTask = import("@/services/api/task-center").GenerationTask;
 
-afterAll(() => {
-    dom.happyDOM.abort();
+afterAll(async () => {
+    await dom.happyDOM.abort();
     for (const [key, value] of originals) {
         if (value) Object.defineProperty(globalThis, key, value);
         else Reflect.deleteProperty(globalThis, key);
@@ -94,6 +94,8 @@ test("同 ID 人工重试替换旧失败缓存，完成后读取新终态，清�
     const root = createRoot(host);
     const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 20)));
     try {
+        // 排空本用例的异步通知，避免定时回调在 Happy DOM 拆除后触发 React 更新。
+        notifyManager.setScheduler(queueMicrotask);
         await act(async () =>
             root.render(
                 <QueryClientProvider client={client}>
@@ -127,9 +129,12 @@ test("同 ID 人工重试替换旧失败缓存，完成后读取新终态，清�
         expect(history.historyTasks).toHaveLength(0);
         expect(history.featuredTask).toBeNull();
     } finally {
-        await act(async () => root.unmount());
-        await client.cancelQueries();
-        client.clear();
+        await act(async () => {
+            root.unmount();
+            await client.cancelQueries();
+            client.clear();
+        });
+        notifyManager.setScheduler(defaultScheduler);
         apiClient.request = original;
         useUserStore.setState({ user: oldUser });
         host.remove();
