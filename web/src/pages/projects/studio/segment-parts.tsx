@@ -76,7 +76,10 @@ export function SegmentVideo({ segment, aspectRatio, className = "" }: { segment
                 <span className={`drama-sg-video-empty ${state.tone === "busy" ? "is-busy" : ""}`}>
                     <Film className="size-5" aria-hidden />
                     <span>{state.label}</span>
-                    <small>{secondsLabel(segment.durationMs)}{segment.request.aspectRatio ? ` · ${segment.request.generateAudio ? "对白与音效由视频模型生成" : "当前模型不生成声音"}` : ""}</small>
+                    <small>
+                        {secondsLabel(segment.durationMs)}
+                        {segment.request.aspectRatio ? ` · ${segment.request.generateAudio ? "对白与音效由视频模型生成" : "当前模型不生成声音"}` : ""}
+                    </small>
                 </span>
             )}
         </div>
