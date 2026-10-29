@@ -116,8 +116,12 @@ func TestWorkbenchTaskListKeepsImagePreviewsAfterDatabaseRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	for attempt := 0; attempt < 2; attempt++ {
-		tasks, err := s.WorkbenchTasks("user", "image", false, 100)
-		if err != nil || len(tasks) != 1 {
+		page, err := s.WorkbenchTasks("user", "image", WorkbenchTaskQuery{PageSize: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tasks := page.Tasks
+		if len(tasks) != 1 {
 			t.Fatalf("workbench list: tasks=%v err=%v", tasks, err)
 		}
 		if len(tasks[0].PreviewImages) != 2 || tasks[0].PreviewImages[1] != "/api/resources/second/file" {
@@ -196,7 +200,11 @@ func TestTaskListsAndWorkbenchCarryFailureReasonsFromDatabase(t *testing.T) {
 		if kind == "" {
 			tasks, err = svc.Tasks("user", 100)
 		} else {
-			tasks, err = svc.WorkbenchTasks("user", kind, false, 100)
+			var page *WorkbenchTaskPage
+			page, err = svc.WorkbenchTasks("user", kind, WorkbenchTaskQuery{PageSize: 100})
+			if page != nil {
+				tasks = page.Tasks
+			}
 		}
 		if err != nil {
 			t.Fatal(err)

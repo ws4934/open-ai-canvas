@@ -1,7 +1,8 @@
 import { Button } from "antd";
 import { IconButton } from "@/components/ui/base/buttons";
 import { Tooltip } from "@/components/ui/base/tooltip";
-import { Eye, FileText, FolderKanban, Image as ImageIcon, Play, RotateCcw, Video } from "lucide-react";
+import { Eye, FileText, FolderKanban, Image as ImageIcon, Play, RotateCcw, Trash2, Video } from "lucide-react";
+import { Checkbox } from "@/components/ui/base/checkbox/checkbox";
 import { useState } from "react";
 
 import { MediaPreview } from "@/components/media-preview";
@@ -23,6 +24,10 @@ export function TaskListRow({
     onOpen,
     onRetry,
     onPreview,
+    onClear,
+    onSelect,
+    selected,
+    clearing,
 }: {
     task: GenerationTask;
     canvasById: Map<string, { title: string; projectId?: string }>;
@@ -33,6 +38,10 @@ export function TaskListRow({
     onOpen: () => void;
     onRetry: () => void;
     onPreview: () => void;
+    onClear?: () => void;
+    onSelect?: () => void;
+    selected?: boolean;
+    clearing?: boolean;
 }) {
     const context = getTaskCanvasContext(task, canvasById, projectNameById);
     const isActive = task.status === "queued" || task.status === "running";
@@ -41,6 +50,7 @@ export function TaskListRow({
     const showsProgress = generationTaskShowsProgress(task);
     return (
         <article className={`product-collection-card task-record-row group${isFailed ? " is-attention" : ""}`}>
+            {onSelect ? <Checkbox className="absolute left-4 top-3 z-10 rounded bg-background p-1" checked={selected} disabled={clearing || actingId === task.id} onChange={onSelect} aria-label={`选择任务：${task.prompt || "未命名任务"}`} /> : null}
             <TaskPreviewThumbnail task={task} onOpen={onPreview} />
             <div className="task-record-main">
                 <div className="task-record-heading">
@@ -82,6 +92,7 @@ export function TaskListRow({
             </div>
             {creditsEnabled ? <TaskBilling billing={task.billing} /> : <span className="task-record-billing-empty" aria-hidden="true" />}
             <div className="task-record-actions">
+                {onClear ? <Tooltip title="清理任务记录"><IconButton size="sm" variant="ghost" icon={Trash2} aria-label="清理任务记录" disabled={clearing || actingId === task.id} onClick={onClear} /></Tooltip> : null}
                 <Tooltip title="查看详情">
                     <IconButton size="sm" variant="ghost" icon={Eye} aria-label="查看详情" onClick={onOpen} />
                 </Tooltip>

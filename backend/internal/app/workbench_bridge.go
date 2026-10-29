@@ -134,7 +134,22 @@ func (s *Service) CreateWorkbenchTask(userID string, req WorkbenchTaskInput, tra
 	return s.CreateTask(userID, CreateTaskRequest{Type: resolved.TaskType, Operation: resolved.Operation, Prompt: resolved.Prompt, Model: resolved.Model, LogicalModelID: resolved.LogicalModelID, Input: resolved.Input, TraceID: traceID, RequestID: requestID, workbenchKind: req.Kind})
 }
 
-func (s *Service) WorkbenchTasks(userID, kind string, activeOnly bool, limit int) ([]TaskSummary, error) {
+type WorkbenchTaskQuery struct {
+	Page       int
+	PageSize   int
+	ActiveOnly bool
+	Query      string
+}
+
+type WorkbenchTaskPage struct {
+	Tasks    []TaskSummary `json:"tasks"`
+	Total    int64         `json:"total"`
+	Page     int           `json:"page"`
+	PageSize int           `json:"pageSize"`
+	HasMore  bool          `json:"hasMore"`
+}
+
+func (s *Service) WorkbenchTasks(userID, kind string, options WorkbenchTaskQuery) (*WorkbenchTaskPage, error) {
 	if kind == WorkbenchKindImage {
 		if err := s.RequireFeature(FeatureImageWorkbench); err != nil {
 			return nil, err
@@ -146,7 +161,15 @@ func (s *Service) WorkbenchTasks(userID, kind string, activeOnly bool, limit int
 	} else {
 		return nil, BadAuthRequest("工作台类型无效")
 	}
-	return s.TasksWithOptions(userID, TaskListOptions{Limit: limit, ActiveOnly: activeOnly, WorkbenchKind: kind})
+	page, err := s.repo.WorkbenchTasks(userID, kind, options.Page, options.PageSize, options.ActiveOnly, options.Query)
+	if err != nil {
+		return nil, err
+	}
+	tasks, err := s.taskListSummaries(userID, page.Tasks)
+	if err != nil {
+		return nil, err
+	}
+	return &WorkbenchTaskPage{Tasks: tasks, Total: page.Total, Page: page.Page, PageSize: page.PageSize, HasMore: page.HasMore}, nil
 }
 
 func (s *Service) resolveWorkbenchProviderConfig(userID, kind, operation, modelName, logicalModelID, channelID string, parameters map[string]any, input map[string]any) (map[string]any, error) {

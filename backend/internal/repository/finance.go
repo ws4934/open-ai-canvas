@@ -190,6 +190,8 @@ func (r *Repository) RetryTaskWithBilling(userID string, prepared *model.Task, o
 			"status": model.TaskStatusQueued, "stage": "等待队列调度", "progress": 5, "error": "", "result_json": "",
 			"execution_diagnostic_json": "", "cancellation_source": "", "cancellation_actor_id": "", "cancellation_requested_at": nil,
 			"text_draft": "", "started_at": nil, "completed_at": nil,
+			// 新一轮人工授权从第一次领取开始；旧提交审计仍按 RouteRun 保留。
+			"attempts": 0, "history_hidden_at": nil,
 			"provider_request_id": "", "poll_stage": "", "next_poll_at": nil,
 			"provider_cancel_status": "", "provider_cancel_error": "", "provider_cancel_attempts": 0,
 			"provider_cancel_requested_at": nil, "provider_cancelled_at": nil, "provider_cancel_next_check_at": nil,

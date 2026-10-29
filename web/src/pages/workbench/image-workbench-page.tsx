@@ -1,15 +1,14 @@
 import { createClientUUID } from "@/lib/client-id";
 import { App, Button, Input, InputNumber, Modal, Progress, Segmented, Select, Spin, Switch } from "antd";
 import { AntTooltip as Tooltip } from "@/components/ui/base/tooltip/ant-tooltip";
-import { ArrowUp, Check, Camera, ChevronDown, ChevronUp, Clapperboard, Expand, FileImage, ImagePlus, Images, LoaderCircle, Mic, Palette, RefreshCw, RotateCcw, Search, ShoppingBag, Upload, UserRound, Video, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUp, Check, Camera, ChevronDown, ChevronUp, Clapperboard, Expand, FileImage, ImagePlus, Images, LoaderCircle, Mic, Palette, RefreshCw, RotateCcw, Search, ShoppingBag, Trash2, Upload, UserRound, Video, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { ImageSizePicker } from "@/components/image-size-picker";
-import { MediaPreview } from "@/components/media-preview";
 import { ModelPicker } from "@/components/model-picker";
 import { SpotlightSurface } from "@/components/ui/aceternity/spotlight-surface";
-import { WorkspacePage } from "@/components/layout/workspace-page";
+import { PaginationBar, WorkspacePage } from "@/components/layout/workspace-page";
 import { CanvasResourceMentionTextarea } from "@/components/canvas/canvas-resource-mention-textarea";
 import { normalizeCanvasNodeMentionTokens, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { imageResolutionUsesQuality } from "@/lib/image-size-presets";
@@ -21,7 +20,7 @@ import { modelQuoteRequest } from "@/lib/model-pricing";
 import { quoteModel } from "@/services/api/logical-models";
 import { prepareBackendGenerationTask } from "@/services/api/generation-task";
 import { createGenerationTask, cancelGenerationTask, queryGenerationTask, recoverGenerationTaskMedia, retryGenerationTask, type GenerationTask } from "@/services/api/task-center";
-import { capabilitySupportedModes, createWorkbenchTask, listWorkbenchTasks, listWorkbenchTools, normalizeWorkbenchGuide, resolveWorkbenchResourceURL, type WorkbenchKind, type WorkbenchPromptPreset, type WorkbenchTool } from "@/services/api/workbench";
+import { capabilitySupportedModes, createWorkbenchTask, listWorkbenchTools, normalizeWorkbenchGuide, resolveWorkbenchResourceURL, type WorkbenchKind, type WorkbenchPromptPreset, type WorkbenchTool } from "@/services/api/workbench";
 import { resourceStorageKey, resolveResourceUrl, uploadResourceFile } from "@/services/api/resources";
 import { formatCredits, requestCreditCost } from "@/constant/credits";
 import { useCreationPreferencesStore } from "@/stores/use-creation-preferences-store";
@@ -31,6 +30,12 @@ import { useUserStore } from "@/stores/use-user-store";
 import { workbenchCategoryLabel, workbenchCategories } from "./workbench-catalog";
 import { missingWorkbenchInput, workbenchPromptRequired, workbenchVideoOperation } from "./workbench-input";
 import { WorkbenchImageGallery } from "./workbench-image-gallery";
+import { WorkbenchTaskThumbnail } from "./workbench-task-thumbnail";
+import { useWorkbenchTasks } from "./use-workbench-tasks";
+import { Checkbox } from "@/components/ui/base/checkbox/checkbox";
+import { TaskHistoryToolbar } from "@/components/tasks/task-history-toolbar";
+import { useTaskHistoryCleanup } from "@/hooks/use-task-history-cleanup";
+import { canClearTaskHistory } from "@/services/api/task-center";
 import { generationTaskImageUrls, generationTaskPreviewUrl } from "@/lib/generation-task-media";
 import "./workbench.css";
 import "./workbench-count-picker.css";
@@ -151,6 +156,11 @@ function toolVisual(tool: WorkbenchTool, kind: WorkbenchKind) {
 }
 
 export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
+    const userId = useUserStore((state) => state.user?.id || "");
+    return <WorkbenchWorkspace key={`${userId}:${kind}`} kind={kind} />;
+}
+
+function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
     const { message } = App.useApp();
     const config = useEffectiveConfig();
     const updateConfig = useConfigStore((state) => state.updateConfig);
@@ -175,8 +185,9 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     const [activeTask, setActiveTask] = useState<GenerationTask | null>(null);
     const [resultHidden, setResultHidden] = useState(false);
     const workbenchRevisionRef = useRef(0);
-    const [tasks, setTasks] = useState<GenerationTask[]>([]);
-    const [tasksLoading, setTasksLoading] = useState(true);
+    const taskHistory = useWorkbenchTasks(kind, activeTask);
+    const { activeTasks, historyTasks, loading: tasksLoading, query, setQuery } = taskHistory;
+    const historySectionRef = useRef<HTMLElement>(null);
     const [detailTask, setDetailTask] = useState<GenerationTask | null>(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const detailRequestRef = useRef(0);
@@ -185,7 +196,6 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     const [busy, setBusy] = useState(false);
     const [taskBusyId, setTaskBusyId] = useState("");
     const [mobileTab, setMobileTab] = useState("generate");
-    const [query, setQuery] = useState("");
     const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
     const [estimateCredits, setEstimateCredits] = useState<number | null>(null);
     const [estimateEstimated, setEstimateEstimated] = useState(false);
@@ -217,8 +227,6 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     }, [tools]);
     const promptRequired = workbenchPromptRequired(tool);
     const missingInput = missingWorkbenchInput(tool, references);
-    const activeTasks = useMemo(() => tasks.filter((task) => task.status === "queued" || task.status === "running"), [tasks]);
-    const historyTasks = useMemo(() => tasks.filter((task) => task.status !== "queued" && task.status !== "running"), [tasks]);
     const selectedCount = Number(count) || 1;
     const promptReferences = useMemo<CanvasResourceReference[]>(
         () =>
@@ -386,49 +394,12 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         return () => controller.abort();
     }, [capability, composerConfig, config, creditsEnabled, kind, quoteRequirements, seconds, selectedCount, selectedModel]);
 
-    const loadTasks = useCallback(async () => {
-        try {
-            const result = await listWorkbenchTasks(kind, 100);
-            setTasks(result);
-            return result;
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : "任务列表加载失败");
-            return [];
-        } finally {
-            setTasksLoading(false);
-        }
-    }, [kind, message]);
-
     useEffect(() => {
-        let stopped = false;
-        let timer = 0;
-        const poll = async () => {
-            const revision = workbenchRevisionRef.current;
-            const result = await loadTasks();
-            if (stopped) return;
-            if (activeTask && revision === workbenchRevisionRef.current) {
-                const latest = result.find((item) => item.id === activeTask.id);
-                if (latest) {
-                    setActiveTask(latest);
-                    if (latest.status === "succeeded" || latest.status === "failed" || latest.status === "cancelled") setMobileTab("result");
-                }
-            }
-            timer = window.setTimeout(() => void poll(), result.some((task) => task.status === "queued" || task.status === "running") ? 5000 : 30000);
-        };
-        void poll();
-        const onVisible = () => {
-            if (!document.hidden) {
-                window.clearTimeout(timer);
-                void poll();
-            }
-        };
-        document.addEventListener("visibilitychange", onVisible);
-        return () => {
-            stopped = true;
-            window.clearTimeout(timer);
-            document.removeEventListener("visibilitychange", onVisible);
-        };
-    }, [activeTask?.id, loadTasks]);
+        const latest = taskHistory.observedTask;
+        if (!latest || latest.id !== activeTask?.id) return;
+        setActiveTask((current) => (current?.id === latest.id ? latest : current));
+        if (latest.status === "succeeded" || latest.status === "failed" || latest.status === "cancelled") setMobileTab("result");
+    }, [activeTask?.id, taskHistory.observedTask]);
 
     const resetWorkbench = () => {
         workbenchRevisionRef.current += 1;
@@ -685,7 +656,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                           },
                       }).then((taskInput) => createGenerationTask({ ...taskInput, ...(videoOperation ? { operation: videoOperation } : {}) }));
             const task = await queryGenerationTask(createdTask.id);
-            setTasks((current) => [task, ...current.filter((item) => item.id !== task.id)]);
+            await taskHistory.rememberTask(task);
             if (revision === workbenchRevisionRef.current) {
                 setResultHidden(false);
                 setActiveTask(task);
@@ -703,7 +674,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         setTaskBusyId(task.id);
         try {
             const next = await cancelGenerationTask(task.id);
-            setTasks((current) => current.map((item) => (item.id === task.id ? next : item)));
+            await taskHistory.rememberTask(next);
             if (activeTask?.id === task.id) setActiveTask(next);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "取消任务失败");
@@ -796,7 +767,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
             const restored = recoveringMedia || (await restoreTaskToComposer(restoreSource, false));
             const next = recoveringMedia ? await recoverGenerationTaskMedia(task.id) : await retryGenerationTask(task.id);
             if (!restored) await restoreTaskToComposer(next, false);
-            setTasks((current) => [next, ...current.filter((item) => item.id !== next.id)]);
+            await taskHistory.rememberTask(next);
             setActiveTask(next);
             setDetailTask((current) => (current?.id === task.id ? next : current));
             message.success(recoveringMedia ? "正在恢复作品保存，不会重新生成" : "任务已重新提交");
@@ -837,14 +808,40 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         const display = configuredModel ? modelDisplayName(config, configuredModel) : rawModel;
         return isModelIdLike(display) ? "生成模型" : display;
     };
-    const resultTask = resultHidden ? null : activeTask || tasks.find((task) => task.status === "succeeded") || null;
+    const resultTask = resultHidden ? null : activeTask || taskHistory.featuredTask;
     const resultUrl = resultTask ? generationTaskPreviewUrl(resultTask) : "";
     const resultImages = resultTask ? generationTaskImageUrls(resultTask) : [];
     const detailUrl = detailTask ? generationTaskPreviewUrl(detailTask) : "";
     const detailImages = detailTask ? generationTaskImageUrls(detailTask) : [];
     const normalizedQuery = query.trim().toLowerCase();
     // 主舞台已展示的任务不再在作品网格里重复出现。
-    const galleryTasks = [...activeTasks, ...historyTasks].filter((task) => task.id !== resultTask?.id && (!normalizedQuery || task.prompt.toLowerCase().includes(normalizedQuery))).slice(0, 60);
+    const otherActiveTasks = activeTasks.filter((task) => task.id !== resultTask?.id && (!normalizedQuery || task.prompt.toLowerCase().includes(normalizedQuery)));
+    const galleryTasks = historyTasks.filter((task) => task.id !== resultTask?.id);
+    const cleanup = useTaskHistoryCleanup(galleryTasks, `${kind}:${taskHistory.page}:${query}`, (ids) => {
+        taskHistory.forgetTasks(ids);
+        if (activeTask && ids.includes(activeTask.id)) setActiveTask(null);
+        if (detailTask && ids.includes(detailTask.id)) {
+            detailRequestRef.current += 1;
+            setDetailTask(null);
+            setDetailLoading(false);
+        }
+    });
+    const renderTaskTile = (task: GenerationTask) => (
+        <TaskTile
+            key={task.id}
+            task={task}
+            kind={kind}
+            modelLabel={taskModelLabel(task)}
+            busy={taskBusyId === task.id}
+            onOpen={() => void openDetail(task)}
+            onCancel={task.status === "queued" || task.status === "running" ? () => void cancelTask(task) : undefined}
+            onRetry={task.status === "queued" || task.status === "running" ? undefined : () => void retryTask(task)}
+            selected={cleanup.selectedIds.includes(task.id)}
+            onSelect={cleanup.managing && canClearTaskHistory(task) ? () => cleanup.toggle(task.id) : undefined}
+            onClear={canClearTaskHistory(task) ? () => cleanup.clearTask(task) : undefined}
+            clearing={cleanup.clearing}
+        />
+    );
     const settingsPanel =
         kind === "image" && imageProfile ? (
             <div className="workbench-settings-content">
@@ -1287,12 +1284,12 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                 <h2>作品</h2>
                                 <span>
                                     {activeTasks.length ? `${activeTasks.length} 个生成中 · ` : ""}
-                                    {historyTasks.length} 条记录
+                                    {tasksLoading ? "正在加载历史…" : `${query.trim() ? "匹配" : "共"} ${taskHistory.total} 条记录`}
                                 </span>
                             </div>
                             <Input className="workbench-results-search" aria-label="搜索历史任务" prefix={<Search className="size-3.5" />} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索提示词" allowClear />
                             <Tooltip title="刷新">
-                                <button type="button" className="workbench-icon-button" aria-label="刷新任务列表" onClick={() => void loadTasks()}>
+                                <button type="button" className="workbench-icon-button" aria-label="刷新任务列表" disabled={taskHistory.refreshing} onClick={() => void taskHistory.refresh()}>
                                     <RefreshCw />
                                 </button>
                             </Tooltip>
@@ -1376,34 +1373,50 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                     </div>
                                 )}
                             </div>
-                            {galleryTasks.length || tasksLoading ? (
-                                <section className="workbench-gallery" aria-label="历史作品">
-                                    <div className="workbench-gallery-head">
-                                        <strong>历史作品</strong>
-                                        {query.trim() ? <span>匹配 {galleryTasks.length} 条</span> : null}
-                                    </div>
-                                    {tasksLoading && !galleryTasks.length ? (
-                                        <Spin size="small" />
-                                    ) : (
-                                        <div className="workbench-gallery-grid">
-                                            {galleryTasks.map((task) => (
-                                                <TaskTile
-                                                    key={task.id}
-                                                    task={task}
-                                                    kind={kind}
-                                                    modelLabel={taskModelLabel(task)}
-                                                    busy={taskBusyId === task.id}
-                                                    onOpen={() => void openDetail(task)}
-                                                    onCancel={task.status === "queued" || task.status === "running" ? () => void cancelTask(task) : undefined}
-                                                    onRetry={task.status === "queued" || task.status === "running" ? undefined : () => void retryTask(task)}
-                                                />
-                                            ))}
-                                        </div>
-                                    )}
-                                </section>
-                            ) : query.trim() ? (
-                                <p className="workbench-list-empty">没有匹配“{query.trim()}”的作品</p>
+                            {taskHistory.activeError ? (
+                                <p className="workbench-list-empty" role="alert">
+                                    任务状态刷新失败，请点击上方刷新重试。
+                                </p>
                             ) : null}
+                            {otherActiveTasks.length ? (
+                                <section className="workbench-gallery" aria-label="进行中的任务">
+                                    <div className="workbench-gallery-head">
+                                        <strong>进行中的任务</strong>
+                                    </div>
+                                    <div className="workbench-gallery-grid">{otherActiveTasks.map(renderTaskTile)}</div>
+                                </section>
+                            ) : null}
+                            <section ref={historySectionRef} className="workbench-gallery" aria-label="历史作品" aria-busy={tasksLoading}>
+                                <div className="workbench-gallery-head">
+                                    <strong>历史作品</strong>
+                                    <TaskHistoryToolbar cleanup={cleanup} />
+                                </div>
+                                {taskHistory.historyError ? (
+                                    <p className="workbench-list-empty" role="alert">
+                                        历史记录加载失败。
+                                        <Button size="small" onClick={() => void taskHistory.refresh()}>
+                                            重试
+                                        </Button>
+                                    </p>
+                                ) : null}
+                                {tasksLoading && !galleryTasks.length ? (
+                                    <Spin size="small" />
+                                ) : galleryTasks.length ? (
+                                    <div className="workbench-gallery-grid">{galleryTasks.map(renderTaskTile)}</div>
+                                ) : !taskHistory.historyError ? (
+                                    <p className="workbench-list-empty">{historyTasks.length ? "当前页作品已在上方展示" : query.trim() ? `没有匹配“${query.trim()}”的作品` : "暂无历史作品"}</p>
+                                ) : null}
+                                <PaginationBar
+                                    current={taskHistory.page}
+                                    pageSize={taskHistory.pageSize}
+                                    total={taskHistory.total}
+                                    pageSizeOptions={[20]}
+                                    onChange={(page) => {
+                                        taskHistory.setPage(page);
+                                        historySectionRef.current?.scrollIntoView({ block: "start" });
+                                    }}
+                                />
+                            </section>
                         </div>
                     </section>
                 </section>
@@ -1461,6 +1474,11 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                                 </div>
                             </dl>
                             <div className="workbench-detail-actions">
+                                {canClearTaskHistory(detailTask) ? (
+                                    <Button danger icon={<Trash2 className="size-3.5" />} disabled={detailLoading || taskBusyId === detailTask.id} loading={cleanup.clearing} onClick={() => cleanup.clearTask(detailTask)}>
+                                        清理记录
+                                    </Button>
+                                ) : null}
                                 <Button disabled={detailLoading} onClick={() => void restoreTaskToComposer(detailTask)}>
                                     载入到编辑器
                                 </Button>
@@ -1693,21 +1711,42 @@ function ReferenceCard({ reference, kind, onRemove, onRoleChange }: { reference:
     );
 }
 
-function TaskTile({ task, kind, modelLabel, busy, onOpen, onCancel, onRetry }: { task: GenerationTask; kind: WorkbenchKind; modelLabel: string; busy: boolean; onOpen: () => void; onCancel?: () => void; onRetry?: () => void }) {
+function TaskTile({
+    task,
+    kind,
+    modelLabel,
+    busy,
+    onOpen,
+    onCancel,
+    onRetry,
+    onClear,
+    onSelect,
+    selected,
+    clearing,
+}: {
+    task: GenerationTask;
+    kind: WorkbenchKind;
+    modelLabel: string;
+    busy: boolean;
+    onOpen: () => void;
+    onCancel?: () => void;
+    onRetry?: () => void;
+    onClear?: () => void;
+    onSelect?: () => void;
+    selected?: boolean;
+    clearing?: boolean;
+}) {
     const url = generationTaskPreviewUrl(task);
     const images = generationTaskImageUrls(task);
     const pending = task.status === "queued" || task.status === "running";
     const video = task.previewKind === "video" || kind === "video";
     return (
-        <article className={`workbench-tile is-${task.status}`}>
+        <article className={`workbench-tile is-${task.status}${selected ? " is-selected" : ""}`}>
+            {onSelect ? <Checkbox className="absolute right-2 top-2 z-10 rounded bg-background p-2" checked={selected} disabled={busy || clearing} aria-label={`选择任务：${task.prompt || modelLabel}`} onChange={onSelect} /> : null}
             <button type="button" className="workbench-tile-main" onClick={onOpen} aria-label={`查看任务：${task.prompt || modelLabel}`}>
                 <span className="workbench-tile-media">
                     {url && task.status === "succeeded" ? (
-                        video ? (
-                            <video src={url} muted playsInline preload="metadata" />
-                        ) : (
-                            <MediaPreview src={url} kind="image" alt="" className="size-full object-cover" />
-                        )
+                        <WorkbenchTaskThumbnail url={url} video={video} />
                     ) : pending ? (
                         <span className="workbench-tile-pending">
                             <LoaderCircle className="animate-spin" />
@@ -1734,7 +1773,7 @@ function TaskTile({ task, kind, modelLabel, busy, onOpen, onCancel, onRetry }: {
                     </small>
                 </span>
             </button>
-            {onCancel || onRetry ? (
+            {!onSelect && (onCancel || onRetry || onClear) ? (
                 <div className="workbench-tile-actions">
                     {onCancel ? (
                         <Tooltip title="取消任务">
@@ -1747,6 +1786,13 @@ function TaskTile({ task, kind, modelLabel, busy, onOpen, onCancel, onRetry }: {
                         <Tooltip title={task.canRecoverMedia || task.mediaStage ? "重试保存，不重新生成" : "用相同参数再生成一次"}>
                             <button type="button" aria-label={task.canRecoverMedia || task.mediaStage ? "重试保存" : "再次生成"} disabled={busy} onClick={onRetry}>
                                 {busy ? <LoaderCircle className="animate-spin" /> : <RotateCcw />}
+                            </button>
+                        </Tooltip>
+                    ) : null}
+                    {onClear ? (
+                        <Tooltip title="清理任务记录">
+                            <button type="button" aria-label="清理任务记录" disabled={busy || clearing} onClick={onClear}>
+                                <Trash2 />
                             </button>
                         </Tooltip>
                     ) : null}

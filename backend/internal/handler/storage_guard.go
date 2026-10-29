@@ -35,6 +35,7 @@ var storageReadOnlyExemptRoutes = map[string]struct{}{
 	"/feedbacks":                      {},
 	"/feedbacks/attachments":          {},
 	"/tasks/:id/cancel":               {},
+	"/tasks/clear-history":            {},
 	"/tasks/:id/query-provider":       {},
 	"/tasks/:id/recover-media":        {},
 	"/tasks/:id/text-deltas":          {},

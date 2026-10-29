@@ -1362,14 +1362,16 @@
 }
 .workbench-gallery-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
+    justify-content: space-between;
     gap: 10px;
 }
 .workbench-gallery-head strong {
     font-size: 13px;
     font-weight: 650;
 }
-.workbench-gallery-head span {
+.workbench-gallery-head > span {
     color: var(--wb-text-soft);
     font-size: 12px;
 }
@@ -1398,6 +1400,10 @@
 }
 .workbench-tile-main:active {
     transform: scale(0.98);
+}
+.workbench-tile.is-selected .workbench-tile-media {
+    outline: 2px solid var(--wb-text);
+    outline-offset: 2px;
 }
 .workbench-tile-media {
     position: relative;

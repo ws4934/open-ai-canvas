@@ -26,7 +26,7 @@ func (r *Repository) RequeueTaskMediaRecovery(task *model.Task, encrypted string
 	now := time.Now()
 	result := r.db.Model(&model.Task{}).
 		Where("id = ? AND user_id = ? AND status = ? AND media_recovery_json = ? AND (lease_expires_at IS NULL OR lease_expires_at <= ?)", task.ID, task.UserID, model.TaskStatusFailed, task.MediaRecoveryJSON, now).
-		Updates(map[string]any{"status": model.TaskStatusQueued, "stage": "等待恢复作品保存", "error": "", "completed_at": nil, "next_poll_at": nil, "lease_owner": "", "lease_expires_at": nil, "media_recovery_json": encrypted, "updated_at": now})
+		Updates(map[string]any{"status": model.TaskStatusQueued, "stage": "等待恢复作品保存", "error": "", "completed_at": nil, "next_poll_at": nil, "lease_owner": "", "lease_expires_at": nil, "media_recovery_json": encrypted, "history_hidden_at": nil, "updated_at": now})
 	if result.Error != nil {
 		return result.Error
 	}

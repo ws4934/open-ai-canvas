@@ -2491,6 +2491,7 @@ paths:
     get:
       tags: [workbench]
       summary: 查询当前用户的工作台任务
+      description: 默认仅返回未清理的已结束历史；activeOnly=true 只返回排队与运行中的任务。服务端分页与全历史提示词搜索，按创建时间及任务 ID 倒序稳定排序。
       parameters:
         - in: query
           name: kind
@@ -2501,10 +2502,33 @@ paths:
           schema: { type: boolean, default: false }
         - in: query
           name: pageSize
-          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: q
+          description: 全历史提示词搜索，百分号与下划线按字面匹配。
+          schema: { type: string }
       responses:
         "200":
-          $ref: "#/components/responses/Envelope"
+          description: 统一信封；data 为分页对象，超出末页时返回实际末页。
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: integer, enum: [0] }
+                  msg: { type: string }
+                  data:
+                    type: object
+                    required: [tasks, total, page, pageSize, hasMore]
+                    properties:
+                      tasks: { type: array, items: { type: object } }
+                      total: { type: integer, format: int64 }
+                      page: { type: integer, minimum: 1 }
+                      pageSize: { type: integer, minimum: 1, maximum: 100 }
+                      hasMore: { type: boolean }
         "401":
           $ref: "#/components/responses/Error"
         "403":
@@ -2594,6 +2618,48 @@ paths:
         "200":
           $ref: "#/components/responses/Envelope"
         "400":
+          $ref: "#/components/responses/Error"
+  /tasks/clear-history:
+    post:
+      tags: [tasks]
+      summary: 单条或批量清理当前用户已结束的任务历史
+      description: 仅隐藏用户历史；不删除任务、素材、账单或审计。活动任务跳过，其他账号与不存在的 ID 均为 not_found。已清理的任务再次提交幂等成功；人工重试或恢复作品保存后重新可见。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items: { type: string, minLength: 1, maxLength: 36 }
+      responses:
+        "200":
+          description: 统一信封，data 包含 clearedIds 与 skipped。
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: integer, enum: [0] }
+                  data:
+                    type: object
+                    properties:
+                      clearedIds: { type: array, items: { type: string } }
+                      skipped:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: string }
+                            reason: { type: string, enum: [active, not_found] }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
           $ref: "#/components/responses/Error"
   /tasks/{id}/recover-media:
     post:

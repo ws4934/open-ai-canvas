@@ -1,7 +1,8 @@
 import { Button } from "antd";
 import { IconButton } from "@/components/ui/base/buttons";
 import { Tooltip } from "@/components/ui/base/tooltip";
-import { Eye, FileText, Image as ImageIcon, RotateCcw, Video } from "lucide-react";
+import { Eye, FileText, Image as ImageIcon, RotateCcw, Trash2, Video } from "lucide-react";
+import { Checkbox } from "@/components/ui/base/checkbox/checkbox";
 
 import { MediaPreview } from "@/components/media-preview";
 import { generationTaskShowsProgress, generationTaskStageLabel, generationTaskStatusLabel } from "@/lib/generation-task-display";
@@ -10,7 +11,7 @@ import { isTaskFailed, statusDotClassName, taskAttentionReason, TaskDate } from 
 import { TaskVideoThumbnail } from "./task-video-thumbnail";
 import { progressFillStyle } from "@/lib/progress-fill";
 
-export function TaskGridCard({ task, actingId, onOpen, onRetry }: { task: GenerationTask; actingId: string; onOpen: () => void; onRetry: () => void }) {
+export function TaskGridCard({ task, actingId, onOpen, onRetry, onClear, onSelect, selected, clearing }: { task: GenerationTask; actingId: string; onOpen: () => void; onRetry: () => void; onClear?: () => void; onSelect?: () => void; selected?: boolean; clearing?: boolean }) {
     const isActive = task.status === "queued" || task.status === "running";
     const isFailed = isTaskFailed(task);
     const isVideo = task.previewKind === "video";
@@ -22,6 +23,7 @@ export function TaskGridCard({ task, actingId, onOpen, onRetry }: { task: Genera
     return (
         <article className={`product-collection-card task-grid-card${isFailed ? " is-attention" : ""}`}>
             <div className="task-grid-thumb">
+                {onSelect ? <Checkbox className="absolute left-2 top-2 z-10 rounded bg-background p-2" checked={selected} disabled={clearing || actingId === task.id} onChange={onSelect} aria-label={`选择任务：${task.prompt || "未命名任务"}`} /> : null}
                 {thumbnailUrl ? (
                     <MediaPreview src={thumbnailUrl} kind="image" loading="lazy" className="h-full w-full object-cover" />
                 ) : isVideo && task.previewUrl ? (
@@ -45,6 +47,7 @@ export function TaskGridCard({ task, actingId, onOpen, onRetry }: { task: Genera
                             />
                         </Tooltip>
                     ) : null}
+                    {onClear ? <Tooltip title="清理任务记录"><IconButton size="sm" variant="ghost" icon={Trash2} aria-label="清理任务记录" disabled={clearing || actingId === task.id} onClick={onClear} /></Tooltip> : null}
                 </div>
             </div>
             <div className="task-grid-body">

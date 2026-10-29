@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"yingce/backend/internal/model"
 )
@@ -81,6 +82,45 @@ func TestOrdinaryFailedAndCancelledTasksKeepRetryIdentity(t *testing.T) {
 		if _, err = s.RetryTask(task.UserID, task.ID); err == nil {
 			t.Fatal("queued retry was accepted a second time")
 		}
+	}
+}
+
+func TestManualRetryStartsFreshDirectSubmission(t *testing.T) {
+	s, db, _, _ := creationTestService(t)
+	now := time.Now()
+	task := model.Task{ID: "manual-retry", UserID: "user", Type: "canvas_image", Status: model.TaskStatusFailed, Attempts: 4, InputJSON: `{}`, HistoryHiddenAt: &now}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	old := &model.RouteAttempt{ID: "previous-submission", TaskID: task.ID, RouteRun: 0, AttemptNumber: 1, Status: "failed", DispatchState: "rejected_no_job"}
+	if err := s.repo.CreateRouteAttempt(old); err != nil {
+		t.Fatal(err)
+	}
+	retried, err := s.RetryTask("user", task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := s.repo.ClaimNextTask("retry-worker", time.Minute)
+	if err != nil || claimed == nil {
+		t.Fatalf("retry not claimed: %v", err)
+	}
+	if retried.Attempts != 0 || claimed.Attempts != 1 || claimed.RouteRun != 1 || claimed.HistoryHiddenAt != nil {
+		t.Fatalf("new authorized execution inherited old worker claims: retry=%d claimed=%d run=%d", retried.Attempts, claimed.Attempts, claimed.RouteRun)
+	}
+	attempt, err := s.beginTaskRouteAttempt(claimed)
+	if err != nil || attempt == nil || attempt.ID == old.ID || attempt.RouteRun != claimed.RouteRun || attempt.DispatchState != "not_sent" {
+		t.Fatalf("new user retry was rejected or reused old submission: %+v %v", attempt, err)
+	}
+	oldAttempts, err := s.repo.RouteAttempts(task.ID, 0)
+	if err != nil || len(oldAttempts) != 1 || oldAttempts[0].ID != old.ID {
+		t.Fatalf("old submission audit removed: %+v %v", oldAttempts, err)
+	}
+	if err := s.markRouteAttemptDispatching(attempt); err != nil {
+		t.Fatal(err)
+	}
+	claimed.Attempts = 2
+	if _, err := s.beginTaskRouteAttempt(claimed); !isRouteDispatchUncertain(err) {
+		t.Fatalf("same-run ambiguous dispatch was resent: %v", err)
 	}
 }
 

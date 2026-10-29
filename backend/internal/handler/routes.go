@@ -14,6 +14,25 @@ import (
 )
 
 func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
+	r.POST("/tasks/clear-history", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10)
+		var req service.TaskHistoryClearRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		result, err := svc.ClearTaskHistory(user.ID, req)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, result)
+	})
 	r.GET("/admin/text-replay-stats", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {

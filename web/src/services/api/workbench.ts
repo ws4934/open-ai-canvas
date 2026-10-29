@@ -1,4 +1,4 @@
-import { http } from "@/services/api/request";
+import { compactApiParams, http } from "@/services/api/request";
 import { getResourceAccess, resolveResourceAccessURL, resourceStorageKey } from "@/services/api/resources";
 import type { GenerationTask } from "@/services/api/task-center";
 
@@ -94,12 +94,32 @@ export type CreateWorkbenchTaskInput = {
     }>;
 };
 
-export async function listWorkbenchTasks(kind: WorkbenchKind, limit = 100, activeOnly = false, signal?: AbortSignal) {
-    const pageSize = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.trunc(limit))) : 100;
-    return http.get<GenerationTask[]>("/workbench/tasks", {
-        params: { kind, pageSize, activeOnly: activeOnly || undefined },
+export type WorkbenchTaskPage = {
+    tasks: GenerationTask[];
+    total: number;
+    page: number;
+    pageSize: number;
+    hasMore: boolean;
+};
+
+export type WorkbenchTaskListOptions = { page?: number; pageSize?: number; query?: string; activeOnly?: boolean };
+
+export function listWorkbenchTasks(kind: WorkbenchKind, options: WorkbenchTaskListOptions = {}, signal?: AbortSignal) {
+    return http.get<WorkbenchTaskPage>("/workbench/tasks", {
+        params: compactApiParams({ kind, page: options.page ?? 1, pageSize: options.pageSize ?? 20, q: options.query?.trim() || undefined, activeOnly: options.activeOnly ? "true" : undefined }),
         signal,
     });
+}
+
+export async function listWorkbenchActiveTasks(kind: WorkbenchKind, signal?: AbortSignal) {
+    const tasks = new Map<string, GenerationTask>();
+    let page = 1;
+    while (true) {
+        const result = await listWorkbenchTasks(kind, { page, pageSize: 100, activeOnly: true }, signal);
+        for (const task of result.tasks) tasks.set(task.id, task);
+        if (!result.hasMore) return [...tasks.values()];
+        page = result.page + 1;
+    }
 }
 
 export async function listWorkbenchTools(kind: WorkbenchKind, signal?: AbortSignal, admin = false) {

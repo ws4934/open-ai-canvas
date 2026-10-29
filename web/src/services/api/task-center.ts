@@ -331,6 +331,19 @@ export function retryGenerationTask(id: string) {
     return http.post<GenerationTask>(`/tasks/${encodeURIComponent(id)}/retry`);
 }
 
+export type TaskHistoryClearResult = {
+    clearedIds: string[];
+    skipped: { id: string; reason: "active" | "not_found" }[];
+};
+
+export function canClearTaskHistory(task: Pick<GenerationTask, "status">) {
+    return task.status === "succeeded" || task.status === "failed" || task.status === "cancelled";
+}
+
+export function clearGenerationTaskHistory(ids: string[]) {
+    return http.post<TaskHistoryClearResult>("/tasks/clear-history", { ids });
+}
+
 export function recoverGenerationTaskMedia(id: string) {
     return http.post<GenerationTask>(`/tasks/${encodeURIComponent(id)}/recover-media`);
 }

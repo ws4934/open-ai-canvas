@@ -268,6 +268,10 @@ func (s *Service) TasksWithOptions(userID string, options TaskListOptions) ([]Ta
 	if err != nil {
 		return nil, err
 	}
+	return s.taskListSummaries(userID, tasks)
+}
+
+func (s *Service) taskListSummaries(userID string, tasks []model.Task) ([]TaskSummary, error) {
 	orders, err := s.repo.BillingOrdersByTaskIDs(userID, taskBillingTaskIDs(tasks))
 	if err != nil {
 		return nil, err

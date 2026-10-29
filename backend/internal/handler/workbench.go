@@ -32,12 +32,12 @@ func RegisterWorkbenchRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		limit, err := parsePositiveQueryInt(c.Query("pageSize"), 50)
+		page, limit, err := parsePaginationQuery(c, 20)
 		if err != nil {
 			fail(c, http.StatusBadRequest, err)
 			return
 		}
-		tasks, err := svc.WorkbenchTasks(user.ID, c.Query("kind"), c.Query("activeOnly") == "true", limit)
+		tasks, err := svc.WorkbenchTasks(user.ID, c.Query("kind"), service.WorkbenchTaskQuery{Page: page, PageSize: limit, ActiveOnly: c.Query("activeOnly") == "true", Query: c.Query("q")})
 		if err != nil {
 			failService(c, err)
 			return

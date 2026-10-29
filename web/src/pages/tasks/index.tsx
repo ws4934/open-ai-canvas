@@ -27,6 +27,9 @@ import { TaskResultMedia } from "./task-result-media";
 import { formatModelName, getTaskCanvasContext, isTaskFailed, providerCancelStatusLabel, taskMediaKind } from "./task-shared";
 import { TaskStatusFilterBar, type TaskStatusFilter } from "./task-status-filter";
 import { Select } from "@/components/ui/base/select";
+import { TaskHistoryToolbar } from "@/components/tasks/task-history-toolbar";
+import { useTaskHistoryCleanup } from "@/hooks/use-task-history-cleanup";
+import { canClearTaskHistory } from "@/services/api/task-center";
 
 type TaskKindFilter = "all" | "text" | "image" | "video";
 type TaskViewMode = "list" | "grid";
@@ -58,6 +61,11 @@ function taskStatusFilter(value: string | null): TaskStatusFilter {
 }
 
 export default function TasksPage() {
+    const userId = useUserStore((state) => state.user?.id || "");
+    return <TaskHistoryWorkspace key={userId} />;
+}
+
+function TaskHistoryWorkspace() {
     const { message, modal } = App.useApp();
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
@@ -96,6 +104,7 @@ export default function TasksPage() {
     const [tasks, setTasks] = useState<GenerationTask[]>([]);
     const syncedCanvasTaskIdsRef = useRef(new Set<string>());
     const tasksRef = useRef<GenerationTask[]>([]);
+    const taskListRevisionRef = useRef(0);
     const canvasById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
     const domainProjectNameById = useMemo(() => new Map(domainProjects.map((item) => [item.project.id, item.project.name])), [domainProjects]);
     const projectOptions = useMemo(() => projects.map((project) => {
@@ -140,6 +149,12 @@ export default function TasksPage() {
         () => (groupingActive ? groupTasksByCanvas(filteredTasks, canvasById, domainProjectNameById) : []),
         [canvasById, domainProjectNameById, filteredTasks, groupingActive],
     );
+    const cleanup = useTaskHistoryCleanup(groupingActive ? filteredTasks : visibleTasks, `${page}:${pageSize}:${viewMode}:${groupingActive}:${statusFilter}:${keyword}:${projectFilter}:${kindFilter}:${modelFilter}`, (ids) => {
+        taskListRevisionRef.current += 1;
+        setTasks((items) => items.filter((task) => !ids.includes(task.id)));
+        setDetailTask((current) => current && ids.includes(current.id) ? null : current);
+        void loadTasks(false);
+    });
 
     const changeViewMode = (mode: TaskViewMode) => {
         setViewMode(mode);
@@ -176,6 +191,10 @@ export default function TasksPage() {
             onOpen={() => void openTaskDetail(task)}
             onRetry={() => void runAction(task.id)}
             onPreview={() => task.previewUrl && setMediaPreview({ url: task.previewUrl, kind: task.previewKind === "video" ? "video" : "image", title: task.prompt || formatTaskKind(task) })}
+            selected={cleanup.selectedIds.includes(task.id)}
+            onSelect={cleanup.managing && canClearTaskHistory(task) ? () => cleanup.toggle(task.id) : undefined}
+            onClear={canClearTaskHistory(task) ? () => cleanup.clearTask(task) : undefined}
+            clearing={cleanup.clearing}
         />
     );
 
@@ -186,6 +205,10 @@ export default function TasksPage() {
             actingId={actingId}
             onOpen={() => void openTaskDetail(task)}
             onRetry={() => void runAction(task.id)}
+            selected={cleanup.selectedIds.includes(task.id)}
+            onSelect={cleanup.managing && canClearTaskHistory(task) ? () => cleanup.toggle(task.id) : undefined}
+            onClear={canClearTaskHistory(task) ? () => cleanup.clearTask(task) : undefined}
+            clearing={cleanup.clearing}
         />
     );
 
@@ -238,9 +261,11 @@ export default function TasksPage() {
     }, []);
 
     const loadTasks = useCallback(async (showLoading = false) => {
+        const revision = taskListRevisionRef.current;
         if (showLoading) setLoading(true);
         try {
             const next = await listGenerationTasks();
+            if (revision !== taskListRevisionRef.current) return undefined;
             setTasks((current) => reconcileTaskSummaries(current, next));
             void syncCompletedCanvasTasks(next);
             return next;
@@ -308,6 +333,7 @@ export default function TasksPage() {
             const next = currentTask.status === "queued" || currentTask.status === "running" || currentTask.status === "succeeded"
                 ? currentTask
                 : savingMedia ? await recoverGenerationTaskMedia(id) : await retryGenerationTask(id);
+            taskListRevisionRef.current += 1;
             setTasks((items) => items.map((item) => (item.id === id ? next : item)));
             setDetailTask((current) => (current?.id === id ? { ...current, ...next } : current));
             setStatusFilter("active");
@@ -404,6 +430,7 @@ export default function TasksPage() {
                         onReset={() => { setKeyword(""); setProjectFilter("all"); setKindFilter("all"); setModelFilter("all"); setStatusFilter("all"); setPage(1); }}
                         trailing={(
                             <div className="flex flex-wrap items-center gap-2">
+                                <TaskHistoryToolbar cleanup={cleanup} />
                                 {viewMode === "list" ? (
                                     <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-foreground/55">
                                         <Switch size="sm" checked={groupEnabled} onChange={changeGroupEnabled} />
@@ -501,6 +528,7 @@ export default function TasksPage() {
                             {detailTask.providerCancelRequestedAt ? <InfoItem label="请求取消时间" value={formatDate(detailTask.providerCancelRequestedAt)} /> : null}
                         </div>
                         <div className="flex flex-wrap justify-end gap-2">
+                            {canClearTaskHistory(detailTask) ? <Button danger icon={<Trash2 className="size-4" />} disabled={detailLoading || actingId === detailTask.id} loading={cleanup.clearing} onClick={() => cleanup.clearTask(detailTask)}>清理记录</Button> : null}
                             {detailTask.canRecoverMedia ? <Button icon={<RefreshCw className="size-4" />} loading={actingId === detailTask.id} onClick={() => void runAction(detailTask.id)}>重试保存</Button> : null}
                             {canQueryProviderTask(detailTask) ? <Button icon={<RefreshCw className="size-4" />} loading={actingId === detailTask.id} onClick={() => void queryProviderTask(detailTask)}>手动查询任务</Button> : null}
                             {isTaskFailed(detailTask) ? <Button icon={<Bug className="size-4" />} onClick={() => navigate(`/settings?section=diagnostics&taskId=${encodeURIComponent(detailTask.id)}${detailTask.projectId ? `&projectId=${encodeURIComponent(detailTask.projectId)}` : ""}`)}>导出诊断包</Button> : null}
@@ -551,8 +579,9 @@ function canQueryProviderTask(task: GenerationTask) {
 function reconcileTaskSummaries(current: GenerationTask[], next: GenerationTask[]) {
     if (current.length === 0) return next;
     const currentById = new Map(current.map((task) => [task.id, task]));
-    let changed = false;
-    const reconciled = next.map((task) => {
+    let changed = current.length !== next.length;
+    const reconciled = next.map((task, index) => {
+        if (current[index]?.id !== task.id) changed = true;
         const previous = currentById.get(task.id);
         const sameImages = previous?.previewImages?.length === task.previewImages?.length && (previous?.previewImages || []).every((url, index) => url === task.previewImages?.[index]);
         if (previous?.updatedAt === task.updatedAt && previous.previewUrl === task.previewUrl && previous.previewPosterUrl === task.previewPosterUrl && sameImages && previous.billing?.status === task.billing?.status && previous.billing?.amountMicrocredits === task.billing?.amountMicrocredits) return previous;

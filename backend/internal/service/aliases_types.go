@@ -11,6 +11,8 @@ const (
 )
 
 type (
+	TaskHistoryClearRequest                = app.TaskHistoryClearRequest
+	TaskHistoryClearResult                 = app.TaskHistoryClearResult
 	BindProjectAssetImageRequest           = app.BindProjectAssetImageRequest
 	PaymentOrderQuery                      = app.PaymentOrderQuery
 	PaymentReconciliationQuery             = app.PaymentReconciliationQuery
@@ -374,6 +376,8 @@ type (
 	WorkbenchToolView                      = app.WorkbenchToolView
 	WorkbenchPresetView                    = app.WorkbenchPresetView
 	WorkbenchTaskInput                     = app.WorkbenchTaskInput
+	WorkbenchTaskQuery                     = app.WorkbenchTaskQuery
+	WorkbenchTaskPage                      = app.WorkbenchTaskPage
 	UserAnnouncementFeed                   = app.UserAnnouncementFeed
 	UserAssetPage                          = app.UserAssetPage
 	UserAssetPageFilter                    = app.UserAssetPageFilter
