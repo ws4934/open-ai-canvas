@@ -580,7 +580,7 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
                       seconds: Number(videoRequest?.seconds || seconds),
                       ratio: videoRequest?.ratio || ratio,
                       resolution: videoRequest?.resolution || videoQuality,
-                      generateAudio: composerConfig.videoGenerateAudio === "true",
+                      generateAudio: videoProfile?.generateAudio.fixed ? videoProfile.generateAudio.default : composerConfig.videoGenerateAudio === "true",
                       watermark: composerConfig.videoWatermark === "true",
                   };
             const generationConfig = {
@@ -907,8 +907,12 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
                     <div className="workbench-switch-row">
                         {videoProfile.generateAudio.supported ? (
                             <label>
-                                <span>生成音频</span>
-                                <Switch checked={config.videoGenerateAudio === "true"} onChange={(value) => updateConfig("videoGenerateAudio", String(value))} />
+                                <span>{videoProfile.generateAudio.fixed ? "原生音频" : "生成音频"}</span>
+                                <Switch
+                                    checked={videoProfile.generateAudio.fixed ? videoProfile.generateAudio.default : config.videoGenerateAudio === "true"}
+                                    disabled={videoProfile.generateAudio.fixed}
+                                    onChange={(value) => updateConfig("videoGenerateAudio", String(value))}
+                                />
                             </label>
                         ) : null}
                         {videoProfile.watermark.supported ? (

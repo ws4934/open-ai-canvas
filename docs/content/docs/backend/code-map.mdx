@@ -180,6 +180,8 @@ Pi SDK 执行前的参数校验失败由 `agent-runtime/pi/agent-runtime.mjs` �
 
 AutoDL 画面规格由 `app/model_capability_screen_spec.go` 读取官方插件工作流合同（精确工作流优先，未声明的 ID 回退到 `*` 默认预设），校验所选分辨率及默认值，允许自定义标签；`task_creation.go` 在价格选择之前归一化，任务校验与 `provider_video.go` 再次使用同一规则。前端 `lib/video-screen-specs.ts` 管理插件预设、所选规格与工作流切换，`ModelCapabilityEditor` 复用到系统及自定义渠道；无开关或独立草稿。
 
+xAI Video 的规则源是 `plugin-packages/generate-catalog.mjs` 中的 `xai-video` 定义；定向生成会同时写独立插件清单和 `backend/internal/protocol/xai-video.manifest.json`，内置入口复用 `LoadInstalledPlugin` 执行同一合同。模型代际默认能力位于前后端 `model_capability_defaults.go` / `model-capabilities.ts`；`xai_video_contract_test.go` 同时验证内置入口、源码清单和实际插件包。
+
 ```text
 HTTP 请求 -> handler -> service（稳定导入面 / 别名）-> app（组合根）-> 业务域包 -> repository/model
                                                                      |

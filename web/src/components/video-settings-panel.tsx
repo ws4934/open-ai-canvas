@@ -42,7 +42,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const dimensions = videoDimensionsForRatioAndResolution(ratio, resolution);
     const sizeSupported = profile.ratios.length > 0;
     const configuredResolutions = profile.resolutions.map((value) => ({ value, label: formatVideoResolutionLabel(value) }));
-    const generateAudio = boolConfig(config.videoGenerateAudio, profile.generateAudio.default);
+    const generateAudio = profile.generateAudio.fixed ? profile.generateAudio.default : boolConfig(config.videoGenerateAudio, profile.generateAudio.default);
     const watermark = boolConfig(config.videoWatermark, profile.watermark.default);
 
     return (
@@ -83,7 +83,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 <SettingGroup title="秒数" color={theme.node.muted}>
 					<VideoDurationControl profile={profile} value={Number(seconds)} theme={theme} disabled={(value) => !hasPriceTierForVideoSelection(priceTiers, resolution, value)} onChange={(value) => onConfigChange("videoSeconds", String(value))} />
                 </SettingGroup>
-                {profile.generateAudio.supported || profile.watermark.supported ? <SettingGroup title="输出" color={theme.node.muted}><div className="grid grid-cols-2 gap-3 rounded-md px-2" style={{ background: theme.toolbar.itemHover }}>{profile.generateAudio.supported ? <SwitchRow label="生成声音" checked={generateAudio} theme={theme} onChange={(checked) => onConfigChange("videoGenerateAudio", String(checked))} /> : null}{profile.watermark.supported ? <SwitchRow label="添加水印" checked={watermark} theme={theme} onChange={(checked) => onConfigChange("videoWatermark", String(checked))} /> : null}</div></SettingGroup> : null}
+                {profile.generateAudio.supported || profile.watermark.supported ? <SettingGroup title="输出" color={theme.node.muted}><div className="grid grid-cols-2 gap-3 rounded-md px-2" style={{ background: theme.toolbar.itemHover }}>{profile.generateAudio.supported ? <SwitchRow label={profile.generateAudio.fixed ? "原生声音" : "生成声音"} checked={generateAudio} disabled={profile.generateAudio.fixed} theme={theme} onChange={(checked) => onConfigChange("videoGenerateAudio", String(checked))} /> : null}{profile.watermark.supported ? <SwitchRow label="添加水印" checked={watermark} theme={theme} onChange={(checked) => onConfigChange("videoWatermark", String(checked))} /> : null}</div></SettingGroup> : null}
             </div>
         </ImageSettingsTheme>
     );
@@ -113,7 +113,7 @@ function SeedanceVideoSettingsPanel({ config, profile, priceTiers, onConfigChang
     const resolution = normalizeSeedanceResolution(config.vquality, model);
     const ratio = normalizeSeedanceRatio(config.size);
     const duration = normalizeSeedanceDuration(config.videoSeconds);
-    const generateAudio = boolConfig(config.videoGenerateAudio, profile.generateAudio.default);
+    const generateAudio = profile.generateAudio.fixed ? profile.generateAudio.default : boolConfig(config.videoGenerateAudio, profile.generateAudio.default);
     const watermark = boolConfig(config.videoWatermark, profile.watermark.default);
     const useArkPrivateAssets = boolConfig(config.videoArkPrivateAssetUpload, true);
     const isArkSeedance = isVolcengineArkVideoProtocol(resolveModelRequestConfig(config, config.model).interfaceType);
@@ -163,7 +163,7 @@ function SeedanceVideoSettingsPanel({ config, profile, priceTiers, onConfigChang
                 </SettingGroup>
                 <SettingGroup title="输出" color={theme.node.muted}>
                     <div className="grid grid-cols-2 gap-3 rounded-md px-2" style={{ background: theme.toolbar.itemHover }}>
-                        {profile.generateAudio.supported ? <SwitchRow label="生成声音" checked={generateAudio} theme={theme} onChange={(checked) => onConfigChange("videoGenerateAudio", String(checked))} /> : null}
+                        {profile.generateAudio.supported ? <SwitchRow label={profile.generateAudio.fixed ? "原生声音" : "生成声音"} checked={generateAudio} disabled={profile.generateAudio.fixed} theme={theme} onChange={(checked) => onConfigChange("videoGenerateAudio", String(checked))} /> : null}
                         {profile.watermark.supported ? <SwitchRow label="添加水印" checked={watermark} theme={theme} onChange={(checked) => onConfigChange("videoWatermark", String(checked))} /> : null}
                     </div>
                 </SettingGroup>
@@ -346,19 +346,22 @@ function ratioPreview(ratio: string) {
     if (ratio === "1:1") return { width: 1, height: 1 };
     if (ratio === "4:3") return { width: 4, height: 3 };
     if (ratio === "3:4") return { width: 3, height: 4 };
+    if (ratio === "3:2") return { width: 3, height: 2 };
+    if (ratio === "2:3") return { width: 2, height: 3 };
     if (ratio === "21:9") return { width: 21, height: 9 };
+    if (ratio === "5:2") return { width: 5, height: 2 };
     if (ratio === "adaptive") return { width: 0, height: 0 };
     return { width: 16, height: 9 };
 }
 
-function SwitchRow({ label, checked, theme, onChange }: { label: string; checked: boolean; theme: CanvasTheme; onChange: (checked: boolean) => void }) {
+function SwitchRow({ label, checked, disabled, theme, onChange }: { label: string; checked: boolean; disabled?: boolean; theme: CanvasTheme; onChange: (checked: boolean) => void }) {
     return (
         <div className="flex h-8 items-center justify-between gap-2">
             <span className="min-w-0 whitespace-nowrap text-[var(--fs-label)]" style={{ color: theme.node.text }}>
                 {label}
             </span>
             <span className="shrink-0" onMouseDown={(event) => event.stopPropagation()}>
-                <Switch size="sm" checked={checked} onChange={onChange} />
+                <Switch size="sm" checked={checked} disabled={disabled} aria-label={label} onChange={onChange} />
             </span>
         </div>
     );

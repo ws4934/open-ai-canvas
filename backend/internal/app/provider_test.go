@@ -2210,16 +2210,16 @@ func TestRunVideoTaskXAIVideoRejectsUnreachableResultURL(t *testing.T) {
 	}
 }
 
-func TestXAIVideoPluginMapsUnmarkedImagesToStartFrame(t *testing.T) {
+func TestXAIVideoPluginKeepsUnmarkedStartFrameAndReferences(t *testing.T) {
 	body := officialVideoCreateBody(t, canvasGenerationInput{
 		Mode:   "video",
 		Prompt: "make it move",
 		Config: providerConfig{
 			Model:         "grok-imagine-video-1.5",
 			InterfaceType: "xai-video",
-			VideoSeconds:  "20",
+			VideoSeconds:  "15",
 			Size:          "9:16",
-			VQuality:      "1080p",
+			VQuality:      "720p",
 		},
 		ReferenceImages: []providerMedia{
 			{ID: "image-1", DataURL: testReferenceImageDataURL},
@@ -2227,12 +2227,16 @@ func TestXAIVideoPluginMapsUnmarkedImagesToStartFrame(t *testing.T) {
 		},
 		Metadata: map[string]interface{}{"videoEditOperation": "image_to_video"},
 	})
-	if body["duration"] != float64(20) || body["aspect_ratio"] != "9:16" || body["resolution"] != "1080p" {
+	if body["duration"] != float64(15) || body["aspect_ratio"] != "9:16" || body["resolution"] != "720p" {
 		t.Fatalf("xAI settings = %#v", body)
 	}
 	image, _ := body["image"].(map[string]any)
 	if image["url"] != testReferenceImageDataURL {
 		t.Fatalf("image = %#v", body["image"])
+	}
+	refs, _ := body["reference_images"].([]any)
+	if len(refs) != 1 {
+		t.Fatalf("second unmarked image was lost: %#v", body)
 	}
 }
 
@@ -2257,6 +2261,7 @@ func TestXAIVideoPluginKeepsStartFrameAsImage(t *testing.T) {
 func TestXAIVideoPluginUsesReferenceImagesForReferenceOperation(t *testing.T) {
 	body := officialVideoCreateBody(t, canvasGenerationInput{
 		Mode:   "video",
+		Prompt: "保持角色一致，让人物走进房间",
 		Config: providerConfig{Model: "grok-imagine-video-1.5", InterfaceType: "xai-video"},
 		ReferenceImages: []providerMedia{
 			{ID: "character", DataURL: testReferenceImageDataURL},

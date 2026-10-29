@@ -191,8 +191,28 @@ func DefaultModelCapabilityConfigForModel(protocol string, modelName string) *Mo
 		if model.ChannelInterfaceType(protocol) == model.ChannelInterfaceNewAPIChannel1 {
 			video.Resolutions = []string{"480p", "720p", "1080p"}
 		}
-	case model.ChannelInterfaceNewAPIVideo, model.ChannelInterfaceXAIVideo:
+	case model.ChannelInterfaceNewAPIVideo:
 		video.GenerateAudio = VideoBooleanConfig{Supported: false, Default: false}
+	case model.ChannelInterfaceXAIVideo:
+		video.Duration.Default = 8
+		video.Ratios = []string{"1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9", "5:2"}
+		video.Resolutions = []string{"480p", "720p"}
+		video.GenerateAudio = VideoBooleanConfig{Supported: true, Default: true, Fixed: true}
+		video.References.MaxImages = 7
+		video.Operations = append(video.Operations, "reference_to_video")
+		switch strings.TrimSpace(modelName) {
+		case "grok-imagine-video-1.5":
+			// 总图片槽含 14 张参考图与首、尾帧；各角色限制由插件分别校验。
+			video.References.MaxImages = 16
+			video.Resolutions = append(video.Resolutions, "1080p")
+		case "grok-imagine-video-1.5-lite":
+			video.References.MaxImages = 1
+			video.Resolutions = append(video.Resolutions, "1080p")
+			video.Operations = []string{"text_to_video", "image_to_video"}
+		default:
+			video.References.MaxVideos, video.References.MaxVideoBytes, video.References.MaxVideoDuration = 1, 200*1024*1024, 15
+			video.Operations = append(video.Operations, "extend", "inpaint", "replace_element", "camera_motion", "style_transfer")
+		}
 	case model.ChannelInterfaceNovitaVideo:
 		video.References.MaxImages, video.References.MaxImageBytes = 1, 10*1024*1024
 		video.Duration = VideoDurationConfig{Selection: "enum", Values: []int{5, 10}, Default: 5}

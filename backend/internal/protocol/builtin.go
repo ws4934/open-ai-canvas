@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -269,37 +270,20 @@ func newAPIChannel1Adapter() Adapter {
 	})
 }
 
+//go:embed xai-video.manifest.json
+var xaiVideoManifest []byte
+
 func xAIVideosAdapter() Adapter {
-	info := metadata("xai-video", "xAI 官方视频", "xAI", CapabilityVideo, "POST /v1/videos/generations", "GET /v1/videos/{request_id}", "application/json")
-	info.Parameters = videoParams()
-	return videoAdapter(info, func(r GenerationRequest) (RequestSpec, error) {
-		body := map[string]any{"model": r.Model, "prompt": r.Prompt, "duration": defaultInt(r.Duration, 6), "aspect_ratio": defaultValue(r.AspectRatio, "16:9"), "resolution": defaultValue(r.Resolution, "720p")}
-		frameImages, referenceImages, unspecifiedImages := splitVideoImages(r.Images)
-		if len(frameImages) > 0 && len(referenceImages) > 0 {
-			return RequestSpec{}, fmt.Errorf("xAI 视频协议不能同时混用首尾帧和角色参考图")
-		}
-		if len(frameImages) > 1 {
-			return RequestSpec{}, fmt.Errorf("xAI 视频协议最多支持 1 张起始图，不支持尾帧输入")
-		}
-		if len(frameImages) == 1 {
-			body["image"] = map[string]any{"url": mediaValue(frameImages[0])}
-		} else if len(referenceImages) > 0 {
-			refs := make([]any, 0, len(referenceImages))
-			for _, image := range referenceImages {
-				refs = append(refs, map[string]any{"url": mediaValue(image)})
-			}
-			body["reference_images"] = refs
-		} else if len(unspecifiedImages) == 1 {
-			body["image"] = map[string]any{"url": mediaValue(unspecifiedImages[0])}
-		} else if len(unspecifiedImages) > 1 {
-			refs := make([]any, 0, len(r.Images))
-			for _, image := range unspecifiedImages {
-				refs = append(refs, map[string]any{"url": mediaValue(image)})
-			}
-			body["reference_images"] = refs
-		}
-		return jsonSpec(http.MethodPost, "/v1/videos/generations", body), nil
-	})
+	adapter, err := LoadInstalledPlugin(xaiVideoManifest, nil)
+	if err != nil {
+		panic(fmt.Errorf("invalid embedded xAI Video contract: %w", err))
+	}
+	info := adapter.Metadata()
+	info.Name, info.Vendor = "xAI 官方视频", "xAI"
+	info.Enabled, info.Installable = true, true
+	// 内置入口使用 docs/xai-video.md 渲染操作表；不暴露生成时的文档占位摘要。
+	info.Documentation = ""
+	return metadataAdapter{metadata: info, delegate: adapter}
 }
 
 func arkVideosAdapter() Adapter {

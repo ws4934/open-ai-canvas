@@ -68,6 +68,16 @@ Agent 图片任务按实际返回的图片数回写画布：单图仍使用原�
 
 图片的 `role=first_frame/last_frame` 表示帧约束；`reference` 或未指定角色表示普通参考，不能静默改成首帧。模式、素材数量和参数共同参与模型能力校验及价格档选择；不支持的组合在创建任务和计费前拒绝。执行输入的 `metadata.videoEditOperation` 与任务操作保持一致，并保留帧素材标识。浏览器自定义渠道的工作台任务使用同一模式规则，其他入口沿用各自的意图解析。
 
+## xAI 视频插件参数
+
+`xai-video` 插件 2.1.0 按精确模型 ID 区分旧版 `grok-imagine-video`、完整 `grok-imagine-video-1.5` 与 Lite。完整 1.5 允许首帧和最多 14 张角色/场景参考图同用，旧版仍互斥；首尾帧按各自角色传入，不挪作普通参考图。普通生成未指定时为 8 秒，范围 1–15 秒，旧版参考模式最多 10 秒。
+
+基础 1.5 文生和仅首帧图生可用 1080p；参考图、预设音色、尾帧或关键帧模式最高 720p，插件拒绝无效组合，不自动降清晰度。图生画幅跟随首帧。xAI 原生输出音轨，没有 `generate_audio` 开关；默认能力的 `video.generateAudio.fixed=true` 让界面只读显示“原生音频”。模型默认能力与插件同步，已保存的管理员能力合同和价格不自动重写。
+
+统一任务输入的 `metadata.providerOptions["xai-video"]` 可传 `reference_audios: [{ voice_id: "eve" }]`（最多 3 个预设）和 `keyframes: [{ image: { url: "https://example.com/frame.png" }, timestamp_s: 2.0 }]`（最多 4 个）。关键帧时间严格在 `(0,duration)` 内，按 1/3 秒网格不得重合；`image` 可改用 `file_id`，二者不同时传。自有音频音色需要 xAI 额外权限，不把参考音频文件当作预设音色。网关别名可通过同一命名空间的 `modelProfile` 显式选择代际。
+
+旧版编辑与延长通过标准视频输入和 `metadata.videoEditOperation` 选择：`extend` 调用 `/v1/videos/extensions`，`duration` 表示新增 2–10 秒、默认 6 秒；`inpaint/replace_element/camera_motion/style_transfer` 调用 `/v1/videos/edits`，输出时长沿用源视频。已知源时长时分别校验延长的 2–15 秒、编辑的最多 8.7 秒；这两种模式不发送无效的画幅/清晰度参数。1.5 拒绝编辑或延长。
+
 ## 图片响应格式
 
 渠道模型的 `capabilityConfig.image.responseFormat` 包含 `supported` 和可选的 `default`。缺少配置、`supported=false` 或默认值为 `auto` 时不发送 `response_format`，由上游决定返回 URL 或 Base64；启用后选择 `b64_json` 或 `url` 才发送对应值。OpenAI 兼容与 Grok 的生成、编辑请求使用同一规则，官方 Grok 插件也不再补默认 `url`。该配置按模型保存，不根据协议名称自动推断；应按实际供应商合同选择，响应格式不改变资源持久化与访问权限。

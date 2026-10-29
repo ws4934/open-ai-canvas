@@ -126,7 +126,7 @@ export type VideoCapabilityConfig = {
     resolutions: string[];
     defaultResolution: string;
     fixedScreenSpec?: VideoScreenSpecConfig;
-    generateAudio: { supported: boolean; default: boolean };
+    generateAudio: { supported: boolean; default: boolean; fixed?: boolean };
     watermark: { supported: boolean; default: boolean };
     operations: string[];
     defaultOperation: string;
@@ -479,6 +479,27 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
     if (protocol === "gemini-veo") {
         video.duration = { selection: "enum", values: [4, 6, 8], default: 6 };
         video.resolutions = ["720p", "1080p"];
+    }
+    if (protocol === "xai-video") {
+        video.duration.default = 8;
+        video.ratios = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9", "5:2"];
+        video.resolutions = ["480p", "720p"];
+        video.generateAudio = { supported: true, default: true, fixed: true };
+        video.references.maxImages = 7;
+        video.operations.push("reference_to_video");
+        if (model.trim() === "grok-imagine-video-1.5") {
+            video.references.maxImages = 16;
+            video.resolutions.push("1080p");
+        } else if (model.trim() === "grok-imagine-video-1.5-lite") {
+            video.references.maxImages = 1;
+            video.resolutions.push("1080p");
+            video.operations = ["text_to_video", "image_to_video"];
+        } else {
+            video.references.maxVideos = 1;
+            video.references.maxVideoBytes = 200 * 1024 * 1024;
+            video.references.maxVideoDurationSeconds = 15;
+            video.operations.push("extend", "inpaint", "replace_element", "camera_motion", "style_transfer");
+        }
     }
     if (protocol === "volcengine-ark-video" || protocol === "volcengine-ark-agent-plan-video" || protocol === "newapi-channel-1" || protocol === "newapi-channel-2") {
         video.references.maxVideos = 3;

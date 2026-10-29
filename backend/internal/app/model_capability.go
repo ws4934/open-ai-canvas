@@ -168,6 +168,8 @@ type VideoDurationConfig struct {
 type VideoBooleanConfig struct {
 	Supported bool `json:"supported"`
 	Default   bool `json:"default"`
+	// Fixed 表示上游没有此开关，界面只读展示默认输出（例如 xAI 原生音轨）。
+	Fixed bool `json:"fixed,omitempty"`
 }
 
 func DecodeModelCapabilityConfig(raw string) (*ModelCapabilityConfig, error) {
