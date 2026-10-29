@@ -783,6 +783,8 @@ install 的 Base URL、协议、能力和成本全部从服务端快照读取，
 
 所有 `/api/dramas` 路径都需要登录 Cookie 并受 `shortDrama` 功能开关保护；对象归属在 service 中按当前用户校验，返回标准业务信封。
 
+单集详情的 `segments[].request.references` 始终为数组。视频模型未选择、被移除或能力画像不可用时，预演返回空数组与具体 `warning`，项目、分镜及设置仍可读取；不补造模型参数，也不绕过生成时的模型校验。
+
 | 方法与路径 | 用途 |
 | --- | --- |
 | `GET /dramas?page&pageSize&q&status` | 作品列表：只含自动制作短剧；`q` 按作品名搜索，`status` 为 draft/running/paused/completed。每项含状态、集数、完成数、最多 4 张角色参考图拼封面、风格、画幅、已用积分与更新时间；`statusCounts` 给出各状态总数（`all` 为全部） |
