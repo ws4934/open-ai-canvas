@@ -76,27 +76,29 @@ type Message struct {
 // GenerationRequest is the platform contract shared by canvas, creation and agent.
 // Provider-specific fields belong in Extra and are never interpreted by the host.
 type GenerationRequest struct {
-	Capability      Capability                `json:"capability,omitempty"`
-	Model           string                    `json:"model"`
-	Prompt          string                    `json:"prompt,omitempty"`
-	Instructions    string                    `json:"instructions,omitempty"`
-	Messages        []Message                 `json:"messages,omitempty"`
-	Inputs          []MediaReference          `json:"inputs,omitempty"`
-	Images          []MediaReference          `json:"images,omitempty"`
-	Videos          []MediaReference          `json:"videos,omitempty"`
-	Audios          []MediaReference          `json:"audios,omitempty"`
-	Duration        int                       `json:"duration,omitempty"`
-	AspectRatio     string                    `json:"aspectRatio,omitempty"`
-	Resolution      string                    `json:"resolution,omitempty"`
-	Quality         string                    `json:"quality,omitempty"`
-	GenerateAudio   bool                      `json:"generateAudio,omitempty"`
-	Watermark       bool                      `json:"watermark,omitempty"`
-	ImageCount      int                       `json:"imageCount,omitempty"`
-	Operation       string                    `json:"operation,omitempty"`
-	Output          OutputOptions             `json:"output,omitempty"`
-	ProviderOptions map[string]map[string]any `json:"providerOptions,omitempty"`
-	ImageParameters map[string]any            `json:"imageParameters,omitempty"`
-	Extra           map[string]any            `json:"extra,omitempty"`
+	Capability       Capability                `json:"capability,omitempty"`
+	Model            string                    `json:"model"`
+	Prompt           string                    `json:"prompt,omitempty"`
+	Instructions     string                    `json:"instructions,omitempty"`
+	Messages         []Message                 `json:"messages,omitempty"`
+	Inputs           []MediaReference          `json:"inputs,omitempty"`
+	Images           []MediaReference          `json:"images,omitempty"`
+	Videos           []MediaReference          `json:"videos,omitempty"`
+	Audios           []MediaReference          `json:"audios,omitempty"`
+	Duration         int                       `json:"duration,omitempty"`
+	AspectRatio      string                    `json:"aspectRatio,omitempty"`
+	Resolution       string                    `json:"resolution,omitempty"`
+	Quality          string                    `json:"quality,omitempty"`
+	GenerateAudio    bool                      `json:"generateAudio,omitempty"`
+	Watermark        bool                      `json:"watermark,omitempty"`
+	ImageCount       int                       `json:"imageCount,omitempty"`
+	Operation        string                    `json:"operation,omitempty"`
+	Output           OutputOptions             `json:"output,omitempty"`
+	ProviderOptions  map[string]map[string]any `json:"providerOptions,omitempty"`
+	ImageParameters  map[string]any            `json:"imageParameters,omitempty"`
+	InputParameters  map[string]any            `json:"inputParameters,omitempty"`
+	ModelInputConfig *ModelInputConfig         `json:"modelInputConfig,omitempty"`
+	Extra            map[string]any            `json:"extra,omitempty"`
 }
 
 type RequestContext struct {
@@ -179,6 +181,7 @@ type Metadata struct {
 	Scopes                  []Surface        `json:"scopes"`
 	Parameters              []Parameter      `json:"parameters,omitempty"`
 	ImageParameters         []ImageParameter `json:"imageParameters,omitempty"`
+	InputSchema             *InputSchema     `json:"inputSchema,omitempty"`
 	Create                  string           `json:"-"`
 	Poll                    string           `json:"-"`
 	Cancel                  string           `json:"-"`
@@ -368,6 +371,7 @@ type ManifestProvider struct {
 	Auth                    ManifestAuth           `json:"auth,omitempty"`
 	Parameters              []Parameter            `json:"parameters,omitempty"`
 	ImageParameters         []ImageParameter       `json:"imageParameters,omitempty"`
+	InputSchema             *InputSchema           `json:"inputSchema,omitempty"`
 	Validations             []ManifestValidation   `json:"validations,omitempty"`
 	Create                  ManifestOperation      `json:"create"`
 	Upload                  *ManifestUpload        `json:"upload,omitempty"`

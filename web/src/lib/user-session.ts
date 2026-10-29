@@ -1,5 +1,6 @@
 import { getFeatureAvailability, type AuthSessionPayload } from "@/services/api/auth";
 import { projectImageParameters, imageParametersForSpec } from "./image-parameters";
+import { projectInputConfig } from "./model-inputs";
 import { getModelCatalog, type CapabilitySpec, type ModelCatalogResponse, type OptionConstraint, type PublicChannelCatalog, type PublicLogicalModel } from "@/services/api/logical-models";
 import { localForageStorage } from "@/lib/localforage-storage";
 import { appQueryClient } from "@/lib/query-client";
@@ -286,6 +287,15 @@ export function projectLogicalCapability(spec: CapabilitySpec, defaults: Record<
         projected.video.defaultResolution = String(defaults.vquality ?? projected.video.resolutions[0] ?? "");
         projected.video.generateAudio = booleanOption(spec.options?.videoGenerateAudio, defaults.videoGenerateAudio);
         projected.video.watermark = booleanOption(spec.options?.videoWatermark, defaults.videoWatermark);
+    }
+    if (spec.inputConfig) {
+        const inputs = structuredClone(spec.inputConfig);
+        inputs.operations = spec.operations || inputs.operations;
+        inputs.fields = inputs.fields.map(field => {
+            const limit = spec.options?.[field.name];
+            return { ...field, ...(limit || {}), default: field.readOnly ? field.default : defaults[field.name] as typeof field.default ?? field.default } as typeof field;
+        });
+        return projectInputConfig(projected, inputs);
     }
     return projected;
 }

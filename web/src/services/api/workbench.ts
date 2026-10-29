@@ -89,7 +89,8 @@ export type CreateWorkbenchTaskInput = {
     references?: Array<{
         resourceId: string;
         kind: "image" | "video" | "audio";
-        role?: "reference" | "first_frame" | "last_frame";
+        role?: string;
+        inputFields?: Record<string, string | number | boolean>;
         slotKey?: string;
     }>;
 };

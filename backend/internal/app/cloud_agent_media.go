@@ -122,6 +122,8 @@ type cloudAgentMediaArgs struct {
 	Size                       string                              `json:"size"`
 	ImageResolution            string                              `json:"imageResolution"`
 	ImageParameters            string                              `json:"imageParameters,omitempty"`
+	InputParameters            string                              `json:"inputParameters,omitempty"`
+	InputMediaRoles            string                              `json:"inputMediaRoles,omitempty"`
 	Quality                    string                              `json:"quality"`
 	VideoGenerateAudio         *bool                               `json:"videoGenerateAudio"`
 	VideoWatermark             *bool                               `json:"videoWatermark"`

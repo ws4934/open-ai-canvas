@@ -360,6 +360,8 @@ export type CanvasNodeMetadata = {
     quality?: string;
     imageResolution?: string;
     imageParameters?: string;
+    inputParameters?: string;
+    inputMediaRoles?: string;
     transparentBackground?: string;
     count?: number;
     textCount?: number;

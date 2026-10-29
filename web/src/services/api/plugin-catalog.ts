@@ -2,6 +2,7 @@ import { http } from "@/services/api/request";
 import type { ModelProtocolDefinition, ProtocolCapability } from "@/lib/model-protocols";
 
 type PluginProviderCatalogItem = {
+    inputSchema?: import("@/lib/model-inputs").InputSchema;
     imageParameters?: import("@/lib/image-parameters").ImageParameter[];
     id: string;
     version: string;
@@ -52,6 +53,7 @@ function toProviderDefinition(item: PluginProviderCatalogItem): ModelProtocolDef
         baseUrl: item.baseUrl,
         parameters: item.parameters || [],
         imageParameters: item.imageParameters,
+        inputSchema: item.inputSchema,
         workflows: item.workflows || [],
     };
 }

@@ -306,6 +306,9 @@ func ValidateManifest(manifest Manifest) error {
 			return fmt.Errorf("duplicate provider contribution %q", provider.ID)
 		}
 		providerIDs[provider.ID] = struct{}{}
+		if err := ValidateInputSchema(provider.InputSchema, provider.ID); err != nil {
+			return fmt.Errorf("provider %q input schema: %w", provider.ID, err)
+		}
 		if err := ValidateImageParameters(provider.ImageParameters); err != nil {
 			return fmt.Errorf("provider %q image parameters: %w", provider.ID, err)
 		}
@@ -450,6 +453,7 @@ func normalizeManifestForProvider(manifest *Manifest, index int) error {
 	manifest.Metadata.Scopes = provider.Scopes
 	manifest.Metadata.Parameters = provider.Parameters
 	manifest.Metadata.ImageParameters = provider.ImageParameters
+	manifest.Metadata.InputSchema = provider.InputSchema
 	manifest.Metadata.Create = operationSummary(provider.Create)
 	manifest.Metadata.Poll = operationSummaryPtr(provider.Poll)
 	manifest.Metadata.Cancel = operationSummaryPtr(provider.Cancel)

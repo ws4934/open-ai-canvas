@@ -35,6 +35,8 @@ type Options struct {
 	Size                  *string `json:"size,omitempty" node:"size" task:"size" modes:"image,video"`
 	ImageResolution       *string `json:"imageResolution,omitempty" node:"imageResolution" task:"imageResolution" modes:"image"`
 	ImageParameters       *string `json:"imageParameters,omitempty" node:"imageParameters" task:"imageParameters" modes:"image"`
+	InputParameters       *string `json:"inputParameters,omitempty" node:"inputParameters" task:"inputParameters" modes:"video"`
+	InputMediaRoles       *string `json:"inputMediaRoles,omitempty" node:"inputMediaRoles" task:"inputMediaRoles" modes:"video"`
 	Quality               *string `json:"quality,omitempty" node:"quality" task:"quality" modes:"image"`
 	Count                 *int    `json:"count,omitempty" node:"count" task:"count" modes:"image"`
 	TransparentBackground *bool   `json:"transparentBackground,omitempty" node:"transparentBackground" task:"transparentBackground" modes:"image"`
@@ -126,6 +128,15 @@ func (s GenerationSpec) Validate() error {
 	if s.Options.Count != nil && *s.Options.Count < 1 {
 		return invalid("options.count", "数量必须为正整数")
 	}
+	for name, raw := range map[string]*string{"inputParameters": s.Options.InputParameters, "inputMediaRoles": s.Options.InputMediaRoles} {
+		if raw == nil {
+			continue
+		}
+		var value map[string]any
+		if err := json.Unmarshal([]byte(*raw), &value); err != nil || value == nil {
+			return invalid("options."+name, "插件参数必须为有效对象")
+		}
+	}
 	if s.Options.ImageParameters != nil {
 		var parameters map[string]any
 		if err := json.Unmarshal([]byte(*s.Options.ImageParameters), &parameters); err != nil || parameters == nil {
@@ -204,7 +215,7 @@ func OptionsFromTaskConfig(mode string, config map[string]any) (Options, error) 
 		switch field.Type.Elem().Kind() {
 		case reflect.String:
 			text, ok := raw.(string)
-			if !ok && field.Tag.Get("task") == "imageParameters" {
+			if !ok && (field.Tag.Get("task") == "imageParameters" || field.Tag.Get("task") == "inputParameters") {
 				if parameters, object := raw.(map[string]any); object {
 					encoded, err := json.Marshal(parameters)
 					if err != nil {
@@ -247,6 +258,12 @@ func (o Options) TaskConfig() map[string]any {
 		var parameters map[string]any
 		if json.Unmarshal([]byte(*o.ImageParameters), &parameters) == nil && parameters != nil {
 			result["imageParameters"] = parameters
+		}
+	}
+	if o.InputParameters != nil {
+		var parameters map[string]any
+		if json.Unmarshal([]byte(*o.InputParameters), &parameters) == nil && parameters != nil {
+			result["inputParameters"] = parameters
 		}
 	}
 	return result

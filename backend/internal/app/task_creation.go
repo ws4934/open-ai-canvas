@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"yingce/backend/internal/model"
+	"yingce/backend/internal/protocol"
 	"yingce/backend/internal/repository"
 )
 
@@ -532,6 +533,10 @@ func (s *Service) resolveSystemChannelModelSelection(access *userGroupAccess, in
 	if err != nil {
 		return input, InvalidModelSelection("指定的模型能力配置无效，请联系管理员")
 	}
+	input["config"] = nextConfig
+	if err := applyTaskModelInputs(input, capabilityConfig); err != nil {
+		return input, err
+	}
 	if legacyImageResolutionProtocol(string(channelModel.Protocol)) && capabilityConfig != nil && capabilityConfig.Image != nil && capabilityConfig.Image.Resolution.Supported {
 		legacyQuality := strings.ToLower(strings.TrimSpace(metadataString(nextConfig, "quality")))
 		if legacyQuality != "" && legacyQuality != "<nil>" && legacyQuality != "auto" && legacyQuality != "any" && !containsCapabilityString(capabilityConfig.Image.Resolution.Values, legacyQuality) {
@@ -590,7 +595,11 @@ func (s *Service) resolveSystemChannelModelSelection(access *userGroupAccess, in
 	if capabilitySpec != nil {
 		declaredOptions = capabilitySpec.Options
 	}
-	input["capabilityOptions"] = capabilityOptionsFromConfig(channelModel.Capability, nextConfig, declaredOptions)
+	var modelInputs *protocol.ModelInputConfig
+	if capabilityConfig != nil {
+		modelInputs = capabilityConfig.InputConfig
+	}
+	input["capabilityOptions"] = capabilityOptionsFromConfig(channelModel.Capability, nextConfig, declaredOptions, modelInputs)
 
 	intent := ModelRequestIntentFromTaskInput(input, taskType, operation)
 	if capabilitySpec != nil && normalizeCapability(intent.Capability) == "image" {
@@ -709,8 +718,18 @@ func applyChannelCapabilityDefaults(config map[string]any, capability string, pr
 	}
 }
 
-func capabilityOptionsFromConfig(capability string, config map[string]any, declared map[string]OptionConstraint) map[string]any {
+func capabilityOptionsFromConfig(capability string, config map[string]any, declared map[string]OptionConstraint, modelInputs ...*protocol.ModelInputConfig) map[string]any {
 	options := map[string]any{}
+	if values, ok := config["inputParameters"].(map[string]any); ok {
+		for name, value := range values {
+			if _, enabled := declared[name]; enabled {
+				options[name] = value
+			}
+		}
+	}
+	if len(modelInputs) > 0 && modelInputs[0] != nil {
+		return options
+	}
 	if capability == "image" {
 		if parameters, ok := config["imageParameters"].(map[string]any); ok {
 			return maps.Clone(parameters)

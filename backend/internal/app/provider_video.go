@@ -24,7 +24,7 @@ func (s *Service) validateResolvedVideoCapability(input *canvasGenerationInput) 
 			}
 			profile = DefaultModelCapabilityConfigForModel(input.Config.InterfaceType, input.Config.Model)
 		}
-		normalized, err := NormalizeModelCapabilityConfigForModel("video", input.Config.InterfaceType, input.Config.Model, profile)
+		normalized, err := NormalizeModelCapabilityConfigForModel("video", input.Config.InterfaceType, input.Config.Model, profile, s.protocolRegistry())
 		if err != nil || normalized == nil || normalized.Video == nil {
 			return errors.New("当前视频模型能力参数无效")
 		}
@@ -42,11 +42,12 @@ func (s *Service) validateResolvedVideoCapability(input *canvasGenerationInput) 
 	if err != nil || profile == nil || profile.Video == nil {
 		return errors.New("当前视频模型尚未配置能力参数")
 	}
-	normalized, err := NormalizeModelCapabilityConfigForModel("video", string(item.Protocol), firstNonEmpty(item.ProviderModelKey, item.ModelKey), profile)
+	normalized, err := NormalizeModelCapabilityConfigForModel("video", string(item.Protocol), firstNonEmpty(item.ProviderModelKey, item.ModelKey), profile, s.protocolRegistry())
 	if err != nil || normalized == nil || normalized.Video == nil {
 		return errors.New("当前视频模型能力参数无效")
 	}
 	input.VideoCapability = normalized.Video
+	input.Config.CapabilityConfig = normalized
 	applyAutoDLVideoScreenSpec(input, normalized.Video)
 	applyFixedVideoResolution(input, normalized.Video)
 	return validateVideoTask(normalized.Video, *input)
@@ -505,7 +506,7 @@ func videoImageRole(input canvasGenerationInput, image providerMedia) string {
 }
 
 func videoImageRoleOrDefault(input canvasGenerationInput, image providerMedia, fallback string) string {
-	if image.Role == "first_frame" || image.Role == "last_frame" {
+	if image.Role != "" && image.Role != "reference" {
 		return image.Role
 	}
 	if metadataString(input.Metadata, "videoEditOperation") == "reference_to_video" {

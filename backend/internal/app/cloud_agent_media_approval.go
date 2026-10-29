@@ -11,8 +11,8 @@ import (
 	"yingce/backend/internal/repository"
 )
 
-// Only user-editable image options cross the approval boundary. Targets,
-// references, prompt, snapshot and generation mode remain server-authored.
+// Only user-editable media options cross the approval boundary. Targets,
+// reference membership, prompt, snapshot and mode remain server-authored.
 type CloudAgentMediaSettings struct {
 	LogicalModelID             string `json:"logicalModelId,omitempty"`
 	ChannelID                  string `json:"channelId,omitempty"`
@@ -20,6 +20,8 @@ type CloudAgentMediaSettings struct {
 	Size                       string `json:"size"`
 	ImageResolution            string `json:"imageResolution,omitempty"`
 	ImageParameters            string `json:"imageParameters,omitempty"`
+	InputParameters            string `json:"inputParameters,omitempty"`
+	InputMediaRoles            string `json:"inputMediaRoles,omitempty"`
 	Quality                    string `json:"quality"`
 	DurationSeconds            *int   `json:"durationSeconds,omitempty"`
 	VideoGenerateAudio         *bool  `json:"videoGenerateAudio,omitempty"`
@@ -50,6 +52,7 @@ func (s *Service) updateCloudAgentMediaApproval(repo *repository.Repository, run
 	args.ConfigurationChange = nil
 	args.Size, args.ImageResolution, args.Quality = settings.Size, settings.ImageResolution, settings.Quality
 	args.ImageParameters = settings.ImageParameters
+	args.InputParameters, args.InputMediaRoles = settings.InputParameters, settings.InputMediaRoles
 	if args.Mode == "video" {
 		if settings.DurationSeconds != nil {
 			if *settings.DurationSeconds < 0 {

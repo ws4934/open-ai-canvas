@@ -7,7 +7,8 @@ export type ReferenceImage = {
     dataUrl: string;
     url?: string;
     storageKey?: string;
-    role?: "reference" | "first_frame" | "last_frame";
+    role?: string;
+    inputFields?: Record<string, string | number | boolean>;
     slotKey?: string;
     bytes?: number;
     width?: number;

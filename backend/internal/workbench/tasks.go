@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -38,10 +39,11 @@ type ModelChoice struct {
 }
 
 type TaskReference struct {
-	ResourceID string `json:"resourceId"`
-	Kind       string `json:"kind"`
-	Role       string `json:"role,omitempty"`
-	SlotKey    string `json:"slotKey,omitempty"`
+	ResourceID  string         `json:"resourceId"`
+	Kind        string         `json:"kind"`
+	Role        string         `json:"role,omitempty"`
+	SlotKey     string         `json:"slotKey,omitempty"`
+	InputFields map[string]any `json:"inputFields,omitempty"`
 }
 
 type TaskResolution struct {
@@ -94,7 +96,7 @@ func (s *Service) ResolveTask(userID string, req TaskInput) (*TaskResolution, er
 	if containsSensitiveURL(providerConfig) {
 		return nil, kernel.BadAuthRequest("浏览器不能直接提交模型配置、URL 或凭据")
 	}
-	if len(req.References) > 20 {
+	if len(req.References) > 100 {
 		return nil, kernel.BadAuthRequest("参考素材数量超出限制")
 	}
 	parameters, err := normalizeTaskParameters(req.Kind, req.Parameters)
@@ -121,7 +123,10 @@ func (s *Service) ResolveTask(userID string, req TaskInput) (*TaskResolution, er
 		if err != nil || resource.Status != model.ResourceStatusReady || resource.Kind != ref.Kind {
 			return nil, kernel.BadAuthRequest("参考素材不存在、未就绪或类型不匹配")
 		}
-		refs = append(refs, TaskReference{ResourceID: resource.ID, Kind: resource.Kind, Role: role, SlotKey: strings.TrimSpace(ref.SlotKey)})
+		if containsSensitiveURL(ref.InputFields) {
+			return nil, kernel.BadAuthRequest("素材字段包含不支持的地址或凭据")
+		}
+		refs = append(refs, TaskReference{ResourceID: resource.ID, Kind: resource.Kind, Role: role, SlotKey: strings.TrimSpace(ref.SlotKey), InputFields: ref.InputFields})
 	}
 	if tool != nil {
 		capability := map[string]any{}
@@ -156,6 +161,9 @@ func (s *Service) ResolveTask(userID string, req TaskInput) (*TaskResolution, er
 		if ref.SlotKey != "" {
 			reference["slotKey"] = ref.SlotKey
 		}
+		if ref.InputFields != nil {
+			reference["inputFields"] = ref.InputFields
+		}
 		snapshotReferences = append(snapshotReferences, reference)
 	}
 	workbenchSnapshot["references"] = snapshotReferences
@@ -174,6 +182,9 @@ func (s *Service) ResolveTask(userID string, req TaskInput) (*TaskResolution, er
 			}
 			if ref.SlotKey != "" {
 				value["slotKey"] = ref.SlotKey
+			}
+			if ref.InputFields != nil {
+				value["inputFields"] = ref.InputFields
 			}
 			switch ref.Kind {
 			case "image":
@@ -212,7 +223,7 @@ func videoOperation(refs []TaskReference) string {
 		case "video":
 			return "reference_to_video"
 		case "image":
-			if ref.Role != "first_frame" && ref.Role != "last_frame" {
+			if ref.Role != "first_frame" && ref.Role != "last_frame" && ref.Role != "keyframe" {
 				return "reference_to_video"
 			}
 			hasFrame = true
@@ -231,8 +242,8 @@ func videoOperation(refs []TaskReference) string {
 
 func normalizeTaskParameters(kind string, params map[string]any) (map[string]any, error) {
 	allowed := map[string]map[string]bool{
-		KindImage: {"size": true, "quality": true, "imageResolution": true, "count": true},
-		KindVideo: {"seconds": true, "ratio": true, "resolution": true, "generateAudio": true, "watermark": true},
+		KindImage: {"size": true, "quality": true, "imageResolution": true, "count": true, "inputParameters": true},
+		KindVideo: {"seconds": true, "ratio": true, "resolution": true, "generateAudio": true, "watermark": true, "inputParameters": true},
 	}[kind]
 	if allowed == nil {
 		return nil, kernel.BadAuthRequest("工作台类型无效")
@@ -243,6 +254,12 @@ func normalizeTaskParameters(kind string, params map[string]any) (map[string]any
 			return nil, kernel.BadAuthRequest("生成参数包含不支持字段: " + key)
 		}
 		switch key {
+		case "inputParameters":
+			object, ok := value.(map[string]any)
+			if !ok || containsSensitiveURL(object) {
+				return nil, kernel.BadAuthRequest("插件参数格式无效")
+			}
+			normalized[key] = object
 		case "size", "quality", "imageResolution", "ratio", "resolution":
 			text, ok := value.(string)
 			text = strings.TrimSpace(text)
@@ -292,11 +309,13 @@ func taskParameterInteger(value any) (int, bool) {
 	}
 }
 
+var referenceRoleName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+
 func validReferenceRole(kind, referenceKind, role string) bool {
 	if role == "" || role == "reference" {
 		return kind == KindVideo || referenceKind == "image"
 	}
-	return kind == KindVideo && referenceKind == "image" && (role == "first_frame" || role == "last_frame")
+	return kind == KindVideo && validReferenceKind(referenceKind) && referenceRoleName.MatchString(role)
 }
 
 func resolveModelInput(req TaskInput) (string, string, string, map[string]any, error) {

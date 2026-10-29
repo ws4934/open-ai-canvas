@@ -106,8 +106,8 @@ func TestXAIVideoAdvancedLimitsAndKeyframeSlots(t *testing.T) {
 			want    string
 		}{
 			{"keyframe_end", map[string]any{"keyframes": []any{map[string]any{"image": map[string]any{"url": "https://media.example/key.png"}, "timestamp_s": 8.0}}}, "小于"},
-			{"keyframe_duplicate", map[string]any{"keyframes": []any{map[string]any{"image": map[string]any{"url": "https://media.example/a.png"}, "timestamp_s": 0.2}, map[string]any{"image": map[string]any{"url": "https://media.example/b.png"}, "timestamp_s": 0.4}}}, "1/3"},
-			{"audio_file", map[string]any{"reference_audios": []any{map[string]any{"url": "https://media.example/audio.wav"}}}, "voice_id"},
+			{"keyframe_duplicate", map[string]any{"keyframes": []any{map[string]any{"image": map[string]any{"url": "https://media.example/a.png"}, "timestamp_s": 0.2}, map[string]any{"image": map[string]any{"url": "https://media.example/b.png"}, "timestamp_s": 0.4}}}, "时间网格"},
+			{"audio_file", map[string]any{"reference_audios": []any{map[string]any{"url": "https://media.example/audio.wav"}}}, "音色"},
 			{"profile_mismatch", map[string]any{"modelProfile": "video"}, "不匹配"},
 		} {
 			t.Run(name+"/"+test.name, func(t *testing.T) {
@@ -243,13 +243,13 @@ func TestXAIVideoModelLimits(t *testing.T) {
 			request   GenerationRequest
 			wantError string
 		}{
-			{"base_1080", GenerationRequest{Model: "grok-imagine-video", Prompt: "a scene", Resolution: "1080p"}, "1080"},
+			{"base_1080", GenerationRequest{Model: "grok-imagine-video", Prompt: "a scene", Resolution: "1080p"}, "清晰度"},
 			{"base_mixed", GenerationRequest{Model: "grok-imagine-video", Prompt: "a scene", Images: []MediaReference{xaiFrame("first_frame", 0), xaiFrame("reference_image", 1)}}, "混用"},
 			{"base_reference_duration", GenerationRequest{Model: "grok-imagine-video", Prompt: "a scene", Duration: 11, Images: []MediaReference{xaiFrame("reference_image", 0)}}, "10"},
 			{"15_reference_1080", GenerationRequest{Model: "grok-imagine-video-1.5", Prompt: "a scene", Resolution: "1080p", Images: []MediaReference{xaiFrame("reference_image", 0)}}, "720"},
 			{"15_duration", GenerationRequest{Model: "grok-imagine-video-1.5", Prompt: "a scene", Duration: 16}, "15"},
-			{"base_last", GenerationRequest{Model: "grok-imagine-video", Prompt: "a scene", Images: []MediaReference{xaiFrame("last_frame", 0)}}, "1.5"},
-			{"15_edit", GenerationRequest{Model: "grok-imagine-video-1.5", Prompt: "a scene", Operation: "inpaint", Videos: []MediaReference{{URL: "https://media.example/input.mp4"}}}, "旧版"},
+			{"base_last", GenerationRequest{Model: "grok-imagine-video", Prompt: "a scene", Images: []MediaReference{xaiFrame("last_frame", 0)}}, "尾帧"},
+			{"15_edit", GenerationRequest{Model: "grok-imagine-video-1.5", Prompt: "a scene", Operation: "inpaint", Videos: []MediaReference{{URL: "https://media.example/input.mp4"}}}, "不支持操作"},
 		} {
 			t.Run(name+"/"+test.name, func(t *testing.T) {
 				_, err := adapter.BuildCreate(context.Background(), RequestContext{Request: test.request})

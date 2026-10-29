@@ -174,6 +174,9 @@ func (s *Service) WorkbenchTasks(userID, kind string, options WorkbenchTaskQuery
 
 func (s *Service) resolveWorkbenchProviderConfig(userID, kind, operation, modelName, logicalModelID, channelID string, parameters map[string]any, input map[string]any) (map[string]any, error) {
 	config := map[string]any{"mode": kind}
+	if values, ok := parameters["inputParameters"].(map[string]any); ok {
+		config["inputParameters"] = values
+	}
 	if kind == WorkbenchKindImage {
 		for _, key := range []string{"size", "quality", "imageResolution", "count"} {
 			if value, exists := parameters[key]; exists {

@@ -64,6 +64,15 @@ const optionDefinitions: Record<CapabilityKind, Array<{ name: string; label: str
 };
 
 function definitionsFor(capability: CapabilityKind, specs: CapabilitySpec[] = []): Array<{ name: string; label: string; unit?: string }> {
+    if (specs.some((spec) => spec.inputConfig))
+        return [
+            ...new Map(
+                [...optionDefinitions[capability], ...specs.flatMap((spec) => spec.inputConfig?.fields.filter((field) => field.pricing && field.enabled !== false).map((field) => ({ name: field.name, label: field.label })) || [])].map((field) => [
+                    field.name,
+                    field,
+                ]),
+            ).values(),
+        ];
     if (capability !== "image" || !specs.some((spec) => spec.imageParameters)) return optionDefinitions[capability];
     return [...new Map(specs.flatMap((spec) => spec.imageParameters || []).map((p) => [p.name, { name: p.name, label: p.label }])).values()];
 }
@@ -135,6 +144,7 @@ export function capabilitySpecFromChannelModel(item?: ChannelModel): CapabilityS
             version: 1,
             capability,
             operations: video.operations,
+            inputConfig: item.capabilityConfig?.inputConfig,
             inputs: compactInputs({
                 image: { min: video.references.minImages, max: video.references.maxImages },
                 video: { min: 0, max: video.references.maxVideos },
@@ -146,6 +156,7 @@ export function capabilitySpecFromChannelModel(item?: ChannelModel): CapabilityS
                 vquality: video.resolutions.length ? { values: video.resolutions } : undefined,
                 videoGenerateAudio: { values: video.generateAudio.supported ? [false, true] : [false] },
                 videoWatermark: { values: video.watermark.supported ? [false, true] : [false] },
+                ...Object.fromEntries((item.capabilityConfig?.inputConfig?.fields || []).filter((field) => field.pricing && field.enabled !== false).map((field) => [field.name, { values: field.values, min: field.min, max: field.max, step: field.step }])),
             }),
         };
     }
@@ -157,6 +168,7 @@ export function mergeCapabilitySpecs(capability: CapabilityKind, specs: Capabili
     if (matching.length === 0) return emptyCapabilitySpec(capability);
     const result = emptyCapabilitySpec(capability);
     result.operations = Array.from(new Set(matching.flatMap((item) => item.operations || [])));
+    if (matching[0].inputConfig && matching.every((spec) => JSON.stringify(spec.inputConfig) === JSON.stringify(matching[0].inputConfig))) result.inputConfig = matching[0].inputConfig;
     for (const definition of inputDefinitions[capability]) {
         const declared = matching.some((item) => item.inputs?.[definition.name]);
         if (declared) {
@@ -254,7 +266,7 @@ export function normalizeCapabilitySpecForSources(value: CapabilitySpec | undefi
         if (!sourceConstraint || !isWildcardConstraint(constraint) || !sourceConstraint.values) continue;
         options[name] = { values: uniqueScalars([...(sourceConstraint.values || []), ...(constraint.values || [])]) };
     }
-    return { ...value, options, imageSize: value.imageSize?.presets?.length ? value.imageSize : source.imageSize || value.imageSize };
+    return { ...value, inputConfig: source.inputConfig, options, imageSize: value.imageSize?.presets?.length ? value.imageSize : source.imageSize || value.imageSize };
 }
 
 export function capabilitySourceError(capability: CapabilityKind, sourceSpecs: CapabilitySpec[], value?: CapabilitySpec) {

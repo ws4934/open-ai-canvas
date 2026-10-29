@@ -159,6 +159,11 @@ func cloudAgentResolvedMediaHash(task *model.Task) (string, error) {
 	if values, exists := config["imageParameters"]; exists {
 		public["imageParameters"] = values
 	}
+	for _, name := range []string{"inputParameters", "inputMediaRoles"} {
+		if values, exists := config[name]; exists {
+			public[name] = values
+		}
+	}
 	for _, key := range []string{"channelId", "channelModelKey", "providerModelKey", "priceTierId", "model", "apiFormat", "interfaceType", "capabilityConfig", "size", "imageResolution", "quality", "transparentBackground", "count", "videoSeconds", "vquality", "videoGenerateAudio", "videoWatermark", "audioVoice", "audioFormat", "audioSpeed", "audioInstructions"} {
 		if value, exists := config[key]; exists {
 			public[key] = value

@@ -521,6 +521,8 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
                     ) : mode === "video" ? (
                         <CanvasVideoSettingsPopover
                             config={config}
+                            media={resolvedMentionReferences.filter(reference => ["image", "video", "audio"].includes(reference.kind)).map(reference => ({ id: reference.nodeId || reference.id, kind: reference.kind, label: reference.label }))}
+                            operation={node.metadata?.videoEditOperation}
                             buttonClassName="canvas-node-composer-settings-trigger [&>span]:min-w-0 [&_.lucide]:!size-3"
                             onConfigChange={(key, value) => onConfigChange(node.id, videoConfigPatch(key, value))}
                         />

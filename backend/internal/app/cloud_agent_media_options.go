@@ -92,6 +92,7 @@ func applyCloudAgentMediaDraftOptions(a *cloudAgentMediaArgs, options contract.O
 	}{
 		{"size", options.Size, &a.Size}, {"quality", options.Quality, &a.Quality},
 		{"imageResolution", options.ImageResolution, &a.ImageResolution}, {"imageParameters", options.ImageParameters, &a.ImageParameters},
+		{"inputParameters", options.InputParameters, &a.InputParameters}, {"inputMediaRoles", options.InputMediaRoles, &a.InputMediaRoles},
 		{"quality", options.Resolution, &a.Quality},
 	} {
 		if field.stored != nil && !a.ConfigurationChange.includes(field.name) {

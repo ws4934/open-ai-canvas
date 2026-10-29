@@ -21,15 +21,12 @@
 | 统一字段 | 类型 | 必填 | 上游映射 | 说明 |
 | --- | --- | --- | --- | --- |
 | `model` | string | 是 | `model` | 视频模型 ID。 |
-| `prompt` | string | 否 | `prompt` | 文生、参考及视频编辑需提示词；有首帧、尾帧或关键帧时可省略。 |
+| `prompt` | string | 否 | `prompt` | 有首帧、尾帧或关键帧时可省略。 |
 | `images` | media[] | 否 | `first/last/reference image` | 显式 role 图片输入。 |
 | `videos` | media[] | 否 | `reference video` | 参考视频。 |
-| `audios` | media[] | 否 | `reference audio/voice` | 参考音频或音色。 |
 | `duration` | integer | 否 | `duration/seconds` | 时长秒数。 |
 | `aspectRatio` | string | 否 | `ratio/aspect_ratio/size` | 画幅比例或尺寸。 |
 | `resolution` | string | 否 | `resolution` | 分辨率档位。 |
-| `generateAudio` | boolean | 否 | `generate_audio` | 是否生成音频。 |
-| `watermark` | boolean | 否 | `watermark` | 水印开关。 |
 | `providerOptions` | object | 否 | `provider-specific fields` | 插件命名空间内的厂商扩展字段。 |
 
 ## 上游请求模板逐字段清单
@@ -44,13 +41,13 @@
 | `create.body.model` | `{"$ref":"request.model"}` |
 | `create.body.prompt` | `{"$omitEmpty":{"$trim":{"$ref":"request.prompt"}}}` |
 | `create.body.duration` | `{"$if":{"condition":{"$or":[{"$not":{"$or":[{"$gt":[{"$len":{"$ref":"request.videos"}},0]},{"$eq":[{"$ref":"request.operation"},"extend"]},{"$in":[{"$ref":"request.operation"},["edit","video_to_video","inpaint","replace_element","camera_motion","style_transfer"]]}]}},{"$eq":[{"$ref":"request.operation"},"extend"]}]},"then":{"$if":{"condition":{"$ne":[{"$ref":"request.duration"},0]},"then":{"$ref":"request.duration"},"else":{"$if":{"condition":{"$eq":[{"$ref":"request.operation"},"extend"]},"then":6,"else":8}}}},"else":null}}` |
-| `create.body.aspect_ratio` | `{"$if":{"condition":{"$and":[{"$not":{"$or":[{"$gt":[{"$len":{"$ref":"request.videos"}},0]},{"$eq":[{"$ref":"request.operation"},"extend"]},{"$in":[{"$ref":"request.operation"},["edit","video_to_video","inpaint","replace_element","camera_motion","style_transfer"]]}]}},{"$or":[{"$not":{"$coalesce":[{"$first":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["first_frame"]]}}}},{"$if":{"condition":{"$and":[{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["first_frame"]]}}}},0]},{"$or":[{"$eq":[{"$ref":"request.operation"},"image_to_video"]},{"$and":[{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},[""]]}}}},1]},{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["reference_image","subject_reference","style_reference"]]}}}},0]},{"$ne":[{"$ref":"request.operation"},"reference_to_video"]}]}]}]},"then":{"$first":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},[""]]}}}},"else":null}}]}},{"$or":[{"$gt":[{"$len":{"$sortByOrder":{"$concatArrays":[{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["reference_image","subject_reference","style_reference"]]}}},{"$filter":{"from":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},[""]]}}},"as":"candidate","where":{"$or":[{"$not":{"$and":[{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["first_frame"]]}}}},0]},{"$or":[{"$eq":[{"$ref":"request.operation"},"image_to_video"]},{"$and":[{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},[""]]}}}},1]},{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["reference_image","subject_reference","style_reference"]]}}}},0]},{"$ne":[{"$ref":"request.operation"},"reference_to_video"]}]}]}]}},{"$gt":[{"$ref":"candidateIndex"},0]}]}}}]}}},0]},{"$gt":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["last_frame"]]}}}},0]},{"$gt":[{"$len":{"$ref":"request.providerOptions.xai-video.reference_audios"}},0]},{"$gt":[{"$len":{"$ref":"request.providerOptions.xai-video.keyframes"}},0]}]}]}]},"then":{"$coalesce":[{"$ref":"request.aspectRatio"},"16:9"]},"else":null}}` |
+| `create.body.aspect_ratio` | `{"$if":{"condition":{"$and":[{"$not":{"$or":[{"$gt":[{"$len":{"$ref":"request.videos"}},0]},{"$eq":[{"$ref":"request.operation"},"extend"]},{"$in":[{"$ref":"request.operation"},["edit","video_to_video","inpaint","replace_element","camera_motion","style_transfer"]]}]}},{"$or":[{"$not":{"$coalesce":[{"$first":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["first_frame"]]}}}},{"$if":{"condition":{"$and":[{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["first_frame"]]}}}},0]},{"$or":[{"$eq":[{"$ref":"request.operation"},"image_to_video"]},{"$and":[{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},[""]]}}}},1]},{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["reference_image","subject_reference","style_reference"]]}}}},0]},{"$ne":[{"$ref":"request.operation"},"reference_to_video"]}]}]}]},"then":{"$first":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},[""]]}}}},"else":null}}]}},{"$or":[{"$gt":[{"$len":{"$sortByOrder":{"$concatArrays":[{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["reference_image","subject_reference","style_reference"]]}}},{"$filter":{"from":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},[""]]}}},"as":"candidate","where":{"$or":[{"$not":{"$and":[{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["first_frame"]]}}}},0]},{"$or":[{"$eq":[{"$ref":"request.operation"},"image_to_video"]},{"$and":[{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},[""]]}}}},1]},{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["reference_image","subject_reference","style_reference"]]}}}},0]},{"$ne":[{"$ref":"request.operation"},"reference_to_video"]}]}]}]}},{"$gt":[{"$ref":"candidateIndex"},0]}]}}}]}}},0]},{"$gt":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["last_frame"]]}}}},0]},{"$gt":[{"$len":{"$ref":"request.providerOptions.xai-video.reference_audios"}},0]},{"$gt":[{"$len":{"$concatArrays":[{"$ref":"request.providerOptions.xai-video.keyframes"},{"$map":{"from":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["keyframe"]]}}},"as":"frame","in":{"image":{"url":{"$ref":"frame.value"}},"timestamp_s":{"$ref":"frame.metadata.timestamp_s"}}}}]}},0]}]}]}]},"then":{"$coalesce":[{"$ref":"request.aspectRatio"},"16:9"]},"else":null}}` |
 | `create.body.resolution` | `{"$if":{"condition":{"$not":{"$or":[{"$gt":[{"$len":{"$ref":"request.videos"}},0]},{"$eq":[{"$ref":"request.operation"},"extend"]},{"$in":[{"$ref":"request.operation"},["edit","video_to_video","inpaint","replace_element","camera_motion","style_transfer"]]}]}},"then":{"$coalesce":[{"$ref":"request.resolution"},"720p"]},"else":null}}` |
 | `create.body.image` | `{"$if":{"condition":{"$coalesce":[{"$first":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["first_frame"]]}}}},{"$if":{"condition":{"$and":[{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["first_frame"]]}}}},0]},{"$or":[{"$eq":[{"$ref":"request.operation"},"image_to_video"]},{"$and":[{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},[""]]}}}},1]},{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["reference_image","subject_reference","style_reference"]]}}}},0]},{"$ne":[{"$ref":"request.operation"},"reference_to_video"]}]}]}]},"then":{"$first":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},[""]]}}}},"else":null}}]},"then":{"url":{"$first":{"$map":{"from":[{"$coalesce":[{"$first":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["first_frame"]]}}}},{"$if":{"condition":{"$and":[{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["first_frame"]]}}}},0]},{"$or":[{"$eq":[{"$ref":"request.operation"},"image_to_video"]},{"$and":[{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},[""]]}}}},1]},{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["reference_image","subject_reference","style_reference"]]}}}},0]},{"$ne":[{"$ref":"request.operation"},"reference_to_video"]}]}]}]},"then":{"$first":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},[""]]}}}},"else":null}}]}],"as":"image","in":{"$ref":"image.value"}}}}},"else":null}}` |
 | `create.body.last_frame` | `{"$if":{"condition":{"$gt":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["last_frame"]]}}}},0]},"then":{"url":{"$first":{"$map":{"from":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["last_frame"]]}}},"as":"media","in":{"$ref":"media.value"}}}}},"else":null}}` |
 | `create.body.reference_images` | `{"$omitEmpty":{"$map":{"from":{"$sortByOrder":{"$concatArrays":[{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["reference_image","subject_reference","style_reference"]]}}},{"$filter":{"from":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},[""]]}}},"as":"candidate","where":{"$or":[{"$not":{"$and":[{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["first_frame"]]}}}},0]},{"$or":[{"$eq":[{"$ref":"request.operation"},"image_to_video"]},{"$and":[{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},[""]]}}}},1]},{"$eq":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["reference_image","subject_reference","style_reference"]]}}}},0]},{"$ne":[{"$ref":"request.operation"},"reference_to_video"]}]}]}]}},{"$gt":[{"$ref":"candidateIndex"},0]}]}}}]}},"as":"media","in":{"url":{"$ref":"media.value"}}}}}` |
 | `create.body.reference_audios` | `{"$omitEmpty":{"$map":{"from":{"$ref":"request.providerOptions.xai-video.reference_audios"},"as":"voice","in":{"voice_id":{"$lower":{"$trim":{"$ref":"voice.voice_id"}}}}}}}` |
-| `create.body.keyframes` | `{"$omitEmpty":{"$map":{"from":{"$ref":"request.providerOptions.xai-video.keyframes"},"as":"frame","in":{"image":{"url":{"$omitEmpty":{"$ref":"frame.image.url"}},"file_id":{"$omitEmpty":{"$ref":"frame.image.file_id"}}},"timestamp_s":{"$toFloat":{"$ref":"frame.timestamp_s"}}}}}}` |
+| `create.body.keyframes` | `{"$omitEmpty":{"$map":{"from":{"$concatArrays":[{"$ref":"request.providerOptions.xai-video.keyframes"},{"$map":{"from":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["keyframe"]]}}},"as":"frame","in":{"image":{"url":{"$ref":"frame.value"}},"timestamp_s":{"$ref":"frame.metadata.timestamp_s"}}}}]},"as":"frame","in":{"image":{"url":{"$omitEmpty":{"$ref":"frame.image.url"}},"file_id":{"$omitEmpty":{"$ref":"frame.image.file_id"}}},"timestamp_s":{"$toFloat":{"$ref":"frame.timestamp_s"}}}}}}` |
 | `create.body.video` | `{"$if":{"condition":{"$or":[{"$gt":[{"$len":{"$ref":"request.videos"}},0]},{"$eq":[{"$ref":"request.operation"},"extend"]},{"$in":[{"$ref":"request.operation"},["edit","video_to_video","inpaint","replace_element","camera_motion","style_transfer"]]}]},"then":{"url":{"$first":{"$map":{"from":{"$ref":"request.videos"},"as":"media","in":{"$ref":"media.value"}}}}},"else":null}}` |
 | `poll.method` | `"GET"` |
 | `poll.path` | `"/v1/videos/{{taskId}}"` |
@@ -80,17 +77,11 @@
 
 ## 兼容边界
 
-支持官方 grok-imagine-video 与 grok-imagine-video-1.5，并明确区分只支持基础生成的 1.5-lite。新视频建议完整 1.5；编辑、延长已有视频使用旧版。官方 ID 精确识别，网关模型别名可在 metadata.providerOptions["xai-video"].modelProfile 显式选择 video / video-1.5 / video-1.5-lite，不按名称前缀推断。
+inputSchema 声明协议字段、素材角色与可选能力模板。旧版、Video 1.5 和 Lite 是可编辑的配置预设，不是型号白名单。新增同协议型号可以选择模板并调整数量、时长、清晰度与组合规则，不需要修改宿主或插件。已保存模型以自身 inputConfig 为准；没有配置的已知型号可使用包内推荐模板，未知型号不会被归类为旧版。协议只负责创建、轮询、字段编码及结构校验。
 
-普通生成默认 8 秒，范围 1–15 秒；旧版参考模式最多 7 图、10 秒，完整 1.5 参考模式最多 14 图、15 秒。完整 1.5 可同时携带首帧、14 张参考图、一个尾帧和最多 4 个关键帧。基础文生或仅首帧的 1.5 可用原生 1080p；其他参考与定帧模式最高 720p，不静默降档。图生画幅跟随首帧，基础首帧请求不发送无效的 aspect_ratio。未标记图片在图生模式下首张作首帧、其余作参考图；参考模式全部作参考图；图片不会被截断。
+预设音色用 reference_audios 的 voice_id；关键帧可用 keyframe 图片角色和 inputFields.timestamp_s，也保留 providerOptions.xai-video.keyframes 的原生输入。所有媒体使用原资源归属、上传与持久化链路。模板与能力配置不修改运营价格。
 
-扩展字段放在 metadata.providerOptions["xai-video"]：reference_audios 为最多 3 个 {"voice_id":"eve"}，只支持官方预设音色；keyframes 为最多 4 个 {"image":{"url":"https://..."},"timestamp_s":2.0}，image 也支持 file_id。时间必须在 (0,duration) 内，不能落在同一个 1/3 秒网格。图片与音色在提示词用 <IMAGE_0> / <AUDIO_0> 指定；同时提供首帧时首帧占 <IMAGE_0>，参考图从 <IMAGE_1> 开始。
-
-视频操作复用 metadata.videoEditOperation：extend 调用 /v1/videos/extensions，新增部分 2–10 秒、缺省 6 秒；inpaint / replace_element / camera_motion / style_transfer 调用 /v1/videos/edits。标准 videos 传一个源视频，已知 durationMs 时分别校验编辑最多 8.7 秒、延长 2–15 秒。没有探测时长的外部源仍由上游校验，不在插件中虚构时长。编辑不发 duration；两种源视频操作均不发 aspect_ratio / resolution，输出沿用源视频并受上游 720p 上限约束。
-
-xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插件不发送这两个不存在的开关。完整 1.5 支持对口型与预设音色；自有音频音色需官方额外权限，普通参考音频文件明确拒绝。不会按官方美元报价改写站点运营计价。
-
-官方文档：[能力总表](https://docs.x.ai/developers/model-capabilities/video/overview)、[参考图、音色与定帧](https://docs.x.ai/developers/model-capabilities/video/reference-to-video)、[生成参数](https://docs.x.ai/developers/model-capabilities/video/generation)、[视频编辑](https://docs.x.ai/developers/model-capabilities/video/editing)、[视频延长](https://docs.x.ai/developers/model-capabilities/video/extension)。
+官方资料：[参考与定帧](https://docs.x.ai/developers/model-capabilities/video/reference-to-video)、[生成](https://docs.x.ai/developers/model-capabilities/video/generation)、[编辑](https://docs.x.ai/developers/model-capabilities/video/editing)、[延长](https://docs.x.ai/developers/model-capabilities/video/extension)。
 
 <!-- YINGCE_MANIFEST_CONTRACT_START -->
 ## Manifest 完整接口定义
@@ -102,7 +93,7 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
   "apiVersion": "yingce.plugin/v2",
   "id": "xai-video",
   "name": "xAI Video",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "author": "xAI / 影策",
   "description": "xAI Video 独立请求协议插件。",
   "documentation": "<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>",
@@ -141,6 +132,710 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
           "type": "bearer",
           "field": "apiKey"
         },
+        "inputSchema": {
+          "fields": [
+            {
+              "name": "videoSeconds",
+              "label": "视频时长（秒）",
+              "type": "integer",
+              "binding": "duration",
+              "pricing": true,
+              "operations": [
+                "text_to_video",
+                "image_to_video",
+                "reference_to_video",
+                "extend"
+              ]
+            },
+            {
+              "name": "vquality",
+              "label": "清晰度",
+              "type": "string",
+              "binding": "resolution",
+              "pricing": true,
+              "operations": [
+                "text_to_video",
+                "image_to_video",
+                "reference_to_video"
+              ]
+            },
+            {
+              "name": "size",
+              "label": "画面比例",
+              "type": "string",
+              "binding": "aspectRatio",
+              "operations": [
+                "text_to_video",
+                "image_to_video",
+                "reference_to_video"
+              ]
+            },
+            {
+              "name": "videoGenerateAudio",
+              "label": "原生音频",
+              "type": "boolean",
+              "binding": "generateAudio",
+              "readOnly": true,
+              "default": true
+            },
+            {
+              "name": "operation",
+              "label": "生成方式",
+              "type": "string",
+              "binding": "operation",
+              "hidden": true
+            },
+            {
+              "name": "reference_audios",
+              "label": "参考音色",
+              "type": "object[]",
+              "binding": "providerOptions.xai-video.reference_audios",
+              "description": "填写官方预设 voice_id；在提示词中用 <AUDIO_0> 等引用。",
+              "fields": [
+                {
+                  "name": "voice_id",
+                  "label": "音色 ID",
+                  "type": "string",
+                  "required": true,
+                  "maxLength": 64
+                }
+              ]
+            }
+          ],
+          "mediaRoles": [
+            {
+              "role": "first_frame",
+              "label": "首帧",
+              "kind": "image",
+              "single": true,
+              "maxCount": 0
+            },
+            {
+              "role": "last_frame",
+              "label": "尾帧",
+              "kind": "image",
+              "single": true,
+              "maxCount": 0
+            },
+            {
+              "role": "reference_image",
+              "label": "参考图",
+              "kind": "image",
+              "maxCount": 0
+            },
+            {
+              "role": "keyframe",
+              "label": "关键帧",
+              "kind": "image",
+              "maxCount": 0,
+              "fields": [
+                {
+                  "name": "timestamp_s",
+                  "label": "时间点（秒）",
+                  "type": "number",
+                  "required": true,
+                  "min": 0,
+                  "minExclusive": true,
+                  "upperBoundField": "videoSeconds"
+                }
+              ],
+              "uniqueField": "timestamp_s",
+              "grid": 0.3333333333333333,
+              "collectionBinding": "providerOptions.xai-video.keyframes"
+            },
+            {
+              "role": "reference_video",
+              "label": "源视频",
+              "kind": "video",
+              "single": true,
+              "maxCount": 0
+            }
+          ],
+          "templates": [
+            {
+              "id": "video-1.5",
+              "label": "Video 1.5：生成与定帧",
+              "models": [
+                "grok-imagine-video-1.5"
+              ],
+              "config": {
+                "operations": [
+                  "text_to_video",
+                  "image_to_video",
+                  "reference_to_video"
+                ],
+                "fields": [
+                  {
+                    "name": "videoSeconds",
+                    "label": "视频时长（秒）",
+                    "type": "integer",
+                    "binding": "duration",
+                    "pricing": true,
+                    "operations": [
+                      "text_to_video",
+                      "image_to_video",
+                      "reference_to_video",
+                      "extend"
+                    ],
+                    "min": 1,
+                    "max": 15,
+                    "step": 1,
+                    "default": 8
+                  },
+                  {
+                    "name": "vquality",
+                    "label": "清晰度",
+                    "type": "string",
+                    "binding": "resolution",
+                    "pricing": true,
+                    "operations": [
+                      "text_to_video",
+                      "image_to_video",
+                      "reference_to_video"
+                    ],
+                    "values": [
+                      "480p",
+                      "720p",
+                      "1080p"
+                    ],
+                    "default": "720p"
+                  },
+                  {
+                    "name": "size",
+                    "label": "画面比例",
+                    "type": "string",
+                    "binding": "aspectRatio",
+                    "operations": [
+                      "text_to_video",
+                      "image_to_video",
+                      "reference_to_video"
+                    ],
+                    "values": [
+                      "1:1",
+                      "16:9",
+                      "9:16",
+                      "4:3",
+                      "3:4",
+                      "3:2",
+                      "2:3",
+                      "21:9",
+                      "5:2"
+                    ],
+                    "default": "16:9"
+                  },
+                  {
+                    "name": "videoGenerateAudio",
+                    "label": "原生音频",
+                    "type": "boolean",
+                    "binding": "generateAudio",
+                    "readOnly": true,
+                    "default": true
+                  },
+                  {
+                    "name": "operation",
+                    "label": "生成方式",
+                    "type": "string",
+                    "binding": "operation",
+                    "hidden": true
+                  },
+                  {
+                    "name": "reference_audios",
+                    "label": "参考音色",
+                    "type": "object[]",
+                    "binding": "providerOptions.xai-video.reference_audios",
+                    "description": "填写官方预设 voice_id；在提示词中用 <AUDIO_0> 等引用。",
+                    "fields": [
+                      {
+                        "name": "voice_id",
+                        "label": "音色 ID",
+                        "type": "string",
+                        "required": true,
+                        "maxLength": 64
+                      }
+                    ],
+                    "enabled": true,
+                    "maxItems": 3,
+                    "default": []
+                  }
+                ],
+                "mediaRoles": [
+                  {
+                    "role": "first_frame",
+                    "label": "首帧",
+                    "kind": "image",
+                    "single": true,
+                    "maxCount": 1
+                  },
+                  {
+                    "role": "last_frame",
+                    "label": "尾帧",
+                    "kind": "image",
+                    "single": true,
+                    "maxCount": 1
+                  },
+                  {
+                    "role": "reference_image",
+                    "label": "参考图",
+                    "kind": "image",
+                    "maxCount": 14
+                  },
+                  {
+                    "role": "keyframe",
+                    "label": "关键帧",
+                    "kind": "image",
+                    "maxCount": 4,
+                    "fields": [
+                      {
+                        "name": "timestamp_s",
+                        "label": "时间点（秒）",
+                        "type": "number",
+                        "required": true,
+                        "min": 0,
+                        "minExclusive": true,
+                        "upperBoundField": "videoSeconds"
+                      }
+                    ],
+                    "uniqueField": "timestamp_s",
+                    "grid": 0.3333333333333333,
+                    "collectionBinding": "providerOptions.xai-video.keyframes"
+                  },
+                  {
+                    "role": "reference_video",
+                    "label": "源视频",
+                    "kind": "video",
+                    "single": true,
+                    "maxCount": 0
+                  }
+                ],
+                "rules": [
+                  {
+                    "match": "any",
+                    "when": [
+                      {
+                        "mediaRole": "reference_image"
+                      },
+                      {
+                        "mediaRole": "last_frame"
+                      },
+                      {
+                        "mediaRole": "keyframe"
+                      },
+                      {
+                        "parameter": "reference_audios"
+                      }
+                    ],
+                    "limits": [
+                      {
+                        "name": "vquality",
+                        "values": [
+                          "480p",
+                          "720p"
+                        ]
+                      }
+                    ],
+                    "message": "此模型的参考、音色或定帧模式最高 720p，请调整清晰度"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "video",
+              "label": "Video：生成、编辑与延长",
+              "models": [
+                "grok-imagine-video"
+              ],
+              "config": {
+                "operations": [
+                  "text_to_video",
+                  "image_to_video",
+                  "reference_to_video",
+                  "extend",
+                  "edit",
+                  "video_to_video",
+                  "inpaint",
+                  "replace_element",
+                  "camera_motion",
+                  "style_transfer"
+                ],
+                "fields": [
+                  {
+                    "name": "videoSeconds",
+                    "label": "视频时长（秒）",
+                    "type": "integer",
+                    "binding": "duration",
+                    "pricing": true,
+                    "operations": [
+                      "text_to_video",
+                      "image_to_video",
+                      "reference_to_video",
+                      "extend"
+                    ],
+                    "min": 1,
+                    "max": 15,
+                    "step": 1,
+                    "default": 8
+                  },
+                  {
+                    "name": "vquality",
+                    "label": "清晰度",
+                    "type": "string",
+                    "binding": "resolution",
+                    "pricing": true,
+                    "operations": [
+                      "text_to_video",
+                      "image_to_video",
+                      "reference_to_video"
+                    ],
+                    "values": [
+                      "480p",
+                      "720p"
+                    ],
+                    "default": "720p"
+                  },
+                  {
+                    "name": "size",
+                    "label": "画面比例",
+                    "type": "string",
+                    "binding": "aspectRatio",
+                    "operations": [
+                      "text_to_video",
+                      "image_to_video",
+                      "reference_to_video"
+                    ],
+                    "values": [
+                      "1:1",
+                      "16:9",
+                      "9:16",
+                      "4:3",
+                      "3:4",
+                      "3:2",
+                      "2:3",
+                      "21:9",
+                      "5:2"
+                    ],
+                    "default": "16:9"
+                  },
+                  {
+                    "name": "videoGenerateAudio",
+                    "label": "原生音频",
+                    "type": "boolean",
+                    "binding": "generateAudio",
+                    "readOnly": true,
+                    "default": true
+                  },
+                  {
+                    "name": "operation",
+                    "label": "生成方式",
+                    "type": "string",
+                    "binding": "operation",
+                    "hidden": true
+                  },
+                  {
+                    "name": "reference_audios",
+                    "label": "参考音色",
+                    "type": "object[]",
+                    "binding": "providerOptions.xai-video.reference_audios",
+                    "description": "填写官方预设 voice_id；在提示词中用 <AUDIO_0> 等引用。",
+                    "fields": [
+                      {
+                        "name": "voice_id",
+                        "label": "音色 ID",
+                        "type": "string",
+                        "required": true,
+                        "maxLength": 64
+                      }
+                    ],
+                    "enabled": false,
+                    "maxItems": 3,
+                    "default": []
+                  }
+                ],
+                "mediaRoles": [
+                  {
+                    "role": "first_frame",
+                    "label": "首帧",
+                    "kind": "image",
+                    "single": true,
+                    "maxCount": 1
+                  },
+                  {
+                    "role": "last_frame",
+                    "label": "尾帧",
+                    "kind": "image",
+                    "single": true,
+                    "maxCount": 0
+                  },
+                  {
+                    "role": "reference_image",
+                    "label": "参考图",
+                    "kind": "image",
+                    "maxCount": 7
+                  },
+                  {
+                    "role": "keyframe",
+                    "label": "关键帧",
+                    "kind": "image",
+                    "maxCount": 0,
+                    "fields": [
+                      {
+                        "name": "timestamp_s",
+                        "label": "时间点（秒）",
+                        "type": "number",
+                        "required": true,
+                        "min": 0,
+                        "minExclusive": true,
+                        "upperBoundField": "videoSeconds"
+                      }
+                    ],
+                    "uniqueField": "timestamp_s",
+                    "grid": 0.3333333333333333,
+                    "collectionBinding": "providerOptions.xai-video.keyframes"
+                  },
+                  {
+                    "role": "reference_video",
+                    "label": "源视频",
+                    "kind": "video",
+                    "single": true,
+                    "maxCount": 1,
+                    "maxSeconds": 8.7
+                  }
+                ],
+                "rules": [
+                  {
+                    "when": [
+                      {
+                        "mediaRole": "first_frame"
+                      }
+                    ],
+                    "forbidRoles": [
+                      "reference_image"
+                    ],
+                    "message": "此模型不能混用首帧和参考图"
+                  },
+                  {
+                    "when": [
+                      {
+                        "mediaRole": "reference_image"
+                      }
+                    ],
+                    "limits": [
+                      {
+                        "name": "videoSeconds",
+                        "max": 10
+                      }
+                    ],
+                    "message": "此模型的参考图模式最多 10 秒"
+                  },
+                  {
+                    "when": [
+                      {
+                        "parameter": "operation",
+                        "values": [
+                          "extend"
+                        ]
+                      }
+                    ],
+                    "limits": [
+                      {
+                        "name": "videoSeconds",
+                        "min": 2,
+                        "max": 10,
+                        "default": 6
+                      }
+                    ],
+                    "mediaLimits": [
+                      {
+                        "role": "reference_video",
+                        "minSeconds": 2,
+                        "maxSeconds": 15
+                      }
+                    ],
+                    "message": "此模型的视频延长新增时长为 2–10 秒"
+                  },
+                  {
+                    "when": [
+                      {
+                        "parameter": "operation",
+                        "values": [
+                          "inpaint",
+                          "edit",
+                          "video_to_video",
+                          "replace_element",
+                          "camera_motion",
+                          "style_transfer"
+                        ]
+                      }
+                    ],
+                    "mediaLimits": [
+                      {
+                        "role": "reference_video",
+                        "maxSeconds": 8.7
+                      }
+                    ],
+                    "message": "此模型的编辑源视频最多 8.7 秒"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "video-1.5-lite",
+              "label": "Video 1.5 Lite：基础生成",
+              "models": [
+                "grok-imagine-video-1.5-lite"
+              ],
+              "config": {
+                "operations": [
+                  "text_to_video",
+                  "image_to_video"
+                ],
+                "fields": [
+                  {
+                    "name": "videoSeconds",
+                    "label": "视频时长（秒）",
+                    "type": "integer",
+                    "binding": "duration",
+                    "pricing": true,
+                    "operations": [
+                      "text_to_video",
+                      "image_to_video",
+                      "reference_to_video",
+                      "extend"
+                    ],
+                    "min": 1,
+                    "max": 15,
+                    "step": 1,
+                    "default": 8
+                  },
+                  {
+                    "name": "vquality",
+                    "label": "清晰度",
+                    "type": "string",
+                    "binding": "resolution",
+                    "pricing": true,
+                    "operations": [
+                      "text_to_video",
+                      "image_to_video",
+                      "reference_to_video"
+                    ],
+                    "values": [
+                      "480p",
+                      "720p",
+                      "1080p"
+                    ],
+                    "default": "720p"
+                  },
+                  {
+                    "name": "size",
+                    "label": "画面比例",
+                    "type": "string",
+                    "binding": "aspectRatio",
+                    "operations": [
+                      "text_to_video",
+                      "image_to_video",
+                      "reference_to_video"
+                    ],
+                    "values": [
+                      "1:1",
+                      "16:9",
+                      "9:16",
+                      "4:3",
+                      "3:4",
+                      "3:2",
+                      "2:3",
+                      "21:9",
+                      "5:2"
+                    ],
+                    "default": "16:9"
+                  },
+                  {
+                    "name": "videoGenerateAudio",
+                    "label": "原生音频",
+                    "type": "boolean",
+                    "binding": "generateAudio",
+                    "readOnly": true,
+                    "default": true
+                  },
+                  {
+                    "name": "operation",
+                    "label": "生成方式",
+                    "type": "string",
+                    "binding": "operation",
+                    "hidden": true
+                  },
+                  {
+                    "name": "reference_audios",
+                    "label": "参考音色",
+                    "type": "object[]",
+                    "binding": "providerOptions.xai-video.reference_audios",
+                    "description": "填写官方预设 voice_id；在提示词中用 <AUDIO_0> 等引用。",
+                    "fields": [
+                      {
+                        "name": "voice_id",
+                        "label": "音色 ID",
+                        "type": "string",
+                        "required": true,
+                        "maxLength": 64
+                      }
+                    ],
+                    "enabled": false,
+                    "maxItems": 3,
+                    "default": []
+                  }
+                ],
+                "mediaRoles": [
+                  {
+                    "role": "first_frame",
+                    "label": "首帧",
+                    "kind": "image",
+                    "single": true,
+                    "maxCount": 1
+                  },
+                  {
+                    "role": "last_frame",
+                    "label": "尾帧",
+                    "kind": "image",
+                    "single": true,
+                    "maxCount": 0
+                  },
+                  {
+                    "role": "reference_image",
+                    "label": "参考图",
+                    "kind": "image",
+                    "maxCount": 0
+                  },
+                  {
+                    "role": "keyframe",
+                    "label": "关键帧",
+                    "kind": "image",
+                    "maxCount": 0,
+                    "fields": [
+                      {
+                        "name": "timestamp_s",
+                        "label": "时间点（秒）",
+                        "type": "number",
+                        "required": true,
+                        "min": 0,
+                        "minExclusive": true,
+                        "upperBoundField": "videoSeconds"
+                      }
+                    ],
+                    "uniqueField": "timestamp_s",
+                    "grid": 0.3333333333333333,
+                    "collectionBinding": "providerOptions.xai-video.keyframes"
+                  },
+                  {
+                    "role": "reference_video",
+                    "label": "源视频",
+                    "kind": "video",
+                    "single": true,
+                    "maxCount": 0
+                  }
+                ],
+                "rules": []
+              }
+            }
+          ]
+        },
         "parameters": [
           {
             "name": "model",
@@ -154,7 +849,7 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
             "type": "string",
             "required": false,
             "mapping": "prompt",
-            "description": "文生、参考及视频编辑需提示词；有首帧、尾帧或关键帧时可省略。"
+            "description": "有首帧、尾帧或关键帧时可省略。"
           },
           {
             "name": "images",
@@ -169,13 +864,6 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
             "required": false,
             "mapping": "reference video",
             "description": "参考视频。"
-          },
-          {
-            "name": "audios",
-            "type": "media[]",
-            "required": false,
-            "mapping": "reference audio/voice",
-            "description": "参考音频或音色。"
           },
           {
             "name": "duration",
@@ -199,20 +887,6 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
             "description": "分辨率档位。"
           },
           {
-            "name": "generateAudio",
-            "type": "boolean",
-            "required": false,
-            "mapping": "generate_audio",
-            "description": "是否生成音频。"
-          },
-          {
-            "name": "watermark",
-            "type": "boolean",
-            "required": false,
-            "mapping": "watermark",
-            "description": "水印开关。"
-          },
-          {
             "name": "providerOptions",
             "type": "object",
             "required": false,
@@ -221,138 +895,6 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
           }
         ],
         "validations": [
-          {
-            "assert": {
-              "$in": [
-                {
-                  "$coalesce": [
-                    {
-                      "$ref": "request.providerOptions.xai-video.modelProfile"
-                    },
-                    {
-                      "$if": {
-                        "condition": {
-                          "$eq": [
-                            {
-                              "$ref": "request.model"
-                            },
-                            "grok-imagine-video-1.5"
-                          ]
-                        },
-                        "then": "video-1.5",
-                        "else": {
-                          "$if": {
-                            "condition": {
-                              "$eq": [
-                                {
-                                  "$ref": "request.model"
-                                },
-                                "grok-imagine-video-1.5-lite"
-                              ]
-                            },
-                            "then": "video-1.5-lite",
-                            "else": "video"
-                          }
-                        }
-                      }
-                    }
-                  ]
-                },
-                [
-                  "video",
-                  "video-1.5",
-                  "video-1.5-lite"
-                ]
-              ]
-            },
-            "message": "xAI modelProfile 只能是 video、video-1.5 或 video-1.5-lite"
-          },
-          {
-            "assert": {
-              "$or": [
-                {
-                  "$not": {
-                    "$in": [
-                      {
-                        "$ref": "request.model"
-                      },
-                      [
-                        "grok-imagine-video",
-                        "grok-imagine-video-1.5",
-                        "grok-imagine-video-1.5-lite"
-                      ]
-                    ]
-                  }
-                },
-                {
-                  "$eq": [
-                    {
-                      "$coalesce": [
-                        {
-                          "$ref": "request.providerOptions.xai-video.modelProfile"
-                        },
-                        {
-                          "$if": {
-                            "condition": {
-                              "$eq": [
-                                {
-                                  "$ref": "request.model"
-                                },
-                                "grok-imagine-video-1.5"
-                              ]
-                            },
-                            "then": "video-1.5",
-                            "else": {
-                              "$if": {
-                                "condition": {
-                                  "$eq": [
-                                    {
-                                      "$ref": "request.model"
-                                    },
-                                    "grok-imagine-video-1.5-lite"
-                                  ]
-                                },
-                                "then": "video-1.5-lite",
-                                "else": "video"
-                              }
-                            }
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "$if": {
-                        "condition": {
-                          "$eq": [
-                            {
-                              "$ref": "request.model"
-                            },
-                            "grok-imagine-video-1.5"
-                          ]
-                        },
-                        "then": "video-1.5",
-                        "else": {
-                          "$if": {
-                            "condition": {
-                              "$eq": [
-                                {
-                                  "$ref": "request.model"
-                                },
-                                "grok-imagine-video-1.5-lite"
-                              ]
-                            },
-                            "then": "video-1.5-lite",
-                            "else": "video"
-                          }
-                        }
-                      }
-                    }
-                  ]
-                }
-              ]
-            },
-            "message": "xAI 官方模型与显式 modelProfile 不匹配"
-          },
           {
             "assert": {
               "$lte": [
@@ -433,6 +975,7 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
                               "",
                               "first_frame",
                               "last_frame",
+                              "keyframe",
                               "reference_image",
                               "subject_reference",
                               "style_reference"
@@ -484,870 +1027,6 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
           },
           {
             "assert": {
-              "$or": [
-                {
-                  "$eq": [
-                    {
-                      "$coalesce": [
-                        {
-                          "$ref": "request.providerOptions.xai-video.modelProfile"
-                        },
-                        {
-                          "$if": {
-                            "condition": {
-                              "$eq": [
-                                {
-                                  "$ref": "request.model"
-                                },
-                                "grok-imagine-video-1.5"
-                              ]
-                            },
-                            "then": "video-1.5",
-                            "else": {
-                              "$if": {
-                                "condition": {
-                                  "$eq": [
-                                    {
-                                      "$ref": "request.model"
-                                    },
-                                    "grok-imagine-video-1.5-lite"
-                                  ]
-                                },
-                                "then": "video-1.5-lite",
-                                "else": "video"
-                              }
-                            }
-                          }
-                        }
-                      ]
-                    },
-                    "video-1.5"
-                  ]
-                },
-                {
-                  "$eq": [
-                    {
-                      "$len": {
-                        "$filter": {
-                          "from": {
-                            "$sortByOrder": {
-                              "$ref": "request.images"
-                            }
-                          },
-                          "as": "media",
-                          "where": {
-                            "$in": [
-                              {
-                                "$ref": "media.role"
-                              },
-                              [
-                                "last_frame"
-                              ]
-                            ]
-                          }
-                        }
-                      }
-                    },
-                    0
-                  ]
-                }
-              ]
-            },
-            "message": "尾帧需要完整的 Video 1.5 模型"
-          },
-          {
-            "assert": {
-              "$or": [
-                {
-                  "$eq": [
-                    {
-                      "$coalesce": [
-                        {
-                          "$ref": "request.providerOptions.xai-video.modelProfile"
-                        },
-                        {
-                          "$if": {
-                            "condition": {
-                              "$eq": [
-                                {
-                                  "$ref": "request.model"
-                                },
-                                "grok-imagine-video-1.5"
-                              ]
-                            },
-                            "then": "video-1.5",
-                            "else": {
-                              "$if": {
-                                "condition": {
-                                  "$eq": [
-                                    {
-                                      "$ref": "request.model"
-                                    },
-                                    "grok-imagine-video-1.5-lite"
-                                  ]
-                                },
-                                "then": "video-1.5-lite",
-                                "else": "video"
-                              }
-                            }
-                          }
-                        }
-                      ]
-                    },
-                    "video-1.5"
-                  ]
-                },
-                {
-                  "$eq": [
-                    {
-                      "$len": {
-                        "$ref": "request.providerOptions.xai-video.keyframes"
-                      }
-                    },
-                    0
-                  ]
-                }
-              ]
-            },
-            "message": "关键帧需要完整的 Video 1.5 模型"
-          },
-          {
-            "assert": {
-              "$or": [
-                {
-                  "$eq": [
-                    {
-                      "$coalesce": [
-                        {
-                          "$ref": "request.providerOptions.xai-video.modelProfile"
-                        },
-                        {
-                          "$if": {
-                            "condition": {
-                              "$eq": [
-                                {
-                                  "$ref": "request.model"
-                                },
-                                "grok-imagine-video-1.5"
-                              ]
-                            },
-                            "then": "video-1.5",
-                            "else": {
-                              "$if": {
-                                "condition": {
-                                  "$eq": [
-                                    {
-                                      "$ref": "request.model"
-                                    },
-                                    "grok-imagine-video-1.5-lite"
-                                  ]
-                                },
-                                "then": "video-1.5-lite",
-                                "else": "video"
-                              }
-                            }
-                          }
-                        }
-                      ]
-                    },
-                    "video-1.5"
-                  ]
-                },
-                {
-                  "$eq": [
-                    {
-                      "$len": {
-                        "$ref": "request.providerOptions.xai-video.reference_audios"
-                      }
-                    },
-                    0
-                  ]
-                }
-              ]
-            },
-            "message": "预设音色需要完整的 Video 1.5 模型"
-          },
-          {
-            "assert": {
-              "$or": [
-                {
-                  "$not": {
-                    "$eq": [
-                      {
-                        "$coalesce": [
-                          {
-                            "$ref": "request.providerOptions.xai-video.modelProfile"
-                          },
-                          {
-                            "$if": {
-                              "condition": {
-                                "$eq": [
-                                  {
-                                    "$ref": "request.model"
-                                  },
-                                  "grok-imagine-video-1.5"
-                                ]
-                              },
-                              "then": "video-1.5",
-                              "else": {
-                                "$if": {
-                                  "condition": {
-                                    "$eq": [
-                                      {
-                                        "$ref": "request.model"
-                                      },
-                                      "grok-imagine-video-1.5-lite"
-                                    ]
-                                  },
-                                  "then": "video-1.5-lite",
-                                  "else": "video"
-                                }
-                              }
-                            }
-                          }
-                        ]
-                      },
-                      "video"
-                    ]
-                  }
-                },
-                {
-                  "$not": {
-                    "$and": [
-                      {
-                        "$coalesce": [
-                          {
-                            "$first": {
-                              "$filter": {
-                                "from": {
-                                  "$sortByOrder": {
-                                    "$ref": "request.images"
-                                  }
-                                },
-                                "as": "media",
-                                "where": {
-                                  "$in": [
-                                    {
-                                      "$ref": "media.role"
-                                    },
-                                    [
-                                      "first_frame"
-                                    ]
-                                  ]
-                                }
-                              }
-                            }
-                          },
-                          {
-                            "$if": {
-                              "condition": {
-                                "$and": [
-                                  {
-                                    "$eq": [
-                                      {
-                                        "$len": {
-                                          "$filter": {
-                                            "from": {
-                                              "$sortByOrder": {
-                                                "$ref": "request.images"
-                                              }
-                                            },
-                                            "as": "media",
-                                            "where": {
-                                              "$in": [
-                                                {
-                                                  "$ref": "media.role"
-                                                },
-                                                [
-                                                  "first_frame"
-                                                ]
-                                              ]
-                                            }
-                                          }
-                                        }
-                                      },
-                                      0
-                                    ]
-                                  },
-                                  {
-                                    "$or": [
-                                      {
-                                        "$eq": [
-                                          {
-                                            "$ref": "request.operation"
-                                          },
-                                          "image_to_video"
-                                        ]
-                                      },
-                                      {
-                                        "$and": [
-                                          {
-                                            "$eq": [
-                                              {
-                                                "$len": {
-                                                  "$filter": {
-                                                    "from": {
-                                                      "$sortByOrder": {
-                                                        "$ref": "request.images"
-                                                      }
-                                                    },
-                                                    "as": "media",
-                                                    "where": {
-                                                      "$in": [
-                                                        {
-                                                          "$ref": "media.role"
-                                                        },
-                                                        [
-                                                          ""
-                                                        ]
-                                                      ]
-                                                    }
-                                                  }
-                                                }
-                                              },
-                                              1
-                                            ]
-                                          },
-                                          {
-                                            "$eq": [
-                                              {
-                                                "$len": {
-                                                  "$filter": {
-                                                    "from": {
-                                                      "$sortByOrder": {
-                                                        "$ref": "request.images"
-                                                      }
-                                                    },
-                                                    "as": "media",
-                                                    "where": {
-                                                      "$in": [
-                                                        {
-                                                          "$ref": "media.role"
-                                                        },
-                                                        [
-                                                          "reference_image",
-                                                          "subject_reference",
-                                                          "style_reference"
-                                                        ]
-                                                      ]
-                                                    }
-                                                  }
-                                                }
-                                              },
-                                              0
-                                            ]
-                                          },
-                                          {
-                                            "$ne": [
-                                              {
-                                                "$ref": "request.operation"
-                                              },
-                                              "reference_to_video"
-                                            ]
-                                          }
-                                        ]
-                                      }
-                                    ]
-                                  }
-                                ]
-                              },
-                              "then": {
-                                "$first": {
-                                  "$filter": {
-                                    "from": {
-                                      "$sortByOrder": {
-                                        "$ref": "request.images"
-                                      }
-                                    },
-                                    "as": "media",
-                                    "where": {
-                                      "$in": [
-                                        {
-                                          "$ref": "media.role"
-                                        },
-                                        [
-                                          ""
-                                        ]
-                                      ]
-                                    }
-                                  }
-                                }
-                              },
-                              "else": null
-                            }
-                          }
-                        ]
-                      },
-                      {
-                        "$gt": [
-                          {
-                            "$len": {
-                              "$sortByOrder": {
-                                "$concatArrays": [
-                                  {
-                                    "$filter": {
-                                      "from": {
-                                        "$sortByOrder": {
-                                          "$ref": "request.images"
-                                        }
-                                      },
-                                      "as": "media",
-                                      "where": {
-                                        "$in": [
-                                          {
-                                            "$ref": "media.role"
-                                          },
-                                          [
-                                            "reference_image",
-                                            "subject_reference",
-                                            "style_reference"
-                                          ]
-                                        ]
-                                      }
-                                    }
-                                  },
-                                  {
-                                    "$filter": {
-                                      "from": {
-                                        "$filter": {
-                                          "from": {
-                                            "$sortByOrder": {
-                                              "$ref": "request.images"
-                                            }
-                                          },
-                                          "as": "media",
-                                          "where": {
-                                            "$in": [
-                                              {
-                                                "$ref": "media.role"
-                                              },
-                                              [
-                                                ""
-                                              ]
-                                            ]
-                                          }
-                                        }
-                                      },
-                                      "as": "candidate",
-                                      "where": {
-                                        "$or": [
-                                          {
-                                            "$not": {
-                                              "$and": [
-                                                {
-                                                  "$eq": [
-                                                    {
-                                                      "$len": {
-                                                        "$filter": {
-                                                          "from": {
-                                                            "$sortByOrder": {
-                                                              "$ref": "request.images"
-                                                            }
-                                                          },
-                                                          "as": "media",
-                                                          "where": {
-                                                            "$in": [
-                                                              {
-                                                                "$ref": "media.role"
-                                                              },
-                                                              [
-                                                                "first_frame"
-                                                              ]
-                                                            ]
-                                                          }
-                                                        }
-                                                      }
-                                                    },
-                                                    0
-                                                  ]
-                                                },
-                                                {
-                                                  "$or": [
-                                                    {
-                                                      "$eq": [
-                                                        {
-                                                          "$ref": "request.operation"
-                                                        },
-                                                        "image_to_video"
-                                                      ]
-                                                    },
-                                                    {
-                                                      "$and": [
-                                                        {
-                                                          "$eq": [
-                                                            {
-                                                              "$len": {
-                                                                "$filter": {
-                                                                  "from": {
-                                                                    "$sortByOrder": {
-                                                                      "$ref": "request.images"
-                                                                    }
-                                                                  },
-                                                                  "as": "media",
-                                                                  "where": {
-                                                                    "$in": [
-                                                                      {
-                                                                        "$ref": "media.role"
-                                                                      },
-                                                                      [
-                                                                        ""
-                                                                      ]
-                                                                    ]
-                                                                  }
-                                                                }
-                                                              }
-                                                            },
-                                                            1
-                                                          ]
-                                                        },
-                                                        {
-                                                          "$eq": [
-                                                            {
-                                                              "$len": {
-                                                                "$filter": {
-                                                                  "from": {
-                                                                    "$sortByOrder": {
-                                                                      "$ref": "request.images"
-                                                                    }
-                                                                  },
-                                                                  "as": "media",
-                                                                  "where": {
-                                                                    "$in": [
-                                                                      {
-                                                                        "$ref": "media.role"
-                                                                      },
-                                                                      [
-                                                                        "reference_image",
-                                                                        "subject_reference",
-                                                                        "style_reference"
-                                                                      ]
-                                                                    ]
-                                                                  }
-                                                                }
-                                                              }
-                                                            },
-                                                            0
-                                                          ]
-                                                        },
-                                                        {
-                                                          "$ne": [
-                                                            {
-                                                              "$ref": "request.operation"
-                                                            },
-                                                            "reference_to_video"
-                                                          ]
-                                                        }
-                                                      ]
-                                                    }
-                                                  ]
-                                                }
-                                              ]
-                                            }
-                                          },
-                                          {
-                                            "$gt": [
-                                              {
-                                                "$ref": "candidateIndex"
-                                              },
-                                              0
-                                            ]
-                                          }
-                                        ]
-                                      }
-                                    }
-                                  }
-                                ]
-                              }
-                            }
-                          },
-                          0
-                        ]
-                      }
-                    ]
-                  }
-                }
-              ]
-            },
-            "message": "旧版 xAI Video 不能同时混用起始帧和角色参考图，请改用 Video 1.5"
-          },
-          {
-            "assert": {
-              "$lte": [
-                {
-                  "$len": {
-                    "$sortByOrder": {
-                      "$concatArrays": [
-                        {
-                          "$filter": {
-                            "from": {
-                              "$sortByOrder": {
-                                "$ref": "request.images"
-                              }
-                            },
-                            "as": "media",
-                            "where": {
-                              "$in": [
-                                {
-                                  "$ref": "media.role"
-                                },
-                                [
-                                  "reference_image",
-                                  "subject_reference",
-                                  "style_reference"
-                                ]
-                              ]
-                            }
-                          }
-                        },
-                        {
-                          "$filter": {
-                            "from": {
-                              "$filter": {
-                                "from": {
-                                  "$sortByOrder": {
-                                    "$ref": "request.images"
-                                  }
-                                },
-                                "as": "media",
-                                "where": {
-                                  "$in": [
-                                    {
-                                      "$ref": "media.role"
-                                    },
-                                    [
-                                      ""
-                                    ]
-                                  ]
-                                }
-                              }
-                            },
-                            "as": "candidate",
-                            "where": {
-                              "$or": [
-                                {
-                                  "$not": {
-                                    "$and": [
-                                      {
-                                        "$eq": [
-                                          {
-                                            "$len": {
-                                              "$filter": {
-                                                "from": {
-                                                  "$sortByOrder": {
-                                                    "$ref": "request.images"
-                                                  }
-                                                },
-                                                "as": "media",
-                                                "where": {
-                                                  "$in": [
-                                                    {
-                                                      "$ref": "media.role"
-                                                    },
-                                                    [
-                                                      "first_frame"
-                                                    ]
-                                                  ]
-                                                }
-                                              }
-                                            }
-                                          },
-                                          0
-                                        ]
-                                      },
-                                      {
-                                        "$or": [
-                                          {
-                                            "$eq": [
-                                              {
-                                                "$ref": "request.operation"
-                                              },
-                                              "image_to_video"
-                                            ]
-                                          },
-                                          {
-                                            "$and": [
-                                              {
-                                                "$eq": [
-                                                  {
-                                                    "$len": {
-                                                      "$filter": {
-                                                        "from": {
-                                                          "$sortByOrder": {
-                                                            "$ref": "request.images"
-                                                          }
-                                                        },
-                                                        "as": "media",
-                                                        "where": {
-                                                          "$in": [
-                                                            {
-                                                              "$ref": "media.role"
-                                                            },
-                                                            [
-                                                              ""
-                                                            ]
-                                                          ]
-                                                        }
-                                                      }
-                                                    }
-                                                  },
-                                                  1
-                                                ]
-                                              },
-                                              {
-                                                "$eq": [
-                                                  {
-                                                    "$len": {
-                                                      "$filter": {
-                                                        "from": {
-                                                          "$sortByOrder": {
-                                                            "$ref": "request.images"
-                                                          }
-                                                        },
-                                                        "as": "media",
-                                                        "where": {
-                                                          "$in": [
-                                                            {
-                                                              "$ref": "media.role"
-                                                            },
-                                                            [
-                                                              "reference_image",
-                                                              "subject_reference",
-                                                              "style_reference"
-                                                            ]
-                                                          ]
-                                                        }
-                                                      }
-                                                    }
-                                                  },
-                                                  0
-                                                ]
-                                              },
-                                              {
-                                                "$ne": [
-                                                  {
-                                                    "$ref": "request.operation"
-                                                  },
-                                                  "reference_to_video"
-                                                ]
-                                              }
-                                            ]
-                                          }
-                                        ]
-                                      }
-                                    ]
-                                  }
-                                },
-                                {
-                                  "$gt": [
-                                    {
-                                      "$ref": "candidateIndex"
-                                    },
-                                    0
-                                  ]
-                                }
-                              ]
-                            }
-                          }
-                        }
-                      ]
-                    }
-                  }
-                },
-                {
-                  "$if": {
-                    "condition": {
-                      "$eq": [
-                        {
-                          "$coalesce": [
-                            {
-                              "$ref": "request.providerOptions.xai-video.modelProfile"
-                            },
-                            {
-                              "$if": {
-                                "condition": {
-                                  "$eq": [
-                                    {
-                                      "$ref": "request.model"
-                                    },
-                                    "grok-imagine-video-1.5"
-                                  ]
-                                },
-                                "then": "video-1.5",
-                                "else": {
-                                  "$if": {
-                                    "condition": {
-                                      "$eq": [
-                                        {
-                                          "$ref": "request.model"
-                                        },
-                                        "grok-imagine-video-1.5-lite"
-                                      ]
-                                    },
-                                    "then": "video-1.5-lite",
-                                    "else": "video"
-                                  }
-                                }
-                              }
-                            }
-                          ]
-                        },
-                        "video-1.5"
-                      ]
-                    },
-                    "then": 14,
-                    "else": {
-                      "$if": {
-                        "condition": {
-                          "$eq": [
-                            {
-                              "$coalesce": [
-                                {
-                                  "$ref": "request.providerOptions.xai-video.modelProfile"
-                                },
-                                {
-                                  "$if": {
-                                    "condition": {
-                                      "$eq": [
-                                        {
-                                          "$ref": "request.model"
-                                        },
-                                        "grok-imagine-video-1.5"
-                                      ]
-                                    },
-                                    "then": "video-1.5",
-                                    "else": {
-                                      "$if": {
-                                        "condition": {
-                                          "$eq": [
-                                            {
-                                              "$ref": "request.model"
-                                            },
-                                            "grok-imagine-video-1.5-lite"
-                                          ]
-                                        },
-                                        "then": "video-1.5-lite",
-                                        "else": "video"
-                                      }
-                                    }
-                                  }
-                                }
-                              ]
-                            },
-                            "video"
-                          ]
-                        },
-                        "then": 7,
-                        "else": 0
-                      }
-                    }
-                  }
-                }
-              ]
-            },
-            "message": "xAI Video 1.5 最多 14 张参考图，旧版最多 7 张，Lite 不支持参考图"
-          },
-          {
-            "assert": {
               "$eq": [
                 {
                   "$len": {
@@ -1357,20 +1036,7 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
                 0
               ]
             },
-            "message": "xAI 公共视频接口不接收参考音频文件；Video 1.5 请用 reference_audios 的预设 voice_id"
-          },
-          {
-            "assert": {
-              "$lte": [
-                {
-                  "$len": {
-                    "$ref": "request.providerOptions.xai-video.reference_audios"
-                  }
-                },
-                3
-              ]
-            },
-            "message": "Video 1.5 最多使用 3 个预设音色"
+            "message": "xAI 公共视频接口不接收音频文件；请使用预设 voice_id"
           },
           {
             "assert": {
@@ -1418,20 +1084,7 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
                 }
               ]
             },
-            "message": "reference_audios 仅支持非空 voice_id；自有音频文件需要 xAI 额外授权"
-          },
-          {
-            "assert": {
-              "$lte": [
-                {
-                  "$len": {
-                    "$ref": "request.providerOptions.xai-video.keyframes"
-                  }
-                },
-                4
-              ]
-            },
-            "message": "Video 1.5 最多使用 4 个中间关键帧"
+            "message": "reference_audios 仅支持非空 voice_id"
           },
           {
             "assert": {
@@ -1440,72 +1093,107 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
                   "$len": {
                     "$filter": {
                       "from": {
-                        "$ref": "request.providerOptions.xai-video.keyframes"
+                        "$concatArrays": [
+                          {
+                            "$ref": "request.providerOptions.xai-video.keyframes"
+                          },
+                          {
+                            "$map": {
+                              "from": {
+                                "$filter": {
+                                  "from": {
+                                    "$sortByOrder": {
+                                      "$ref": "request.images"
+                                    }
+                                  },
+                                  "as": "media",
+                                  "where": {
+                                    "$in": [
+                                      {
+                                        "$ref": "media.role"
+                                      },
+                                      [
+                                        "keyframe"
+                                      ]
+                                    ]
+                                  }
+                                }
+                              },
+                              "as": "frame",
+                              "in": {
+                                "image": {
+                                  "url": {
+                                    "$ref": "frame.value"
+                                  }
+                                },
+                                "timestamp_s": {
+                                  "$ref": "frame.metadata.timestamp_s"
+                                }
+                              }
+                            }
+                          }
+                        ]
                       },
                       "as": "frame",
                       "where": {
                         "$and": [
                           {
-                            "$and": [
+                            "$or": [
                               {
-                                "$or": [
+                                "$gt": [
                                   {
-                                    "$gt": [
-                                      {
-                                        "$len": {
-                                          "$trim": {
-                                            "$ref": "frame.image.url"
-                                          }
-                                        }
-                                      },
-                                      0
-                                    ]
+                                    "$len": {
+                                      "$trim": {
+                                        "$ref": "frame.image.url"
+                                      }
+                                    }
                                   },
-                                  {
-                                    "$gt": [
-                                      {
-                                        "$len": {
-                                          "$trim": {
-                                            "$ref": "frame.image.file_id"
-                                          }
-                                        }
-                                      },
-                                      0
-                                    ]
-                                  }
+                                  0
                                 ]
                               },
                               {
-                                "$not": {
-                                  "$and": [
-                                    {
-                                      "$gt": [
-                                        {
-                                          "$len": {
-                                            "$trim": {
-                                              "$ref": "frame.image.url"
-                                            }
-                                          }
-                                        },
-                                        0
-                                      ]
-                                    },
-                                    {
-                                      "$gt": [
-                                        {
-                                          "$len": {
-                                            "$trim": {
-                                              "$ref": "frame.image.file_id"
-                                            }
-                                          }
-                                        },
-                                        0
-                                      ]
+                                "$gt": [
+                                  {
+                                    "$len": {
+                                      "$trim": {
+                                        "$ref": "frame.image.file_id"
+                                      }
                                     }
-                                  ]
-                                }
+                                  },
+                                  0
+                                ]
                               }
                             ]
+                          },
+                          {
+                            "$not": {
+                              "$and": [
+                                {
+                                  "$gt": [
+                                    {
+                                      "$len": {
+                                        "$trim": {
+                                          "$ref": "frame.image.url"
+                                        }
+                                      }
+                                    },
+                                    0
+                                  ]
+                                },
+                                {
+                                  "$gt": [
+                                    {
+                                      "$len": {
+                                        "$trim": {
+                                          "$ref": "frame.image.file_id"
+                                        }
+                                      }
+                                    },
+                                    0
+                                  ]
+                                }
+                              ]
+                            }
                           },
                           {
                             "$gt": [
@@ -1562,1034 +1250,51 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
                 },
                 {
                   "$len": {
-                    "$ref": "request.providerOptions.xai-video.keyframes"
+                    "$concatArrays": [
+                      {
+                        "$ref": "request.providerOptions.xai-video.keyframes"
+                      },
+                      {
+                        "$map": {
+                          "from": {
+                            "$filter": {
+                              "from": {
+                                "$sortByOrder": {
+                                  "$ref": "request.images"
+                                }
+                              },
+                              "as": "media",
+                              "where": {
+                                "$in": [
+                                  {
+                                    "$ref": "media.role"
+                                  },
+                                  [
+                                    "keyframe"
+                                  ]
+                                ]
+                              }
+                            }
+                          },
+                          "as": "frame",
+                          "in": {
+                            "image": {
+                              "url": {
+                                "$ref": "frame.value"
+                              }
+                            },
+                            "timestamp_s": {
+                              "$ref": "frame.metadata.timestamp_s"
+                            }
+                          }
+                        }
+                      }
+                    ]
                   }
                 }
               ]
             },
             "message": "每个关键帧需 image.url 或 image.file_id，timestamp_s 必须大于 0 且小于视频时长"
-          },
-          {
-            "assert": {
-              "$eq": [
-                {
-                  "$len": {
-                    "$filter": {
-                      "from": {
-                        "$ref": "request.providerOptions.xai-video.keyframes"
-                      },
-                      "as": "frame",
-                      "where": {
-                        "$gt": [
-                          {
-                            "$len": {
-                              "$filter": {
-                                "from": {
-                                  "$ref": "request.providerOptions.xai-video.keyframes"
-                                },
-                                "as": "other",
-                                "where": {
-                                  "$eq": [
-                                    {
-                                      "$toInt": {
-                                        "$add": [
-                                          {
-                                            "$multiply": [
-                                              {
-                                                "$ref": "frame.timestamp_s"
-                                              },
-                                              3
-                                            ]
-                                          },
-                                          0.5
-                                        ]
-                                      }
-                                    },
-                                    {
-                                      "$toInt": {
-                                        "$add": [
-                                          {
-                                            "$multiply": [
-                                              {
-                                                "$ref": "other.timestamp_s"
-                                              },
-                                              3
-                                            ]
-                                          },
-                                          0.5
-                                        ]
-                                      }
-                                    }
-                                  ]
-                                }
-                              }
-                            }
-                          },
-                          1
-                        ]
-                      }
-                    }
-                  }
-                },
-                0
-              ]
-            },
-            "message": "关键帧不能落在同一个 1/3 秒时间网格内"
-          },
-          {
-            "assert": {
-              "$or": [
-                {
-                  "$or": [
-                    {
-                      "$gt": [
-                        {
-                          "$len": {
-                            "$ref": "request.videos"
-                          }
-                        },
-                        0
-                      ]
-                    },
-                    {
-                      "$eq": [
-                        {
-                          "$ref": "request.operation"
-                        },
-                        "extend"
-                      ]
-                    },
-                    {
-                      "$in": [
-                        {
-                          "$ref": "request.operation"
-                        },
-                        [
-                          "edit",
-                          "video_to_video",
-                          "inpaint",
-                          "replace_element",
-                          "camera_motion",
-                          "style_transfer"
-                        ]
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "$and": [
-                    {
-                      "$gte": [
-                        {
-                          "$if": {
-                            "condition": {
-                              "$ne": [
-                                {
-                                  "$ref": "request.duration"
-                                },
-                                0
-                              ]
-                            },
-                            "then": {
-                              "$ref": "request.duration"
-                            },
-                            "else": {
-                              "$if": {
-                                "condition": {
-                                  "$eq": [
-                                    {
-                                      "$ref": "request.operation"
-                                    },
-                                    "extend"
-                                  ]
-                                },
-                                "then": 6,
-                                "else": 8
-                              }
-                            }
-                          }
-                        },
-                        1
-                      ]
-                    },
-                    {
-                      "$lte": [
-                        {
-                          "$if": {
-                            "condition": {
-                              "$ne": [
-                                {
-                                  "$ref": "request.duration"
-                                },
-                                0
-                              ]
-                            },
-                            "then": {
-                              "$ref": "request.duration"
-                            },
-                            "else": {
-                              "$if": {
-                                "condition": {
-                                  "$eq": [
-                                    {
-                                      "$ref": "request.operation"
-                                    },
-                                    "extend"
-                                  ]
-                                },
-                                "then": 6,
-                                "else": 8
-                              }
-                            }
-                          }
-                        },
-                        {
-                          "$if": {
-                            "condition": {
-                              "$and": [
-                                {
-                                  "$eq": [
-                                    {
-                                      "$coalesce": [
-                                        {
-                                          "$ref": "request.providerOptions.xai-video.modelProfile"
-                                        },
-                                        {
-                                          "$if": {
-                                            "condition": {
-                                              "$eq": [
-                                                {
-                                                  "$ref": "request.model"
-                                                },
-                                                "grok-imagine-video-1.5"
-                                              ]
-                                            },
-                                            "then": "video-1.5",
-                                            "else": {
-                                              "$if": {
-                                                "condition": {
-                                                  "$eq": [
-                                                    {
-                                                      "$ref": "request.model"
-                                                    },
-                                                    "grok-imagine-video-1.5-lite"
-                                                  ]
-                                                },
-                                                "then": "video-1.5-lite",
-                                                "else": "video"
-                                              }
-                                            }
-                                          }
-                                        }
-                                      ]
-                                    },
-                                    "video"
-                                  ]
-                                },
-                                {
-                                  "$or": [
-                                    {
-                                      "$gt": [
-                                        {
-                                          "$len": {
-                                            "$sortByOrder": {
-                                              "$concatArrays": [
-                                                {
-                                                  "$filter": {
-                                                    "from": {
-                                                      "$sortByOrder": {
-                                                        "$ref": "request.images"
-                                                      }
-                                                    },
-                                                    "as": "media",
-                                                    "where": {
-                                                      "$in": [
-                                                        {
-                                                          "$ref": "media.role"
-                                                        },
-                                                        [
-                                                          "reference_image",
-                                                          "subject_reference",
-                                                          "style_reference"
-                                                        ]
-                                                      ]
-                                                    }
-                                                  }
-                                                },
-                                                {
-                                                  "$filter": {
-                                                    "from": {
-                                                      "$filter": {
-                                                        "from": {
-                                                          "$sortByOrder": {
-                                                            "$ref": "request.images"
-                                                          }
-                                                        },
-                                                        "as": "media",
-                                                        "where": {
-                                                          "$in": [
-                                                            {
-                                                              "$ref": "media.role"
-                                                            },
-                                                            [
-                                                              ""
-                                                            ]
-                                                          ]
-                                                        }
-                                                      }
-                                                    },
-                                                    "as": "candidate",
-                                                    "where": {
-                                                      "$or": [
-                                                        {
-                                                          "$not": {
-                                                            "$and": [
-                                                              {
-                                                                "$eq": [
-                                                                  {
-                                                                    "$len": {
-                                                                      "$filter": {
-                                                                        "from": {
-                                                                          "$sortByOrder": {
-                                                                            "$ref": "request.images"
-                                                                          }
-                                                                        },
-                                                                        "as": "media",
-                                                                        "where": {
-                                                                          "$in": [
-                                                                            {
-                                                                              "$ref": "media.role"
-                                                                            },
-                                                                            [
-                                                                              "first_frame"
-                                                                            ]
-                                                                          ]
-                                                                        }
-                                                                      }
-                                                                    }
-                                                                  },
-                                                                  0
-                                                                ]
-                                                              },
-                                                              {
-                                                                "$or": [
-                                                                  {
-                                                                    "$eq": [
-                                                                      {
-                                                                        "$ref": "request.operation"
-                                                                      },
-                                                                      "image_to_video"
-                                                                    ]
-                                                                  },
-                                                                  {
-                                                                    "$and": [
-                                                                      {
-                                                                        "$eq": [
-                                                                          {
-                                                                            "$len": {
-                                                                              "$filter": {
-                                                                                "from": {
-                                                                                  "$sortByOrder": {
-                                                                                    "$ref": "request.images"
-                                                                                  }
-                                                                                },
-                                                                                "as": "media",
-                                                                                "where": {
-                                                                                  "$in": [
-                                                                                    {
-                                                                                      "$ref": "media.role"
-                                                                                    },
-                                                                                    [
-                                                                                      ""
-                                                                                    ]
-                                                                                  ]
-                                                                                }
-                                                                              }
-                                                                            }
-                                                                          },
-                                                                          1
-                                                                        ]
-                                                                      },
-                                                                      {
-                                                                        "$eq": [
-                                                                          {
-                                                                            "$len": {
-                                                                              "$filter": {
-                                                                                "from": {
-                                                                                  "$sortByOrder": {
-                                                                                    "$ref": "request.images"
-                                                                                  }
-                                                                                },
-                                                                                "as": "media",
-                                                                                "where": {
-                                                                                  "$in": [
-                                                                                    {
-                                                                                      "$ref": "media.role"
-                                                                                    },
-                                                                                    [
-                                                                                      "reference_image",
-                                                                                      "subject_reference",
-                                                                                      "style_reference"
-                                                                                    ]
-                                                                                  ]
-                                                                                }
-                                                                              }
-                                                                            }
-                                                                          },
-                                                                          0
-                                                                        ]
-                                                                      },
-                                                                      {
-                                                                        "$ne": [
-                                                                          {
-                                                                            "$ref": "request.operation"
-                                                                          },
-                                                                          "reference_to_video"
-                                                                        ]
-                                                                      }
-                                                                    ]
-                                                                  }
-                                                                ]
-                                                              }
-                                                            ]
-                                                          }
-                                                        },
-                                                        {
-                                                          "$gt": [
-                                                            {
-                                                              "$ref": "candidateIndex"
-                                                            },
-                                                            0
-                                                          ]
-                                                        }
-                                                      ]
-                                                    }
-                                                  }
-                                                }
-                                              ]
-                                            }
-                                          }
-                                        },
-                                        0
-                                      ]
-                                    },
-                                    {
-                                      "$gt": [
-                                        {
-                                          "$len": {
-                                            "$filter": {
-                                              "from": {
-                                                "$sortByOrder": {
-                                                  "$ref": "request.images"
-                                                }
-                                              },
-                                              "as": "media",
-                                              "where": {
-                                                "$in": [
-                                                  {
-                                                    "$ref": "media.role"
-                                                  },
-                                                  [
-                                                    "last_frame"
-                                                  ]
-                                                ]
-                                              }
-                                            }
-                                          }
-                                        },
-                                        0
-                                      ]
-                                    },
-                                    {
-                                      "$gt": [
-                                        {
-                                          "$len": {
-                                            "$ref": "request.providerOptions.xai-video.reference_audios"
-                                          }
-                                        },
-                                        0
-                                      ]
-                                    },
-                                    {
-                                      "$gt": [
-                                        {
-                                          "$len": {
-                                            "$ref": "request.providerOptions.xai-video.keyframes"
-                                          }
-                                        },
-                                        0
-                                      ]
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
-                            "then": 10,
-                            "else": 15
-                          }
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            },
-            "message": "xAI 视频生成时长为 1–15 秒，旧版参考图模式最多 10 秒"
-          },
-          {
-            "assert": {
-              "$or": [
-                {
-                  "$or": [
-                    {
-                      "$gt": [
-                        {
-                          "$len": {
-                            "$ref": "request.videos"
-                          }
-                        },
-                        0
-                      ]
-                    },
-                    {
-                      "$eq": [
-                        {
-                          "$ref": "request.operation"
-                        },
-                        "extend"
-                      ]
-                    },
-                    {
-                      "$in": [
-                        {
-                          "$ref": "request.operation"
-                        },
-                        [
-                          "edit",
-                          "video_to_video",
-                          "inpaint",
-                          "replace_element",
-                          "camera_motion",
-                          "style_transfer"
-                        ]
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "$in": [
-                    {
-                      "$coalesce": [
-                        {
-                          "$ref": "request.resolution"
-                        },
-                        "720p"
-                      ]
-                    },
-                    {
-                      "$if": {
-                        "condition": {
-                          "$eq": [
-                            {
-                              "$coalesce": [
-                                {
-                                  "$ref": "request.providerOptions.xai-video.modelProfile"
-                                },
-                                {
-                                  "$if": {
-                                    "condition": {
-                                      "$eq": [
-                                        {
-                                          "$ref": "request.model"
-                                        },
-                                        "grok-imagine-video-1.5"
-                                      ]
-                                    },
-                                    "then": "video-1.5",
-                                    "else": {
-                                      "$if": {
-                                        "condition": {
-                                          "$eq": [
-                                            {
-                                              "$ref": "request.model"
-                                            },
-                                            "grok-imagine-video-1.5-lite"
-                                          ]
-                                        },
-                                        "then": "video-1.5-lite",
-                                        "else": "video"
-                                      }
-                                    }
-                                  }
-                                }
-                              ]
-                            },
-                            "video"
-                          ]
-                        },
-                        "then": [
-                          "480p",
-                          "720p"
-                        ],
-                        "else": [
-                          "480p",
-                          "720p",
-                          "1080p"
-                        ]
-                      }
-                    }
-                  ]
-                }
-              ]
-            },
-            "message": "所选 xAI 模型不支持该清晰度；旧版不支持 1080p"
-          },
-          {
-            "assert": {
-              "$or": [
-                {
-                  "$or": [
-                    {
-                      "$gt": [
-                        {
-                          "$len": {
-                            "$ref": "request.videos"
-                          }
-                        },
-                        0
-                      ]
-                    },
-                    {
-                      "$eq": [
-                        {
-                          "$ref": "request.operation"
-                        },
-                        "extend"
-                      ]
-                    },
-                    {
-                      "$in": [
-                        {
-                          "$ref": "request.operation"
-                        },
-                        [
-                          "edit",
-                          "video_to_video",
-                          "inpaint",
-                          "replace_element",
-                          "camera_motion",
-                          "style_transfer"
-                        ]
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "$not": {
-                    "$or": [
-                      {
-                        "$gt": [
-                          {
-                            "$len": {
-                              "$sortByOrder": {
-                                "$concatArrays": [
-                                  {
-                                    "$filter": {
-                                      "from": {
-                                        "$sortByOrder": {
-                                          "$ref": "request.images"
-                                        }
-                                      },
-                                      "as": "media",
-                                      "where": {
-                                        "$in": [
-                                          {
-                                            "$ref": "media.role"
-                                          },
-                                          [
-                                            "reference_image",
-                                            "subject_reference",
-                                            "style_reference"
-                                          ]
-                                        ]
-                                      }
-                                    }
-                                  },
-                                  {
-                                    "$filter": {
-                                      "from": {
-                                        "$filter": {
-                                          "from": {
-                                            "$sortByOrder": {
-                                              "$ref": "request.images"
-                                            }
-                                          },
-                                          "as": "media",
-                                          "where": {
-                                            "$in": [
-                                              {
-                                                "$ref": "media.role"
-                                              },
-                                              [
-                                                ""
-                                              ]
-                                            ]
-                                          }
-                                        }
-                                      },
-                                      "as": "candidate",
-                                      "where": {
-                                        "$or": [
-                                          {
-                                            "$not": {
-                                              "$and": [
-                                                {
-                                                  "$eq": [
-                                                    {
-                                                      "$len": {
-                                                        "$filter": {
-                                                          "from": {
-                                                            "$sortByOrder": {
-                                                              "$ref": "request.images"
-                                                            }
-                                                          },
-                                                          "as": "media",
-                                                          "where": {
-                                                            "$in": [
-                                                              {
-                                                                "$ref": "media.role"
-                                                              },
-                                                              [
-                                                                "first_frame"
-                                                              ]
-                                                            ]
-                                                          }
-                                                        }
-                                                      }
-                                                    },
-                                                    0
-                                                  ]
-                                                },
-                                                {
-                                                  "$or": [
-                                                    {
-                                                      "$eq": [
-                                                        {
-                                                          "$ref": "request.operation"
-                                                        },
-                                                        "image_to_video"
-                                                      ]
-                                                    },
-                                                    {
-                                                      "$and": [
-                                                        {
-                                                          "$eq": [
-                                                            {
-                                                              "$len": {
-                                                                "$filter": {
-                                                                  "from": {
-                                                                    "$sortByOrder": {
-                                                                      "$ref": "request.images"
-                                                                    }
-                                                                  },
-                                                                  "as": "media",
-                                                                  "where": {
-                                                                    "$in": [
-                                                                      {
-                                                                        "$ref": "media.role"
-                                                                      },
-                                                                      [
-                                                                        ""
-                                                                      ]
-                                                                    ]
-                                                                  }
-                                                                }
-                                                              }
-                                                            },
-                                                            1
-                                                          ]
-                                                        },
-                                                        {
-                                                          "$eq": [
-                                                            {
-                                                              "$len": {
-                                                                "$filter": {
-                                                                  "from": {
-                                                                    "$sortByOrder": {
-                                                                      "$ref": "request.images"
-                                                                    }
-                                                                  },
-                                                                  "as": "media",
-                                                                  "where": {
-                                                                    "$in": [
-                                                                      {
-                                                                        "$ref": "media.role"
-                                                                      },
-                                                                      [
-                                                                        "reference_image",
-                                                                        "subject_reference",
-                                                                        "style_reference"
-                                                                      ]
-                                                                    ]
-                                                                  }
-                                                                }
-                                                              }
-                                                            },
-                                                            0
-                                                          ]
-                                                        },
-                                                        {
-                                                          "$ne": [
-                                                            {
-                                                              "$ref": "request.operation"
-                                                            },
-                                                            "reference_to_video"
-                                                          ]
-                                                        }
-                                                      ]
-                                                    }
-                                                  ]
-                                                }
-                                              ]
-                                            }
-                                          },
-                                          {
-                                            "$gt": [
-                                              {
-                                                "$ref": "candidateIndex"
-                                              },
-                                              0
-                                            ]
-                                          }
-                                        ]
-                                      }
-                                    }
-                                  }
-                                ]
-                              }
-                            }
-                          },
-                          0
-                        ]
-                      },
-                      {
-                        "$gt": [
-                          {
-                            "$len": {
-                              "$filter": {
-                                "from": {
-                                  "$sortByOrder": {
-                                    "$ref": "request.images"
-                                  }
-                                },
-                                "as": "media",
-                                "where": {
-                                  "$in": [
-                                    {
-                                      "$ref": "media.role"
-                                    },
-                                    [
-                                      "last_frame"
-                                    ]
-                                  ]
-                                }
-                              }
-                            }
-                          },
-                          0
-                        ]
-                      },
-                      {
-                        "$gt": [
-                          {
-                            "$len": {
-                              "$ref": "request.providerOptions.xai-video.reference_audios"
-                            }
-                          },
-                          0
-                        ]
-                      },
-                      {
-                        "$gt": [
-                          {
-                            "$len": {
-                              "$ref": "request.providerOptions.xai-video.keyframes"
-                            }
-                          },
-                          0
-                        ]
-                      }
-                    ]
-                  }
-                },
-                {
-                  "$ne": [
-                    {
-                      "$coalesce": [
-                        {
-                          "$ref": "request.resolution"
-                        },
-                        "720p"
-                      ]
-                    },
-                    "1080p"
-                  ]
-                }
-              ]
-            },
-            "message": "参考图、音色、尾帧或关键帧模式最高 720p，请调整清晰度"
-          },
-          {
-            "assert": {
-              "$or": [
-                {
-                  "$or": [
-                    {
-                      "$gt": [
-                        {
-                          "$len": {
-                            "$ref": "request.videos"
-                          }
-                        },
-                        0
-                      ]
-                    },
-                    {
-                      "$eq": [
-                        {
-                          "$ref": "request.operation"
-                        },
-                        "extend"
-                      ]
-                    },
-                    {
-                      "$in": [
-                        {
-                          "$ref": "request.operation"
-                        },
-                        [
-                          "edit",
-                          "video_to_video",
-                          "inpaint",
-                          "replace_element",
-                          "camera_motion",
-                          "style_transfer"
-                        ]
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "$not": {
-                    "$ref": "request.aspectRatio"
-                  }
-                },
-                {
-                  "$in": [
-                    {
-                      "$ref": "request.aspectRatio"
-                    },
-                    [
-                      "1:1",
-                      "16:9",
-                      "9:16",
-                      "4:3",
-                      "3:4",
-                      "3:2",
-                      "2:3",
-                      "21:9",
-                      "5:2"
-                    ]
-                  ]
-                }
-              ]
-            },
-            "message": "xAI Video 不支持所选画幅"
-          },
-          {
-            "assert": {
-              "$or": [
-                {
-                  "$not": {
-                    "$or": [
-                      {
-                        "$gt": [
-                          {
-                            "$len": {
-                              "$ref": "request.videos"
-                            }
-                          },
-                          0
-                        ]
-                      },
-                      {
-                        "$eq": [
-                          {
-                            "$ref": "request.operation"
-                          },
-                          "extend"
-                        ]
-                      },
-                      {
-                        "$in": [
-                          {
-                            "$ref": "request.operation"
-                          },
-                          [
-                            "edit",
-                            "video_to_video",
-                            "inpaint",
-                            "replace_element",
-                            "camera_motion",
-                            "style_transfer"
-                          ]
-                        ]
-                      }
-                    ]
-                  }
-                },
-                {
-                  "$eq": [
-                    {
-                      "$coalesce": [
-                        {
-                          "$ref": "request.providerOptions.xai-video.modelProfile"
-                        },
-                        {
-                          "$if": {
-                            "condition": {
-                              "$eq": [
-                                {
-                                  "$ref": "request.model"
-                                },
-                                "grok-imagine-video-1.5"
-                              ]
-                            },
-                            "then": "video-1.5",
-                            "else": {
-                              "$if": {
-                                "condition": {
-                                  "$eq": [
-                                    {
-                                      "$ref": "request.model"
-                                    },
-                                    "grok-imagine-video-1.5-lite"
-                                  ]
-                                },
-                                "then": "video-1.5-lite",
-                                "else": "video"
-                              }
-                            }
-                          }
-                        }
-                      ]
-                    },
-                    "video"
-                  ]
-                }
-              ]
-            },
-            "message": "视频编辑和延长仅旧版 grok-imagine-video 支持，Video 1.5 不支持"
           },
           {
             "assert": {
@@ -2783,7 +1488,46 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
                       "$eq": [
                         {
                           "$len": {
-                            "$ref": "request.providerOptions.xai-video.keyframes"
+                            "$concatArrays": [
+                              {
+                                "$ref": "request.providerOptions.xai-video.keyframes"
+                              },
+                              {
+                                "$map": {
+                                  "from": {
+                                    "$filter": {
+                                      "from": {
+                                        "$sortByOrder": {
+                                          "$ref": "request.images"
+                                        }
+                                      },
+                                      "as": "media",
+                                      "where": {
+                                        "$in": [
+                                          {
+                                            "$ref": "media.role"
+                                          },
+                                          [
+                                            "keyframe"
+                                          ]
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "as": "frame",
+                                  "in": {
+                                    "image": {
+                                      "url": {
+                                        "$ref": "frame.value"
+                                      }
+                                    },
+                                    "timestamp_s": {
+                                      "$ref": "frame.metadata.timestamp_s"
+                                    }
+                                  }
+                                }
+                              }
+                            ]
                           }
                         },
                         0
@@ -2861,186 +1605,6 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
               ]
             },
             "message": "源视频需选择编辑或延长操作"
-          },
-          {
-            "assert": {
-              "$or": [
-                {
-                  "$not": {
-                    "$eq": [
-                      {
-                        "$ref": "request.operation"
-                      },
-                      "extend"
-                    ]
-                  }
-                },
-                {
-                  "$and": [
-                    {
-                      "$gte": [
-                        {
-                          "$if": {
-                            "condition": {
-                              "$ne": [
-                                {
-                                  "$ref": "request.duration"
-                                },
-                                0
-                              ]
-                            },
-                            "then": {
-                              "$ref": "request.duration"
-                            },
-                            "else": {
-                              "$if": {
-                                "condition": {
-                                  "$eq": [
-                                    {
-                                      "$ref": "request.operation"
-                                    },
-                                    "extend"
-                                  ]
-                                },
-                                "then": 6,
-                                "else": 8
-                              }
-                            }
-                          }
-                        },
-                        2
-                      ]
-                    },
-                    {
-                      "$lte": [
-                        {
-                          "$if": {
-                            "condition": {
-                              "$ne": [
-                                {
-                                  "$ref": "request.duration"
-                                },
-                                0
-                              ]
-                            },
-                            "then": {
-                              "$ref": "request.duration"
-                            },
-                            "else": {
-                              "$if": {
-                                "condition": {
-                                  "$eq": [
-                                    {
-                                      "$ref": "request.operation"
-                                    },
-                                    "extend"
-                                  ]
-                                },
-                                "then": 6,
-                                "else": 8
-                              }
-                            }
-                          }
-                        },
-                        10
-                      ]
-                    }
-                  ]
-                }
-              ]
-            },
-            "message": "视频延长的新增时长为 2–10 秒，不是总时长"
-          },
-          {
-            "assert": {
-              "$or": [
-                {
-                  "$not": {
-                    "$or": [
-                      {
-                        "$gt": [
-                          {
-                            "$len": {
-                              "$ref": "request.videos"
-                            }
-                          },
-                          0
-                        ]
-                      },
-                      {
-                        "$eq": [
-                          {
-                            "$ref": "request.operation"
-                          },
-                          "extend"
-                        ]
-                      },
-                      {
-                        "$in": [
-                          {
-                            "$ref": "request.operation"
-                          },
-                          [
-                            "edit",
-                            "video_to_video",
-                            "inpaint",
-                            "replace_element",
-                            "camera_motion",
-                            "style_transfer"
-                          ]
-                        ]
-                      }
-                    ]
-                  }
-                },
-                {
-                  "$not": {
-                    "$ref": "request.videos.0.metadata.durationMs"
-                  }
-                },
-                {
-                  "$if": {
-                    "condition": {
-                      "$eq": [
-                        {
-                          "$ref": "request.operation"
-                        },
-                        "extend"
-                      ]
-                    },
-                    "then": {
-                      "$and": [
-                        {
-                          "$gte": [
-                            {
-                              "$ref": "request.videos.0.metadata.durationMs"
-                            },
-                            2000
-                          ]
-                        },
-                        {
-                          "$lte": [
-                            {
-                              "$ref": "request.videos.0.metadata.durationMs"
-                            },
-                            15000
-                          ]
-                        }
-                      ]
-                    },
-                    "else": {
-                      "$lte": [
-                        {
-                          "$ref": "request.videos.0.metadata.durationMs"
-                        },
-                        8700
-                      ]
-                    }
-                  }
-                }
-              ]
-            },
-            "message": "编辑源视频最多 8.7 秒，延长源视频需 2–15 秒"
           },
           {
             "assert": {
@@ -3295,7 +1859,46 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
                           "$gt": [
                             {
                               "$len": {
-                                "$ref": "request.providerOptions.xai-video.keyframes"
+                                "$concatArrays": [
+                                  {
+                                    "$ref": "request.providerOptions.xai-video.keyframes"
+                                  },
+                                  {
+                                    "$map": {
+                                      "from": {
+                                        "$filter": {
+                                          "from": {
+                                            "$sortByOrder": {
+                                              "$ref": "request.images"
+                                            }
+                                          },
+                                          "as": "media",
+                                          "where": {
+                                            "$in": [
+                                              {
+                                                "$ref": "media.role"
+                                              },
+                                              [
+                                                "keyframe"
+                                              ]
+                                            ]
+                                          }
+                                        }
+                                      },
+                                      "as": "frame",
+                                      "in": {
+                                        "image": {
+                                          "url": {
+                                            "$ref": "frame.value"
+                                          }
+                                        },
+                                        "timestamp_s": {
+                                          "$ref": "frame.metadata.timestamp_s"
+                                        }
+                                      }
+                                    }
+                                  }
+                                ]
                               }
                             },
                             0
@@ -3849,7 +2452,46 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
                               "$gt": [
                                 {
                                   "$len": {
-                                    "$ref": "request.providerOptions.xai-video.keyframes"
+                                    "$concatArrays": [
+                                      {
+                                        "$ref": "request.providerOptions.xai-video.keyframes"
+                                      },
+                                      {
+                                        "$map": {
+                                          "from": {
+                                            "$filter": {
+                                              "from": {
+                                                "$sortByOrder": {
+                                                  "$ref": "request.images"
+                                                }
+                                              },
+                                              "as": "media",
+                                              "where": {
+                                                "$in": [
+                                                  {
+                                                    "$ref": "media.role"
+                                                  },
+                                                  [
+                                                    "keyframe"
+                                                  ]
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          "as": "frame",
+                                          "in": {
+                                            "image": {
+                                              "url": {
+                                                "$ref": "frame.value"
+                                              }
+                                            },
+                                            "timestamp_s": {
+                                              "$ref": "frame.metadata.timestamp_s"
+                                            }
+                                          }
+                                        }
+                                      }
+                                    ]
                                   }
                                 },
                                 0
@@ -4548,7 +3190,46 @@ xAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插
               "$omitEmpty": {
                 "$map": {
                   "from": {
-                    "$ref": "request.providerOptions.xai-video.keyframes"
+                    "$concatArrays": [
+                      {
+                        "$ref": "request.providerOptions.xai-video.keyframes"
+                      },
+                      {
+                        "$map": {
+                          "from": {
+                            "$filter": {
+                              "from": {
+                                "$sortByOrder": {
+                                  "$ref": "request.images"
+                                }
+                              },
+                              "as": "media",
+                              "where": {
+                                "$in": [
+                                  {
+                                    "$ref": "media.role"
+                                  },
+                                  [
+                                    "keyframe"
+                                  ]
+                                ]
+                              }
+                            }
+                          },
+                          "as": "frame",
+                          "in": {
+                            "image": {
+                              "url": {
+                                "$ref": "frame.value"
+                              }
+                            },
+                            "timestamp_s": {
+                              "$ref": "frame.metadata.timestamp_s"
+                            }
+                          }
+                        }
+                      }
+                    ]
                   },
                   "as": "frame",
                   "in": {

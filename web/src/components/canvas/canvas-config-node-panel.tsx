@@ -499,6 +499,8 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
     return {
         ...globalConfig,
         taskWorkflowProvider: workflowProvider,
+        inputParameters: node.metadata?.inputParameters ?? globalConfig.inputParameters,
+        inputMediaRoles: node.metadata?.inputMediaRoles ?? globalConfig.inputMediaRoles,
         runningHub,
         model,
         quality: workflowParameter("quality") || normalizedImage?.quality || node.metadata?.quality || globalConfig.quality || defaultConfig.quality,
@@ -573,6 +575,8 @@ function buildModelNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode
         ...globalConfig,
         taskWorkflowProvider: "model",
         model,
+        inputParameters: node.metadata?.inputParameters ?? globalConfig.inputParameters,
+        inputMediaRoles: node.metadata?.inputMediaRoles ?? globalConfig.inputMediaRoles,
         quality: generationDefaults.quality || globalConfig.quality || defaultConfig.quality,
         imageResolution: generationDefaults.imageResolution || globalConfig.imageResolution || defaultConfig.imageResolution,
         imageParameters: generationDefaults.imageParameters ?? globalConfig.imageParameters ?? "{}",

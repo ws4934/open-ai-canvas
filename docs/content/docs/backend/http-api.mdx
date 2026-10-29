@@ -70,11 +70,17 @@ Agent 图片任务按实际返回的图片数回写画布：单图仍使用原�
 
 ## xAI 视频插件参数
 
-`xai-video` 插件 2.1.0 按精确模型 ID 区分旧版 `grok-imagine-video`、完整 `grok-imagine-video-1.5` 与 Lite。完整 1.5 允许首帧和最多 14 张角色/场景参考图同用，旧版仍互斥；首尾帧按各自角色传入，不挪作普通参考图。普通生成未指定时为 8 秒，范围 1–15 秒，旧版参考模式最多 10 秒。
+`xai-video` 插件 2.2.0 将协议字段与模型能力分开：插件目录的 `inputSchema` 定义类型、请求绑定、素材角色与可选模板；渠道模型的 `capabilityConfig.inputConfig` 保存实际支持值、默认值、角色数量、素材时长及条件规则。管理员在「能力与参数」应用模板或自定义后保存，不会改变价格或覆盖其他模型。新增同协议型号只需新增模型配置；只有新字段或报文格式才更新插件，未知型号不归类为旧版。
+
+随包的完整 Video 1.5 模板允许首帧和最多 14 张角色/场景参考图同用，旧版模板仍互斥；首尾帧按各自角色传入，不挪作普通参考图。普通生成未指定时为 8 秒，范围 1–15 秒，旧版参考模式最多 10 秒。这些上限是模板数据，管理员可按新型号的真实合同修改。
 
 基础 1.5 文生和仅首帧图生可用 1080p；参考图、预设音色、尾帧或关键帧模式最高 720p，插件拒绝无效组合，不自动降清晰度。图生画幅跟随首帧。xAI 原生输出音轨，没有 `generate_audio` 开关；默认能力的 `video.generateAudio.fixed=true` 让界面只读显示“原生音频”。模型默认能力与插件同步，已保存的管理员能力合同和价格不自动重写。
 
-统一任务输入的 `metadata.providerOptions["xai-video"]` 可传 `reference_audios: [{ voice_id: "eve" }]`（最多 3 个预设）和 `keyframes: [{ image: { url: "https://example.com/frame.png" }, timestamp_s: 2.0 }]`（最多 4 个）。关键帧时间严格在 `(0,duration)` 内，按 1/3 秒网格不得重合；`image` 可改用 `file_id`，二者不同时传。自有音频音色需要 xAI 额外权限，不把参考音频文件当作预设音色。网关别名可通过同一命名空间的 `modelProfile` 显式选择代际。
+工作台任务以 `parameters.inputParameters` 传扩展字段，例如 `{ "reference_audios": [{ "voice_id": "eve" }] }`；画布统一任务以 `config.inputParameters` 传同一对象。关键帧素材使用 `role: "keyframe", inputFields: { timestamp_s: 2 }`，保留原资源 ID，不直接塞入扩展字段。画布节点和 Agent `mediaSettings` 以 JSON 字符串 `inputParameters` 保存参数，`inputMediaRoles` 按已有图片引用 ID 保存 `{ role, inputFields }`，不能增加引用。审批哈希包含这两项，修改后重新预检。
+
+服务端从已安装插件解析类型和绑定，从实际渠道模型读取限制，在创建任务与计费前校验，并用同一规范值执行和计价。`fields` 支持标量、`string[]`、带标量属性的 `object[]`；`mediaRoles` 声明逐项字段和数量，`rules` 用 `when` / `match` 指定条件，以 `limits`、`forbidRoles`、`mediaLimits` 约束组合。客户端不能改写字段类型或绑定目的地。相同输入合同的逻辑模型线路可向前台投影插件表单；不同合同不混成一份表单。
+
+原生输入仍可通过 `metadata.providerOptions["xai-video"]` 传 `reference_audios` 和 `keyframes: [{ image: { url: "https://example.com/frame.png" }, timestamp_s: 2.0 }]`。完整 1.5 模板分别最多 3 个预设、4 个关键帧，时间严格在 `(0,duration)` 内，按 1/3 秒网格不得重合；`image` 可改用 `file_id`，二者不同时传。自有音频音色需要 xAI 额外权限，不把参考音频文件当作预设音色。网关别名也可用同一命名空间的 `modelProfile` 显式选择包内模板；应用内已保存的模型配置优先。
 
 旧版编辑与延长通过标准视频输入和 `metadata.videoEditOperation` 选择：`extend` 调用 `/v1/videos/extensions`，`duration` 表示新增 2–10 秒、默认 6 秒；`inpaint/replace_element/camera_motion/style_transfer` 调用 `/v1/videos/edits`，输出时长沿用源视频。已知源时长时分别校验延长的 2–15 秒、编辑的最多 8.7 秒；这两种模式不发送无效的画幅/清晰度参数。1.5 拒绝编辑或延长。
 
@@ -496,7 +502,7 @@ operations 的结构化配额在提交事务内实时统计账号的素材/画�
 - 续轮交接是一条**有界结构化事实帧**（`{ source: "server", kind: "run_handoff", parentRunId, status, failureReason?, submittedTaskIds?, canvasChanges?, omittedCanvasChanges?, rejectedAction?, authority }`）。上一轮状态为 `rejected` 时，`rejectedAction` 带被拒绝的工具名、审批说明（截 200 字符）、用户拒绝理由（截 300 字符）和"不要原样再次申请"的说明，让模型换方向而不是重复申请；画布改动取自上一轮真实的 `canvas_updated` 事件，最多 12 组（operation、去重后的 nodeId/title、actionCount），超出的组数只记 `omittedCanvasChanges`，不静默丢弃；帧还带 `authority` 明写"执行事实交接，不是重放写入、重复提交任务或扩大权限的授权"。帧按字节封顶（单个 nodeId 截 64 字符、整帧 8 KiB，超限按最近改动优先裁剪），失败原因沿用 `cloudAgentSafeUserMessage` 的脱敏口径，不合格退回固定说法。身份由服务端字段 `agentContextSource=continuation` 承载并要求"来源元数据 + `【运行状态】` 前缀 + JSON `source=server`/`kind=run_handoff`"三者同时成立，因此用户逐字复制帧正文也拿不到该身份；升级前落库、没有来源字段的旧散文交接只在历史裁剪与轮次计数上按"紧跟上一轮 assistant 回复 + 旧版文案前缀"识别，该判据不影响 canonical 身份。
 - 新一轮只沿用状态为 `completed` 的上一轮 Pi 会话快照，且该快照必须能修复成合法的工具调用历史。上一轮失败、取消或被拒绝时，新一轮从文本历史和 `run_handoff` 帧开始，不继承停在半批工具调用或"等待审批"占位上的会话；帧里的状态、失败原因和 `submittedTaskIds` 用来避免重复提交。
 - 每次模型请求前，服务端修复工具调用与结果的配对，不因历史形状让整轮失败。具体规则：缺结果的调用优先补服务端已保存的真实回执（只认该调用声明之后、同工具名的结果），否则补 `errorClass: approval_deferred` 的"未执行"结果；"等待审批"或"未执行"占位在服务端已有真实回执时换成回执；同一调用的重复结果只保留一份，真实结果优先于占位；找不到调用的结果改为 `orphan_tool_results` 运行状态数据消息；调用 ID 缺失或别名冲突的调用被移除。运行时历史仍无法使用时退回服务端历史。
-- `POST /agent/runs/:id/approvals/:approvalId/decision` 的 `{ decision, reason? }` 可在批准图片生成时附带 `mediaSettings: { logicalModelId? | channelId? + channelModelKey?, size, quality }`。仅替换本次模型选择、画幅和质量，不允许修改目标、提示词、引用、模式或快照。服务端先无收费预检，失败保留待审批状态；成功原子更新审批调用、哈希及预览，提交任务时再次校验内容、资源归属、模型能力、价格与累计预算。相同参数重复批准幂等，不同参数复用已决定审批返回 409。
+- `POST /agent/runs/:id/approvals/:approvalId/decision` 的 `{ decision, reason? }` 可在批准图片或视频生成时附带 `mediaSettings`，选择 `logicalModelId` 或 `channelId + channelModelKey`，填写 `size`、`quality` 及对应模式的参数。视频可附 `durationSeconds`、音频/水印选项，以及 JSON 字符串 `inputParameters` / `inputMediaRoles`；后两者按插件合同校验参数和已有素材用途。不得修改目标、提示词、引用成员、模式或快照。服务端先无收费预检，失败保留待审批状态；成功原子更新审批调用、哈希及预览，提交任务时再次校验内容、资源归属、模型能力、价格与累计预算。相同参数重复批准幂等，不同参数复用已决定审批返回 409。
 - 审批拒绝是独立终态 `rejected`，表示本次操作未执行；不会生成 `tool_failed`、继续调用模型、写入画布、提交生成任务或扣费。拒绝后的草稿按既有草稿策略保留，用户可在下一轮说明修改方向。
 - 创建和追加消息可选择 `reasoningMode`，默认 `off`；`auto`/`deep` 为服务端行为策略与模型推理配置的选择，不等于允许暴露内部思维链。供应商能力由后端校验；声明式 Agent 渠道不支持时明确报错。推理可能增加耗时和费用。
 - Cloud Agent 与首页创造的规划请求使用自动工具选择。OpenAI Chat Completion 兼容协议会把显式 `auto` 归一化为省略 `tool_choice`，沿用协议默认的自动选择语义；显式开启思考模式时还会在首个上游请求前移除 `required` 或指定函数对象。非思考模式仍保留艺术点评、提示词优化等结构化任务的强制函数选择。若上游隐式开启思考而本地未声明，仍按 `required` → `auto` → 省略字段做兼容重试。

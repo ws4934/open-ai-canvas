@@ -128,6 +128,14 @@ export function skuSelectorFromForm(capability: ModelCapabilityChoice, tier: Pri
     if (tier.matchMode !== "advanced") return {};
     const selector: Record<string, string> = {};
     if (tier.operation && tier.operation !== "*") selector.operation = tier.operation;
+    if (capability === "video" && capabilityConfig?.inputConfig) {
+        for (const field of capabilityConfig.inputConfig.fields) {
+            if (field.enabled === false || !field.pricing || field.type === "object[]" || field.type === "string[]") continue;
+            const value = tier.imageSelector?.[field.name];
+            if (value !== undefined && value !== "" && value !== "*") selector[field.name] = String(value);
+        }
+        return selector;
+    }
     if (capability === "video") {
         if (tier.resolution && tier.resolution !== "*") selector.vquality = tier.resolution;
         if (capabilityConfig?.video?.processing && tier.fpsBand && tier.fpsBand !== "*") selector.fpsBand = tier.fpsBand;
@@ -168,8 +176,8 @@ export function priceTierPayloadFromForm(capability: ModelCapabilityChoice, tier
     const videoTokens = capability === "video" && tier.billingMode === "token";
     return {
         selector: skuSelectorFromForm(capability, tier, capabilityConfig),
-        resolution: priceTierResolutionFromForm(capability, tier),
-        videoSeconds: priceTierVideoSecondsFromForm(capability, tier),
+        resolution: capabilityConfig?.inputConfig ? "*" : priceTierResolutionFromForm(capability, tier),
+        videoSeconds: capabilityConfig?.inputConfig ? 0 : priceTierVideoSecondsFromForm(capability, tier),
         providerModelKey: tier.providerModelKey?.trim() || upstreamModel,
         billingMode: tier.billingMode,
         unitPriceMicrocredits: Math.round((tier.unitPrice || 0) * 1_000_000),

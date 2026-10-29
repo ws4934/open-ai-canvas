@@ -66,6 +66,43 @@ func (a manifestAdapter) BuildCreate(_ context.Context, c RequestContext) (Reque
 	if err != nil {
 		return RequestSpec{}, err
 	}
+	modelInputs := request.ModelInputConfig
+	schema := a.manifest.Metadata.InputSchema
+	if modelInputs == nil && schema != nil {
+		modelInputs = schema.SuggestedConfig(request.Model)
+		if selected, _ := request.ProviderOptions[a.manifest.Metadata.ID]["modelProfile"].(string); selected != "" && selected != "custom" {
+			found := false
+			for _, template := range schema.Templates {
+				if template.ID == selected {
+					if suggested := schema.SuggestedConfig(request.Model); suggested != nil {
+						for _, known := range schema.Templates {
+							for _, name := range known.Models {
+								if name == request.Model && known.ID != selected {
+									return RequestSpec{}, fmt.Errorf("模型与所选能力模板不匹配")
+								}
+							}
+						}
+					}
+					modelInputs = cloneInputConfig(&template.Config)
+					found = true
+				}
+			}
+			if !found {
+				return RequestSpec{}, fmt.Errorf("未知模型能力模板 %s", selected)
+			}
+		}
+	}
+	if modelInputs != nil {
+		resolved, err := ResolveModelInputs(schema, modelInputs)
+		if err != nil {
+			return RequestSpec{}, err
+		}
+		request.ModelInputConfig = resolved
+		request, err = ApplyModelInputs(request, resolved)
+		if err != nil {
+			return RequestSpec{}, err
+		}
+	}
 	if err := validateManifestRequest(a.manifest.Validations, request); err != nil {
 		return RequestSpec{}, err
 	}

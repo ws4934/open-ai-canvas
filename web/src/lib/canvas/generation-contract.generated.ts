@@ -8,6 +8,8 @@ export type Options = {
     size?: string;
     imageResolution?: string;
     imageParameters?: string;
+    inputParameters?: string;
+    inputMediaRoles?: string;
     quality?: string;
     count?: number;
     transparentBackground?: boolean;
@@ -72,6 +74,24 @@ export const GENERATION_OPTION_FIELDS = [
         "name": "imageParameters",
         "node": "imageParameters",
         "task": "imageParameters"
+    },
+    {
+        "kind": "string",
+        "modes": [
+            "video"
+        ],
+        "name": "inputParameters",
+        "node": "inputParameters",
+        "task": "inputParameters"
+    },
+    {
+        "kind": "string",
+        "modes": [
+            "video"
+        ],
+        "name": "inputMediaRoles",
+        "node": "inputMediaRoles",
+        "task": "inputMediaRoles"
     },
     {
         "kind": "string",

@@ -12,10 +12,11 @@ import (
 
 // ModelCapabilityConfig 是模型能力声明，不包含供应商字段名；协议适配器负责把统一参数映射到上游请求。
 type ModelCapabilityConfig struct {
-	Version int                    `json:"version"`
-	Text    *TextCapabilityConfig  `json:"text,omitempty"`
-	Image   *ImageCapabilityConfig `json:"image,omitempty"`
-	Video   *VideoCapabilityConfig `json:"video,omitempty"`
+	Version     int                                `json:"version"`
+	InputConfig *protocolcontract.ModelInputConfig `json:"inputConfig,omitempty"`
+	Text        *TextCapabilityConfig              `json:"text,omitempty"`
+	Image       *ImageCapabilityConfig             `json:"image,omitempty"`
+	Video       *VideoCapabilityConfig             `json:"video,omitempty"`
 }
 
 type TextCapabilityConfig struct {
@@ -212,6 +213,10 @@ func NormalizeModelCapabilityConfig(capability string, protocol string, input *M
 }
 
 func NormalizeModelCapabilityConfigForModel(capability string, protocol string, modelName string, input *ModelCapabilityConfig, registries ...*protocolcontract.Registry) (*ModelCapabilityConfig, error) {
+	modelInputs, inputErr := normalizeModelInputs(protocol, input, registries)
+	if inputErr != nil {
+		return nil, inputErr
+	}
 	if capability != "text" && capability != "image" && capability != "video" {
 		return nil, nil
 	}
@@ -230,7 +235,7 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		if text.MaxOutputTokens == 0 {
 			text.MaxOutputTokens = 16384
 		}
-		value := &ModelCapabilityConfig{Version: 1, Text: &text}
+		value := &ModelCapabilityConfig{Version: 1, Text: &text, InputConfig: modelInputs}
 		if err := validateTextCapabilityConfig(value.Text); err != nil {
 			return nil, err
 		}
@@ -261,7 +266,7 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		if input.Image.Parameters == nil {
 			fillMissingImageSizePresets(input.Image, protocol)
 		}
-		value := &ModelCapabilityConfig{Version: 1, Image: input.Image}
+		value := &ModelCapabilityConfig{Version: 1, Image: input.Image, InputConfig: modelInputs}
 		if err := validateImageCapabilityConfig(value.Image); err != nil {
 			return nil, err
 		}
@@ -271,6 +276,7 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		return nil, BadAuthRequest("请配置视频模型能力参数")
 	}
 	video := applyModelSpecificVideoCapability(input.Video, protocol, modelName)
+	projectVideoModelInputs(video, modelInputs)
 	if strings.TrimSpace(protocol) == "autodl-comfyui" {
 		var err error
 		video, err = normalizeAutoDLVideoScreenSpec(video, modelName)
@@ -278,7 +284,7 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 			return nil, err
 		}
 	}
-	value := &ModelCapabilityConfig{Version: 1, Video: video}
+	value := &ModelCapabilityConfig{Version: 1, Video: video, InputConfig: modelInputs}
 	if err := validateVideoCapabilityConfig(value.Video); err != nil {
 		return nil, err
 	}
@@ -493,6 +499,14 @@ func CapabilitySpecFromModelCapabilityConfig(config *ModelCapabilityConfig, capa
 		}
 	default:
 		return spec, BadAuthRequest("未知模型能力类型")
+	}
+	if config.InputConfig != nil {
+		spec.InputConfig = config.InputConfig
+		for _, field := range config.InputConfig.Fields {
+			if field.IsEnabled() && field.Pricing && field.Type != "object[]" && field.Type != "string[]" {
+				spec.Options[field.Name] = OptionConstraint{Values: field.Values, Min: field.Min, Max: field.Max, Step: field.Step}
+			}
+		}
 	}
 	return spec, nil
 }

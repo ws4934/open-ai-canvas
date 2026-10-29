@@ -78,6 +78,12 @@ func cloudAgentMediaOptions(a cloudAgentMediaArgs) contract.Options {
 			options.DurationSeconds = &a.Duration
 		}
 		options.GenerateAudio = a.VideoGenerateAudio
+		if a.InputParameters != "" {
+			options.InputParameters = &a.InputParameters
+		}
+		if a.InputMediaRoles != "" {
+			options.InputMediaRoles = &a.InputMediaRoles
+		}
 		options.Watermark = a.VideoWatermark
 		if a.Quality != "" {
 			options.Resolution = &a.Quality

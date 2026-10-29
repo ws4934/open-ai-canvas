@@ -209,7 +209,7 @@ func DefaultModelCapabilityConfigForModel(protocol string, modelName string) *Mo
 			video.References.MaxImages = 1
 			video.Resolutions = append(video.Resolutions, "1080p")
 			video.Operations = []string{"text_to_video", "image_to_video"}
-		default:
+		case "grok-imagine-video":
 			video.References.MaxVideos, video.References.MaxVideoBytes, video.References.MaxVideoDuration = 1, 200*1024*1024, 15
 			video.Operations = append(video.Operations, "extend", "inpaint", "replace_element", "camera_motion", "style_transfer")
 		}

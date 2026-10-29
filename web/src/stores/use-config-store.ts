@@ -118,6 +118,8 @@ export type ModelChannel = {
 };
 
 export type AiConfig = {
+    inputParameters?: string;
+    inputMediaRoles?: string;
     channelMode: "remote";
     baseUrl: string;
     apiKey: string;

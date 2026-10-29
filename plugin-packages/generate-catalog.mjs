@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { xaiVideoInputSchema } from "./schemas/xai-video.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const scopes = ["admin.system-channel", "user.custom-channel", "canvas", "creation", "agent"];
@@ -752,11 +753,6 @@ add({
   const not = (value) => ({ $not: value });
   const contains = (value, values) => ({ $in: [value, values] });
   const options = "request.providerOptions.xai-video";
-  // 精确识别官方 ID；网关别名由调用方显式选 profile，不按“1.5”前缀误放开 Lite。
-  const officialProfile = conditional(eq(ref("request.model"), "grok-imagine-video-1.5"), "video-1.5", conditional(eq(ref("request.model"), "grok-imagine-video-1.5-lite"), "video-1.5-lite", "video"));
-  const profile = coalesce(ref(`${options}.modelProfile`), officialProfile);
-  const full = eq(profile, "video-1.5");
-  const legacy = eq(profile, "video");
   const firstFrames = mediaWithRoles("request.images", ["first_frame"]);
   const lastFrames = mediaWithRoles("request.images", ["last_frame"]);
   const explicitReferences = mediaWithRoles("request.images", ["reference_image", "subject_reference", "style_reference"]);
@@ -765,71 +761,46 @@ add({
   const firstImage = coalesce(first(firstFrames), conditional(autoFirst, first(unmarked)));
   const references = sorted({ $concatArrays: [explicitReferences, filter(unmarked, "candidate", or(not(autoFirst), gt(ref("candidateIndex"), 0)))] });
   const voices = ref(`${options}.reference_audios`);
-  const keyframes = ref(`${options}.keyframes`);
+  const keyframes = { $concatArrays: [ref(`${options}.keyframes`), map(mediaWithRoles("request.images", ["keyframe"]), "frame", { image: { url: ref("frame.value") }, timestamp_s: ref("frame.metadata.timestamp_s") })] };
   const advanced = or(gt(len(references), 0), gt(len(lastFrames), 0), gt(len(voices), 0), gt(len(keyframes), 0));
-  const hasVideo = gt(len(ref("request.videos")), 0);
   const extension = eq(ref("request.operation"), "extend");
-  const sourceMode = or(hasVideo, extension, contains(ref("request.operation"), ["edit", "video_to_video", "inpaint", "replace_element", "camera_motion", "style_transfer"]));
+  const sourceMode = or(gt(len(ref("request.videos")), 0), extension, contains(ref("request.operation"), ["edit", "video_to_video", "inpaint", "replace_element", "camera_motion", "style_transfer"]));
   const duration = conditional(ne(ref("request.duration"), 0), ref("request.duration"), conditional(extension, 6, 8));
-  const resolution = coalesce(ref("request.resolution"), "720p");
-  const sourceMs = ref("request.videos.0.metadata.durationMs");
-  const mediaObject = (image) => ({ url: ref(`${image}.value`) });
   const pinURL = gt(len(trim(ref("frame.image.url"))), 0);
   const pinFile = gt(len(trim(ref("frame.image.file_id"))), 0);
-  const validPin = and(or(pinURL, pinFile), not(and(pinURL, pinFile)));
-  // 时间戳已校验为正数，使用现有运算按最近的 1/3 秒网格取整。
-  const frameSlot = (alias) => toInt(addNumbers(multiply(ref(`${alias}.timestamp_s`), 3), 0.5));
-  const duplicateSlots = filter(keyframes, "frame", gt(len(filter(keyframes, "other", eq(frameSlot("frame"), frameSlot("other")))), 1));
-  const validFrameTimes = filter(keyframes, "frame", and(validPin, gt(toFloat(ref("frame.timestamp_s")), 0), lt(toFloat(ref("frame.timestamp_s")), duration)));
-  const validVoices = filter(voices, "voice", and(gt(len(trim(ref("voice.voice_id"))), 0), not(ref("voice.url")), not(ref("voice.file_id"))));
   const responseStatus = coalesce(ref("response.status"), ref("response.state"), ref("response.data.status"), ref("response.data.state"), ref("response.task.status"), ref("response.task.state"), "pending");
   const constraint = (assert, message) => ({ assert, message });
   add({
-    id: "xai-video", providerId: "xai-video", name: "xAI Video", vendor: "xAI", capability: "video", version: "2.1.0",
+    id: "xai-video", providerId: "xai-video", name: "xAI Video", vendor: "xAI", capability: "video", version: "2.2.0", inputSchema: xaiVideoInputSchema,
     baseUrl: "https://api.x.ai", auth: bearer, requiresPublicMediaUrls: true,
-    params: videoParams.map((item) => item[0] === "prompt" ? ["prompt", "string", false, "prompt", "文生、参考及视频编辑需提示词；有首帧、尾帧或关键帧时可省略。"] : item),
+    params: videoParams.filter(item => !["audios", "generateAudio", "watermark"].includes(item[0])).map(item => item[0] === "prompt" ? ["prompt", "string", false, "prompt", "有首帧、尾帧或关键帧时可省略。"] : item),
+    // Only wire-shape invariants belong here. Model limits and combinations
+    // are evaluated from inputConfig / the explicitly selected data preset.
     validations: [
-      constraint(contains(profile, ["video", "video-1.5", "video-1.5-lite"]), "xAI modelProfile 只能是 video、video-1.5 或 video-1.5-lite"),
-      constraint(or(not(contains(ref("request.model"), ["grok-imagine-video", "grok-imagine-video-1.5", "grok-imagine-video-1.5-lite"])), eq(profile, officialProfile)), "xAI 官方模型与显式 modelProfile 不匹配"),
       constraint(lte(len(firstFrames), 1), "xAI Video 最多支持一个首帧"),
       constraint(lte(len(lastFrames), 1), "xAI Video 最多支持一个尾帧"),
-      constraint(eq(len(filter(ref("request.images"), "media", not(contains(ref("media.role"), ["", "first_frame", "last_frame", "reference_image", "subject_reference", "style_reference"])))), 0), "xAI Video 收到了不支持的图片角色"),
+      constraint(eq(len(filter(ref("request.images"), "media", not(contains(ref("media.role"), ["", "first_frame", "last_frame", "keyframe", "reference_image", "subject_reference", "style_reference"])))), 0), "xAI Video 收到了不支持的图片角色"),
       constraint(eq(len(filter(ref("request.images"), "media", gt(len(trim(ref("media.value"))), 0))), len(ref("request.images"))), "xAI 图片输入不能为空"),
-      constraint(or(full, eq(len(lastFrames), 0)), "尾帧需要完整的 Video 1.5 模型"),
-      constraint(or(full, eq(len(keyframes), 0)), "关键帧需要完整的 Video 1.5 模型"),
-      constraint(or(full, eq(len(voices), 0)), "预设音色需要完整的 Video 1.5 模型"),
-      constraint(or(not(legacy), not(and(firstImage, gt(len(references), 0)))), "旧版 xAI Video 不能同时混用起始帧和角色参考图，请改用 Video 1.5"),
-      constraint(lte(len(references), conditional(full, 14, conditional(legacy, 7, 0))), "xAI Video 1.5 最多 14 张参考图，旧版最多 7 张，Lite 不支持参考图"),
-      constraint(eq(len(ref("request.audios")), 0), "xAI 公共视频接口不接收参考音频文件；Video 1.5 请用 reference_audios 的预设 voice_id"),
-      constraint(lte(len(voices), 3), "Video 1.5 最多使用 3 个预设音色"),
-      constraint(eq(len(validVoices), len(voices)), "reference_audios 仅支持非空 voice_id；自有音频文件需要 xAI 额外授权"),
-      constraint(lte(len(keyframes), 4), "Video 1.5 最多使用 4 个中间关键帧"),
-      constraint(eq(len(validFrameTimes), len(keyframes)), "每个关键帧需 image.url 或 image.file_id，timestamp_s 必须大于 0 且小于视频时长"),
-      constraint(eq(len(duplicateSlots), 0), "关键帧不能落在同一个 1/3 秒时间网格内"),
-      constraint(or(sourceMode, and(gte(duration, 1), lte(duration, conditional(and(legacy, advanced), 10, 15)))), "xAI 视频生成时长为 1–15 秒，旧版参考图模式最多 10 秒"),
-      constraint(or(sourceMode, contains(resolution, conditional(legacy, ["480p", "720p"], ["480p", "720p", "1080p"]))), "所选 xAI 模型不支持该清晰度；旧版不支持 1080p"),
-      constraint(or(sourceMode, not(advanced), ne(resolution, "1080p")), "参考图、音色、尾帧或关键帧模式最高 720p，请调整清晰度"),
-      constraint(or(sourceMode, not(ref("request.aspectRatio")), contains(ref("request.aspectRatio"), ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9", "5:2"])), "xAI Video 不支持所选画幅"),
-      constraint(or(not(sourceMode), legacy), "视频编辑和延长仅旧版 grok-imagine-video 支持，Video 1.5 不支持"),
+      constraint(eq(len(ref("request.audios")), 0), "xAI 公共视频接口不接收音频文件；请使用预设 voice_id"),
+      constraint(eq(len(filter(voices, "voice", and(gt(len(trim(ref("voice.voice_id"))), 0), not(ref("voice.url")), not(ref("voice.file_id"))))), len(voices)), "reference_audios 仅支持非空 voice_id"),
+      constraint(eq(len(filter(keyframes, "frame", and(or(pinURL, pinFile), not(and(pinURL, pinFile)), gt(toFloat(ref("frame.timestamp_s")), 0), lt(toFloat(ref("frame.timestamp_s")), duration)))), len(keyframes)), "每个关键帧需 image.url 或 image.file_id，timestamp_s 必须大于 0 且小于视频时长"),
       constraint(or(not(sourceMode), eq(len(ref("request.videos")), 1)), "编辑或延长需且仅需一个源视频"),
       constraint(or(not(sourceMode), gt(len(trim(first(map(ref("request.videos"), "media", ref("media.value"))))), 0)), "xAI 源视频输入不能为空"),
       constraint(or(not(sourceMode), and(eq(len(ref("request.images")), 0), eq(len(voices), 0), eq(len(keyframes), 0))), "视频编辑和延长不能混入图片、音色或关键帧"),
       constraint(or(not(sourceMode), not(ref("request.operation")), contains(ref("request.operation"), ["extend", "edit", "video_to_video", "inpaint", "replace_element", "camera_motion", "style_transfer"])), "源视频需选择编辑或延长操作"),
-      constraint(or(not(extension), and(gte(duration, 2), lte(duration, 10))), "视频延长的新增时长为 2–10 秒，不是总时长"),
-      constraint(or(not(sourceMode), not(sourceMs), conditional(extension, and(gte(sourceMs, 2000), lte(sourceMs, 15000)), lte(sourceMs, 8700))), "编辑源视频最多 8.7 秒，延长源视频需 2–15 秒"),
       constraint(or(gt(len(trim(ref("request.prompt"))), 0), and(not(sourceMode), or(firstImage, gt(len(lastFrames), 0), gt(len(keyframes), 0)))), "请填写视频提示词，或提供首帧、尾帧或关键帧"),
     ],
     create: jsonCreate("/v1/videos/generations", {
       model: ref("request.model"), prompt: omit(trim(ref("request.prompt"))),
       duration: conditional(or(not(sourceMode), extension), duration),
       aspect_ratio: conditional(and(not(sourceMode), or(not(firstImage), advanced)), coalesce(ref("request.aspectRatio"), "16:9")),
-      resolution: conditional(not(sourceMode), resolution),
+      resolution: conditional(not(sourceMode), coalesce(ref("request.resolution"), "720p")),
       image: conditional(firstImage, { url: first(map([firstImage], "image", ref("image.value"))) }),
       last_frame: conditional(gt(len(lastFrames), 0), { url: firstMediaFieldWithRoles("request.images", ["last_frame"], "value") }),
-      reference_images: omit(map(references, "media", mediaObject("media"))),
+      reference_images: omit(map(references, "media", { url: ref("media.value") })),
       reference_audios: omit(map(voices, "voice", { voice_id: lower(trim(ref("voice.voice_id"))) })),
       keyframes: omit(map(keyframes, "frame", { image: { url: omit(ref("frame.image.url")), file_id: omit(ref("frame.image.file_id")) }, timestamp_s: toFloat(ref("frame.timestamp_s")) })),
-      video: conditional(sourceMode, { url: { $first: map(ref("request.videos"), "media", ref("media.value")) } }),
+      video: conditional(sourceMode, { url: first(map(ref("request.videos"), "media", ref("media.value"))) }),
     }, { pathTemplate: conditional(sourceMode, conditional(extension, "/v1/videos/extensions", "/v1/videos/edits"), "/v1/videos/generations") }),
     poll: { method: "GET", path: "/v1/videos/{{taskId}}" },
     response: asyncResponse("video", {
@@ -838,7 +809,7 @@ add({
       status: conditional(eq(lower(responseStatus), "expired"), "failed", responseStatus),
       message: coalesce(ref("response.error.message"), ref("response.message"), ref("response.fail_reason"), conditional(eq(lower(responseStatus), "expired"), "xAI 视频任务已过期，请重新生成")),
     }),
-    notes: `支持官方 grok-imagine-video 与 grok-imagine-video-1.5，并明确区分只支持基础生成的 1.5-lite。新视频建议完整 1.5；编辑、延长已有视频使用旧版。官方 ID 精确识别，网关模型别名可在 metadata.providerOptions["xai-video"].modelProfile 显式选择 video / video-1.5 / video-1.5-lite，不按名称前缀推断。\n\n普通生成默认 8 秒，范围 1–15 秒；旧版参考模式最多 7 图、10 秒，完整 1.5 参考模式最多 14 图、15 秒。完整 1.5 可同时携带首帧、14 张参考图、一个尾帧和最多 4 个关键帧。基础文生或仅首帧的 1.5 可用原生 1080p；其他参考与定帧模式最高 720p，不静默降档。图生画幅跟随首帧，基础首帧请求不发送无效的 aspect_ratio。未标记图片在图生模式下首张作首帧、其余作参考图；参考模式全部作参考图；图片不会被截断。\n\n扩展字段放在 metadata.providerOptions["xai-video"]：reference_audios 为最多 3 个 {"voice_id":"eve"}，只支持官方预设音色；keyframes 为最多 4 个 {"image":{"url":"https://..."},"timestamp_s":2.0}，image 也支持 file_id。时间必须在 (0,duration) 内，不能落在同一个 1/3 秒网格。图片与音色在提示词用 <IMAGE_0> / <AUDIO_0> 指定；同时提供首帧时首帧占 <IMAGE_0>，参考图从 <IMAGE_1> 开始。\n\n视频操作复用 metadata.videoEditOperation：extend 调用 /v1/videos/extensions，新增部分 2–10 秒、缺省 6 秒；inpaint / replace_element / camera_motion / style_transfer 调用 /v1/videos/edits。标准 videos 传一个源视频，已知 durationMs 时分别校验编辑最多 8.7 秒、延长 2–15 秒。没有探测时长的外部源仍由上游校验，不在插件中虚构时长。编辑不发 duration；两种源视频操作均不发 aspect_ratio / resolution，输出沿用源视频并受上游 720p 上限约束。\n\nxAI 原生生成音轨，不支持通用 generate_audio / watermark 字段，插件不发送这两个不存在的开关。完整 1.5 支持对口型与预设音色；自有音频音色需官方额外权限，普通参考音频文件明确拒绝。不会按官方美元报价改写站点运营计价。\n\n官方文档：[能力总表](https://docs.x.ai/developers/model-capabilities/video/overview)、[参考图、音色与定帧](https://docs.x.ai/developers/model-capabilities/video/reference-to-video)、[生成参数](https://docs.x.ai/developers/model-capabilities/video/generation)、[视频编辑](https://docs.x.ai/developers/model-capabilities/video/editing)、[视频延长](https://docs.x.ai/developers/model-capabilities/video/extension)。`,
+    notes: "inputSchema 声明协议字段、素材角色与可选能力模板。旧版、Video 1.5 和 Lite 是可编辑的配置预设，不是型号白名单。新增同协议型号可以选择模板并调整数量、时长、清晰度与组合规则，不需要修改宿主或插件。已保存模型以自身 inputConfig 为准；没有配置的已知型号可使用包内推荐模板，未知型号不会被归类为旧版。协议只负责创建、轮询、字段编码及结构校验。\n\n预设音色用 reference_audios 的 voice_id；关键帧可用 keyframe 图片角色和 inputFields.timestamp_s，也保留 providerOptions.xai-video.keyframes 的原生输入。所有媒体使用原资源归属、上传与持久化链路。模板与能力配置不修改运营价格。\n\n官方资料：[参考与定帧](https://docs.x.ai/developers/model-capabilities/video/reference-to-video)、[生成](https://docs.x.ai/developers/model-capabilities/video/generation)、[编辑](https://docs.x.ai/developers/model-capabilities/video/editing)、[延长](https://docs.x.ai/developers/model-capabilities/video/extension)。",
   });
 }
 
@@ -1435,6 +1406,7 @@ function manifestFor(spec) {
         requiresPublicMediaUrls: spec.requiresPublicMediaUrls === true,
         auth: spec.auth,
         ...(spec.imageParameters ? { imageParameters: spec.imageParameters } : {}),
+        ...(spec.inputSchema ? { inputSchema: spec.inputSchema } : {}),
         parameters: parameters(spec.params),
         ...(spec.validations ? { validations: spec.validations } : {}),
         create: spec.create,

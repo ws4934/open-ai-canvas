@@ -1794,7 +1794,7 @@ paths:
                 mediaSettings:
                   type: object
                   additionalProperties: false
-                  description: 仅 approve 图片生成审批可传；替换本次模型、画幅和质量，重新强校验，不修改提示词、引用或目标。logicalModelId 与 channelId + channelModelKey 二选一。
+                  description: approve 图片或视频生成审批可传；替换本次模型与规格并重新预检，不修改提示词、目标或引用成员。插件参数/素材用途按实际模型校验。logicalModelId 与 channelId + channelModelKey 二选一。
                   required: [size, quality]
                   properties:
                     logicalModelId:
@@ -1807,6 +1807,26 @@ paths:
                       type: string
                     quality:
                       type: string
+                    imageResolution:
+                      type: string
+                    imageParameters:
+                      type: string
+                      description: 图片参数 JSON 对象字符串
+                    durationSeconds:
+                      type: integer
+                      minimum: 0
+                    videoGenerateAudio:
+                      type: boolean
+                    videoWatermark:
+                      type: boolean
+                    videoArkPrivateAssetUpload:
+                      type: boolean
+                    inputParameters:
+                      type: string
+                      description: 视频插件参数 JSON 对象字符串；字段来自模型 inputConfig
+                    inputMediaRoles:
+                      type: string
+                      description: 已有图片引用 ID 到 role/inputFields 的 JSON 对象字符串，不能添加引用
       responses:
         "200":
           description: 信封 data.accepted

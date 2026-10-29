@@ -35,6 +35,7 @@ func protocolRequestFromInput(input canvasGenerationInput) protocol.GenerationRe
 		aspectRatio = normalizePixelSize(aspectRatio)
 	}
 	request := protocol.GenerationRequest{
+		InputParameters: input.Config.InputParameters,
 		ImageParameters: protocolImageParameterValues(input.Config.ImageParameters),
 		Capability:      protocol.Capability(input.Mode),
 		Model:           input.Config.Model,
@@ -59,6 +60,9 @@ func protocolRequestFromInput(input canvasGenerationInput) protocol.GenerationRe
 			"audioDialect":      input.Config.AudioDialect,
 			"count":             input.Config.Count,
 		},
+	}
+	if input.Config.CapabilityConfig != nil {
+		request.ModelInputConfig = input.Config.CapabilityConfig.InputConfig
 	}
 	for _, message := range input.TextHistory {
 		role := strings.ToLower(strings.TrimSpace(message.Role))
@@ -206,10 +210,16 @@ func protocolMediaReferences(values []providerMedia, kind string) []protocol.Med
 }
 
 func protocolMediaReference(value providerMedia, kind string, order int) protocol.MediaReference {
+	metadata := map[string]any{}
+	for name, field := range value.InputFields {
+		metadata[name] = field
+	}
+	metadata["bytes"], metadata["width"], metadata["height"] = value.Bytes, value.Width, value.Height
+	metadata["durationMs"], metadata["storageKey"] = value.DurationMs, strings.TrimSpace(value.StorageKey)
 	return protocol.MediaReference{
 		ID: strings.TrimSpace(value.ID), URL: strings.TrimSpace(value.URL), DataURL: strings.TrimSpace(value.DataURL),
 		Kind: kind, MIMEType: firstNonEmpty(strings.TrimSpace(value.MimeType), strings.TrimSpace(value.Type)), Name: strings.TrimSpace(value.Name), Order: order,
-		Metadata: map[string]any{"bytes": value.Bytes, "width": value.Width, "height": value.Height, "durationMs": value.DurationMs, "storageKey": strings.TrimSpace(value.StorageKey)},
+		Metadata: metadata,
 	}
 }
 

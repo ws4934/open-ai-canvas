@@ -19,6 +19,8 @@ export function agentMediaSettings(value: AgentMediaSettings): AgentMediaSetting
         size: value.size,
         imageResolution: value.imageResolution,
         imageParameters: value.imageParameters,
+        ...(value.inputParameters === undefined ? {} : { inputParameters: value.inputParameters }),
+        ...(value.inputMediaRoles === undefined ? {} : { inputMediaRoles: value.inputMediaRoles }),
         quality: value.quality,
         durationSeconds: value.durationSeconds,
         videoGenerateAudio: value.videoGenerateAudio,
@@ -40,6 +42,8 @@ export function agentVideoApproval(detail: Record<string, unknown>): AgentVideoA
             channelModelKey: typeof args.channelModelKey === "string" ? args.channelModelKey : "",
             size: typeof args.size === "string" ? args.size : "",
             quality: typeof args.quality === "string" ? args.quality : "",
+            ...(typeof args.inputParameters === "string" ? { inputParameters: args.inputParameters } : {}),
+            ...(typeof args.inputMediaRoles === "string" ? { inputMediaRoles: args.inputMediaRoles } : {}),
             durationSeconds: typeof args.durationSeconds === "number" && args.durationSeconds > 0 ? args.durationSeconds : undefined,
             videoGenerateAudio: typeof args.videoGenerateAudio === "boolean" ? args.videoGenerateAudio : undefined,
             videoWatermark: typeof args.videoWatermark === "boolean" ? args.videoWatermark : undefined,
@@ -88,7 +92,7 @@ export function agentApprovalMatchesSettings(argumentsValue: unknown, settings: 
     const detail = { toolName: "generate_media", arguments: argumentsValue };
     const approved = agentImageApproval(detail) || agentVideoApproval(detail);
     if (!approved) return false;
-    return (["logicalModelId", "channelId", "channelModelKey", "size", "quality", "durationSeconds", "videoGenerateAudio", "videoWatermark", "videoArkPrivateAssetUpload"] as const).every((key) => {
+    return (["logicalModelId", "channelId", "channelModelKey", "size", "quality", "durationSeconds", "videoGenerateAudio", "videoWatermark", "videoArkPrivateAssetUpload", "inputParameters", "inputMediaRoles"] as const).every((key) => {
         const left = approved[key];
         const right = settings[key];
         return (left === undefined ? "" : left) === (right === undefined ? "" : right);

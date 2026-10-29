@@ -1,6 +1,7 @@
 import { ImageSizePresetsEditor } from "./image-size-presets-editor";
 import { imageSizeConfigWithPresets, imageSizePresets } from "@/lib/image-size-presets";
 import { Input, InputNumber } from "antd";
+import { ModelInputConfigEditor } from "./model-input-config-editor";
 import { Switch } from "@/components/ui/base/switch";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import type { ReactNode } from "react";
@@ -39,11 +40,13 @@ type Props = {
     model?: string;
     workflows?: ModelProtocolWorkflow[];
     imageParameters?: ImageParameter[];
+    inputSchema?: import("@/lib/model-inputs").InputSchema;
     disabled?: boolean;
     section?: "all" | "protocol" | "references";
 };
 
-export function ModelCapabilityEditor({ value, onChange, protocol, capability = "video", model = "", workflows = [], imageParameters, disabled = false, section = "all" }: Props) {
+export function ModelCapabilityEditor({ value, onChange, protocol, capability = "video", model = "", workflows = [], imageParameters, inputSchema, disabled = false, section = "all" }: Props) {
+    if (inputSchema) return <ModelInputConfigEditor schema={inputSchema} value={value || defaultModelCapabilityConfig(protocol, model)} model={model} section={section} disabled={disabled} onChange={next => onChange?.(next)} />;
     if (capability === "text") {
         return <TextCapabilityEditor value={value} onChange={onChange} protocol={protocol} disabled={disabled} section={section} />;
     }

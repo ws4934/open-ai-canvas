@@ -53,6 +53,14 @@ func validateChannelModelTierCapabilities(tiers []model.ChannelModelPriceTier, r
 	if err != nil || config == nil || config.Video == nil {
 		return BadAuthRequest("视频模型能力配置无效，无法校验价格档规格")
 	}
+	if config.InputConfig != nil {
+		for _, tier := range tiers {
+			if err := validateModelInputPriceSelector(config.InputConfig, tier.Selector); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	resolutionSupported := make(map[string]bool, len(config.Video.Resolutions))
 	for _, resolution := range config.Video.Resolutions {
 		resolutionSupported[normalizeChannelModelTierResolution(resolution)] = true
@@ -120,6 +128,9 @@ func (s *Service) normalizeChannelModelPriceTiers(req ChannelModelRequest, capab
 			parameters = req.CapabilityConfig.Image.Parameters
 		}
 		selector, resolution, videoSeconds, selectorErr := normalizeChannelModelTierSelector(capability, input, parameters)
+		if capability == "video" && req.CapabilityConfig != nil && req.CapabilityConfig.InputConfig != nil {
+			selector, resolution, videoSeconds, selectorErr = normalizeModelInputPriceSelector(req.CapabilityConfig.InputConfig, input)
+		}
 		if selectorErr != nil {
 			return nil, selectorErr
 		}

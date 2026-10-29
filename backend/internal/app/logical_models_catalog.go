@@ -5,6 +5,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -220,6 +221,18 @@ func capabilitySpecWithRoutePresets(spec CapabilitySpec, routes []CapabilitySpec
 		}
 	}
 	result := spec
+	// A form may be shared only when all active routes expose the same input
+	// contract. Never advertise one provider's media roles on another protocol.
+	result.InputConfig = nil
+	if len(routes) > 0 && routes[0].InputConfig != nil {
+		result.InputConfig = routes[0].InputConfig
+		for _, route := range routes[1:] {
+			if !reflect.DeepEqual(result.InputConfig, route.InputConfig) {
+				result.InputConfig = nil
+				break
+			}
+		}
+	}
 	result.Options = make(map[string]OptionConstraint, len(spec.Options))
 	for name, constraint := range spec.Options {
 		if !isWildcardOptionConstraint(constraint) {

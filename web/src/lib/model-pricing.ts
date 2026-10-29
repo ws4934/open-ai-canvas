@@ -130,6 +130,9 @@ function priceSelectorForRequest(capability: ModelCapability | undefined, config
             if (imageCount > 0) requested.imageCount = String(imageCount);
         } else if (requirements?.videoOperation) requested.operation = requirements.videoOperation;
         const options: Record<string, unknown> = { ...modelRequestOptions(config, "video"), ...requirements?.options, ...(requirements?.videoSeconds ? { videoSeconds: Number(requirements.videoSeconds) } : {}) };
+        for (const field of modelCapabilityConfigFor(config, config.model || config.videoModel).inputConfig?.fields || []) {
+            if (field.enabled !== false && field.pricing && options[field.name] !== undefined) requested[field.name] = String(options[field.name]);
+        }
         const resolution = normalizeTierResolution(String(options.vquality ?? ""));
         if (resolution !== "*") requested.vquality = resolution;
         const seconds = Math.max(0, Math.floor(Number(options.videoSeconds) || 0));

@@ -41,6 +41,15 @@ describe("image generation approval settings", () => {
 });
 
 describe("video generation approval settings", () => {
+    it("retains plugin parameters and detects changes to approved media roles", () => {
+        const args = { mode: "video", prompt: "镜头", inputParameters: '{"reference_audios":[{"voice_id":"eve"}]}', inputMediaRoles: '{"pin":{"role":"keyframe","inputFields":{"timestamp_s":2}}}' };
+        const approval = agentVideoApproval({ toolName: "generate_media", arguments: args })!;
+        const settings = agentMediaSettings(approval);
+        expect(settings.inputParameters).toBe(args.inputParameters);
+        expect(settings.inputMediaRoles).toBe(args.inputMediaRoles);
+        expect(agentApprovalMatchesSettings(args, settings)).toBe(true);
+        expect(agentApprovalMatchesSettings(args, { ...settings, inputMediaRoles: "{}" })).toBe(false);
+    });
     it("reads video duration and audio options", () => {
         const approval = agentVideoApproval({ toolName: "generate_media", arguments: { mode: "video", prompt: "镜头运动", size: "9:16", quality: "720p", durationSeconds: 8, videoGenerateAudio: true, channelId: "platform", channelModelKey: "seedance-test", referenceNodeIds: ["image"] } });
         expect(approval?.durationSeconds).toBe(8);

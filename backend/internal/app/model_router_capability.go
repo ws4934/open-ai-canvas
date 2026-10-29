@@ -28,6 +28,7 @@ type CapabilityImageSize struct {
 }
 
 type CapabilitySpec struct {
+	InputConfig     *protocol.ModelInputConfig  `json:"inputConfig,omitempty"`
 	ImageParameters []protocol.ImageParameter   `json:"imageParameters"`
 	Version         int                         `json:"version"`
 	Capability      string                      `json:"capability"`

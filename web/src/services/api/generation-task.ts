@@ -1,4 +1,5 @@
 import { createClientUUID } from "@/lib/client-id";
+import { inputMediaAssignments, modelInputRequest } from "@/lib/model-inputs";
 import { normalizeAudioFormatForConfig, normalizeAudioVoiceForConfig } from "@/lib/audio-generation";
 import { imageParameterRequest } from "@/lib/image-parameters";
 import { getMediaBlob } from "@/services/file-storage";
@@ -287,6 +288,8 @@ export async function prepareBackendGenerationTask(options: BackendGenerationTas
 
 function backendGenerationTaskInput(options: BackendGenerationTaskOptions, prepared: PreparedGenerationReferences): CreateTaskInput {
     const { projectId, mode, prompt, config, metadata } = options;
+    const assignments = mode === "video" ? inputMediaAssignments(config.inputMediaRoles) : {};
+    prepared = { ...prepared, referenceImages: prepared.referenceImages.map(image => ({ ...image, ...assignments[image.id] })) };
     const videoOperation = generationOperation(options);
     const workflow = resolveGenerationWorkflowExecution(config, mode);
     const logicalModelId = workflow ? "" : logicalModelIDForConfig(config);
@@ -386,6 +389,7 @@ function backendImageReference(image: ReferenceImage, override: Partial<Referenc
         ...(image.width ? { width: image.width } : {}),
         ...(image.height ? { height: image.height } : {}),
         ...(image.role ? { role: image.role } : {}),
+        ...(image.inputFields ? { inputFields: image.inputFields } : {}),
         ...(image.slotKey ? { slotKey: image.slotKey } : {}),
     };
 }
@@ -411,6 +415,8 @@ export function backendProviderConfig(config: AiConfig, mode: BackendGenerationM
     const workflow = resolveGenerationWorkflowExecution(config, mode);
     if (workflow) return workflowProviderConfig(config, requestConfig, workflow);
     const generationOptions = {
+        inputParameters: modelInputRequest(modelCapabilityConfigFor(config, config.model).inputConfig, config),
+        inputMediaRoles: config.inputMediaRoles,
         ...(mode === "image" ? { imageParameters: imageParameterRequest(modelCapabilityConfigFor(config, config.model).image!, config, true) } : {}),
         size: config.size,
         imageResolution: omittedImageQuality(config.imageResolution),
@@ -502,6 +508,8 @@ function logicalCapabilityOptions(config: AiConfig, mode: BackendGenerationMode)
     }
     const channel = resolveModelChannel(config, config.model);
     const spec = channel.modelCosts?.find((item) => item.model === modelOptionName(config.model))?.logicalCapabilitySpec;
+    const inputs = mode === "video" ? modelCapabilityConfigFor(config, config.model).inputConfig : undefined;
+    if (inputs) return Object.fromEntries(Object.entries(modelInputRequest(inputs, config) || {}).filter(([name]) => Boolean(spec?.options?.[name])));
     const candidates: Record<string, unknown> = mode === "image"
         ? { size: config.size, quality: omittedImageQuality(config.quality), transparentBackground: config.transparentBackground === "true", count: Number(config.count) }
         : mode === "video"

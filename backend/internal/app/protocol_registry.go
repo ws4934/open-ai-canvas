@@ -28,6 +28,7 @@ type PluginProviderCatalogItem struct {
 	UnavailableReason string                      `json:"unavailableReason,omitempty"`
 	Parameters        []protocol.Parameter        `json:"parameters,omitempty"`
 	ImageParameters   []protocol.ImageParameter   `json:"imageParameters,omitempty"`
+	InputSchema       *protocol.InputSchema       `json:"inputSchema,omitempty"`
 	Workflows         []protocol.ManifestWorkflow `json:"workflows,omitempty"`
 }
 
@@ -45,6 +46,7 @@ func (s *Service) PluginProviderCatalog(scope, capability string, includeUnavail
 			item := PluginProviderCatalogItem{ID: provider.ID, Version: plugin.Manifest.Version, Name: provider.Label, Vendor: plugin.Manifest.Author, Categories: provider.Capabilities, Scopes: provider.Scopes, BaseURL: provider.BaseURL, Enabled: plugin.Status == "enabled", UnavailableReason: plugin.Error, Parameters: provider.Parameters, Workflows: workflowsForProvider(plugin.Manifest.Contributes.Workflows, provider.ID)}
 			item.Create, item.Poll, item.ContentType = operationSummary(provider.Create), operationSummaryPtr(provider.Poll), provider.Create.ContentType
 			item.ImageParameters = provider.ImageParameters
+			item.InputSchema = provider.InputSchema
 			item.Kind = provider.Kind
 			// The registry metadata is the canonical provider projection. This keeps
 			// host-backed dispatch paths out of every user-facing catalog consumer.

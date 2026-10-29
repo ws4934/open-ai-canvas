@@ -10,6 +10,7 @@ import { priceCurrencyUnit } from "@/services/api/user-groups";
 import { Select } from "@/components/ui/base/select";
 import { ImageParameterInput } from "@/components/image-parameter-fields";
 import { imageResolutionTiers } from "@/lib/image-size-presets";
+import type { ImageParameter } from "@/lib/image-parameters";
 // 价格档分辨率按后端保存口径（2k→1440p、4k→2160p）取值，已存档位才能正确回显。
 import { normalizeTierResolution } from "@/lib/model-pricing";
 
@@ -117,11 +118,19 @@ export function PriceTierFields({
                                 <Form.Item className="mb-0" name={[index, "operation"]} label="生成方式" rules={[{ required: true, message: "请选择生成方式" }]}>
                                     <Select options={operationOptions(capability)} />
                                 </Form.Item>
-                                {isVideo ? (
+                                {isVideo && !capabilityConfig?.inputConfig ? (
                                     <Form.Item className="mb-0" name={[index, "resolution"]} label="分辨率" rules={[{ required: true, message: "请选择分辨率" }]}>
                                         <Select options={[{ label: "任意分辨率", value: "*" }, ...resolutionOptions.map((value) => ({ label: value.toUpperCase(), value: normalizeTierResolution(value) }))]} />
                                     </Form.Item>
                                 ) : null}
+                                {isVideo &&
+                                    capabilityConfig?.inputConfig?.fields
+                                        .filter((field) => field.enabled !== false && field.pricing && field.type !== "object[]" && field.type !== "string[]")
+                                        .map((field) => (
+                                            <Form.Item key={field.name} className="mb-0" name={[index, "imageSelector", field.name]} label={field.label}>
+                                                <ImagePriceParameterInput field={field as ImageParameter} />
+                                            </Form.Item>
+                                        ))}
                                 {isVideo && video?.processing ? (
                                     <Form.Item className="mb-0" name={[index, "fpsBand"]} label="输出帧率档" tooltip="视频处理按输出帧率分档计价；保持原帧率时按 ≤30fps 档预扣">
                                         <Select options={fpsBandOptions} />

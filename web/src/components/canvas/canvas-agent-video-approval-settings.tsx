@@ -47,16 +47,18 @@ export function CanvasAgentVideoApprovalSettings({ initial, value, theme, disabl
         });
     };
 
-    const changeOption = (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoArkPrivateAssetUpload", next: string) => {
+    const changeOptions = (patch: Record<string, string>) => {
         if (disabled) return;
         const nextSettings: AgentMediaSettings = {
             ...settings,
-            size: key === "size" ? next : settings.size,
-            quality: key === "vquality" ? next : settings.quality,
-            durationSeconds: key === "videoSeconds" ? Number(next) : settings.durationSeconds,
-            videoGenerateAudio: key === "videoGenerateAudio" ? next === "true" : settings.videoGenerateAudio,
-            videoWatermark: key === "videoWatermark" ? next === "true" : settings.videoWatermark,
-            videoArkPrivateAssetUpload: key === "videoArkPrivateAssetUpload" ? next === "true" : settings.videoArkPrivateAssetUpload,
+            inputParameters: patch.inputParameters ?? settings.inputParameters,
+            inputMediaRoles: patch.inputMediaRoles ?? settings.inputMediaRoles,
+            size: patch.size ?? settings.size,
+            quality: patch.vquality ?? settings.quality,
+            durationSeconds: patch.videoSeconds === undefined ? settings.durationSeconds : Number(patch.videoSeconds),
+            videoGenerateAudio: patch.videoGenerateAudio === undefined ? settings.videoGenerateAudio : patch.videoGenerateAudio === "true",
+            videoWatermark: patch.videoWatermark === undefined ? settings.videoWatermark : patch.videoWatermark === "true",
+            videoArkPrivateAssetUpload: patch.videoArkPrivateAssetUpload === undefined ? settings.videoArkPrivateAssetUpload : patch.videoArkPrivateAssetUpload === "true",
         };
         const selected = resolveCompatibleModel(config, model, {
             ...requirements,
@@ -85,8 +87,21 @@ export function CanvasAgentVideoApprovalSettings({ initial, value, theme, disabl
             </div>
             {model ? (
                 <VideoSettingsPanel
-                    config={{ ...config, model, size: settings.size, videoSeconds: duration, vquality: settings.quality, videoGenerateAudio: audio, videoWatermark: watermark, videoArkPrivateAssetUpload: privateAssetUpload }}
-                    onConfigChange={changeOption}
+                    config={{
+                        ...config,
+                        model,
+                        inputParameters: settings.inputParameters,
+                        inputMediaRoles: settings.inputMediaRoles,
+                        size: settings.size,
+                        videoSeconds: duration,
+                        vquality: settings.quality,
+                        videoGenerateAudio: audio,
+                        videoWatermark: watermark,
+                        videoArkPrivateAssetUpload: privateAssetUpload,
+                    }}
+                    onConfigChange={(key, value) => changeOptions({ [key]: value })}
+                    onConfigPatch={changeOptions}
+                    media={initial.referenceNodeIds.map((id, index) => ({ id, kind: "image", label: `参考图 ${index + 1}` }))}
                     theme={theme}
                     showTitle={false}
                     className="min-w-0 space-y-3"

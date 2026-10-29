@@ -15,15 +15,21 @@ Authorization: Bearer <XAI_API_KEY>
 Content-Type: application/json
 ```
 
-## 模型决定可用素材与清晰度
+## 模型配置与后续型号
+
+插件的 `inputSchema` 定义字段类型、请求映射、素材角色和逐项参数；渠道模型的 `capabilityConfig.inputConfig` 保存支持值、默认值、数量、时长及组合限制。后台「能力与参数」可应用插件模板或创建自定义配置，再按供应商实际能力调整。应用模板只修改当前模型能力，不修改价格；保存前检查已有价格档是否覆盖新规格。
+
+`Video`、`Video 1.5`、`Lite` 是可编辑模板，模板里的模型 ID 只用于推荐，不是白名单。同协议的新型号只需填写模型 ID，选接近的模板并调整参数；时长、参考数量、分辨率不被旧模板锁死。未知型号不会默认当作旧版。只有字段或报文格式变化时才更新插件；已有模型不会因插件升级自动换模板。
+
+## 随包模板的素材与清晰度
 
 两代普通生成均为 1–15 秒，未指定时为 8 秒。旧版参考模式最多 7 张图、10 秒；完整 1.5 为 14 张参考图、15 秒，并支持首帧与参考图同用、尾帧、最多 4 个中间关键帧和 3 个预设音色。
 
 完整 1.5 的基础文生及仅首帧图生可使用原生 1080p；参考图、音色、尾帧或关键帧模式最高 720p。插件明确拒绝无效组合，不截断素材、不降清晰度、不改选模型。纯首帧模式沿用图片画幅，不发送无效的 `aspect_ratio`；其他生成支持官方九种比例。
 
-`grok-imagine-video-1.5-lite` 仅支持基础文生、首帧，不具备完整 1.5 的参考与定帧能力。官方 ID 精确匹配；网关别名可通过 `metadata.providerOptions["xai-video"].modelProfile` 指定 `video`、`video-1.5` 或 `video-1.5-lite`。
+`grok-imagine-video-1.5-lite` 模板仅开放基础文生、首帧。API 直调也可通过 `metadata.providerOptions["xai-video"].modelProfile` 选择包内模板；应用内以已保存的模型配置为准。
 
-默认能力配置与协议一致。总图片槽包含首尾帧，完整 1.5 为 16；参考图自身仍最多 14 张，由插件分别校验。已保存的管理员能力配置保持原值；需要使用更高上限时在模型配置中重置默认能力并检查后保存。站点价格不随官方美元报价自动改动。
+总图片槽包含首帧、尾帧、参考图和关键帧；完整 1.5 模板为 20 个，参考图自身最多 14 张。按角色分别校验，不以总槽数代替各角色上限。站点价格不随官方美元报价自动改动。
 
 ## 参数与字段映射
 
@@ -31,7 +37,11 @@ Content-Type: application/json
 
 首帧为 `image`，尾帧为 `last_frame`，角色、场景等参考图为 `reference_images`。图生模式的未标记图片按首张为首帧、其余为参考图处理；参考模式全部作为参考图，不丢弃多余输入。
 
-音色和关键帧通过统一任务 API 的 `metadata.providerOptions` 传入，保持 xAI 原生字段名：
+视频工作台和画布视频设置按模型配置显示参考音色；选择图片的「关键帧」用途后填写时间点。模型的 720p 等组合规则在表单联动提示，提交时服务端再次验证，参数不静默截断或降级。
+
+工作台 API 使用 `parameters.inputParameters.reference_audios`，素材项使用 `role=keyframe` 与 `inputFields.timestamp_s`。画布任务使用 `config.inputParameters`，素材仍在原 `referenceImages` 列表中；画布与 Agent 审批使用 JSON 字符串 `inputMediaRoles`，按已有引用 ID 指定用途，不能借此添加新资源。所有引用仍走归属、上传与持久化检查。
+
+原生接口参数也可通过统一任务 API 的 `metadata.providerOptions` 传入：
 
 ```json
 {

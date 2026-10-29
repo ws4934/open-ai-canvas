@@ -77,6 +77,8 @@ type providerConfig struct {
 	Quality               string                 `json:"quality"`
 	ImageResolution       string                 `json:"imageResolution"`
 	ImageParameters       map[string]any         `json:"imageParameters,omitempty"`
+	InputParameters       map[string]any         `json:"inputParameters,omitempty"`
+	InputMediaRoles       string                 `json:"inputMediaRoles,omitempty"`
 	TransparentBackground string                 `json:"transparentBackground"`
 	Count                 string                 `json:"count"`
 	VideoSeconds          string                 `json:"videoSeconds"`
@@ -108,19 +110,20 @@ const videoPollTimeout = time.Hour
 const maxProviderResponseBytes int64 = 64 << 20
 
 type providerMedia struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Type       string `json:"type"`
-	DataURL    string `json:"dataUrl"`
-	URL        string `json:"url"`
-	StorageKey string `json:"storageKey"`
-	Role       string `json:"role,omitempty"`
-	SlotKey    string `json:"slotKey,omitempty"`
-	MimeType   string `json:"mimeType"`
-	Bytes      int64  `json:"bytes"`
-	Width      int    `json:"width"`
-	Height     int    `json:"height"`
-	DurationMs int64  `json:"durationMs"`
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Type        string         `json:"type"`
+	DataURL     string         `json:"dataUrl"`
+	URL         string         `json:"url"`
+	StorageKey  string         `json:"storageKey"`
+	Role        string         `json:"role,omitempty"`
+	SlotKey     string         `json:"slotKey,omitempty"`
+	InputFields map[string]any `json:"inputFields,omitempty"`
+	MimeType    string         `json:"mimeType"`
+	Bytes       int64          `json:"bytes"`
+	Width       int            `json:"width"`
+	Height      int            `json:"height"`
+	DurationMs  int64          `json:"durationMs"`
 }
 
 type imageResponse struct {

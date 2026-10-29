@@ -322,7 +322,7 @@ func (s *Service) ValidateTaskCapability(input map[string]any) error {
 			}
 			profile = DefaultModelCapabilityConfigForModel(taskInput.Config.InterfaceType, taskInput.Config.Model)
 		}
-		normalized, normalizeErr := NormalizeModelCapabilityConfigForModel("video", taskInput.Config.InterfaceType, taskInput.Config.Model, profile)
+		normalized, normalizeErr := NormalizeModelCapabilityConfigForModel("video", taskInput.Config.InterfaceType, taskInput.Config.Model, profile, s.protocolRegistry())
 		if normalizeErr != nil || normalized == nil || normalized.Video == nil {
 			return BadAuthRequest("当前视频模型能力参数无效")
 		}
@@ -330,6 +330,10 @@ func (s *Service) ValidateTaskCapability(input map[string]any) error {
 		if config, ok := input["config"].(map[string]any); ok {
 			config["size"], config["vquality"] = taskInput.Config.Size, taskInput.Config.VQuality
 		}
+		if err := applyTaskModelInputs(input, normalized); err != nil {
+			return err
+		}
+		taskInput.Config.CapabilityConfig = normalized
 		return validateVideoTask(normalized.Video, taskInput)
 	}
 	item, err := s.repo.ChannelModelByKey(channelID, providerChannelModelKey(taskInput.Config))
@@ -359,7 +363,7 @@ func (s *Service) ValidateTaskCapability(input map[string]any) error {
 	if err != nil || profile == nil || profile.Video == nil {
 		return BadAuthRequest("当前视频模型尚未配置能力参数")
 	}
-	normalized, normalizeErr := NormalizeModelCapabilityConfigForModel("video", string(item.Protocol), firstNonEmpty(item.ProviderModelKey, item.ModelKey), profile)
+	normalized, normalizeErr := NormalizeModelCapabilityConfigForModel("video", string(item.Protocol), firstNonEmpty(item.ProviderModelKey, item.ModelKey), profile, s.protocolRegistry())
 	if normalizeErr != nil || normalized == nil || normalized.Video == nil {
 		return BadAuthRequest("当前视频模型能力参数无效")
 	}
@@ -369,6 +373,10 @@ func (s *Service) ValidateTaskCapability(input map[string]any) error {
 		config["size"] = taskInput.Config.Size
 		config["vquality"] = taskInput.Config.VQuality
 	}
+	if err := applyTaskModelInputs(input, normalized); err != nil {
+		return err
+	}
+	taskInput.Config.CapabilityConfig = normalized
 	return validateVideoTask(normalized.Video, taskInput)
 }
 
@@ -426,6 +434,9 @@ func validateVideoTask(profile *VideoCapabilityConfig, input canvasGenerationInp
 		if profile.References.MaxAudioDuration > 0 && media.DurationMs > int64(profile.References.MaxAudioDuration)*1000 {
 			return newModelCapabilityArgumentError("referenceNodeIds", "unsupported_value", BadAuthRequest("参考音频时长超过当前模型限制"))
 		}
+	}
+	if input.Config.CapabilityConfig != nil && input.Config.CapabilityConfig.InputConfig != nil {
+		return nil
 	}
 	seconds, err := strconv.Atoi(strings.TrimSpace(input.Config.VideoSeconds))
 	if err != nil || !videoDurationAllowed(profile.Duration, seconds) {

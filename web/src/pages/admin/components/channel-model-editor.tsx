@@ -383,6 +383,7 @@ export function ChannelModelEditor({
                                                     protocol={form.getFieldValue("protocol")}
                                                     section="references"
                                                     imageParameters={protocols.find((item) => item.value === modelProtocol)?.imageParameters}
+                                                    inputSchema={protocols.find((item) => item.value === modelProtocol)?.inputSchema}
                                                     workflows={protocols.find((item) => item.value === modelProtocol)?.workflows}
                                                     value={capabilityConfig}
                                                     onChange={(next) => {
@@ -393,7 +394,7 @@ export function ChannelModelEditor({
                                             </div>
                                         </section>
                                     ) : null}
-                                    {modelCapability === "text" || modelCapability === "image" || modelCapability === "video" ? (
+                                    {(modelCapability === "text" || modelCapability === "image" || modelCapability === "video") && (!protocols.find((item) => item.value === modelProtocol)?.inputSchema || capabilityConfig?.inputConfig) ? (
                                         <section className="admin-model-editor-section admin-model-editor-section-stacked admin-model-editor-parameters">
                                             <SectionHeading title="协议参数" description="配置可发送参数、支持值与默认值；仅影响当前模型。" />
                                             <div className="admin-model-editor-section-content">
@@ -403,6 +404,7 @@ export function ChannelModelEditor({
                                                     protocol={form.getFieldValue("protocol")}
                                                     section="protocol"
                                                     imageParameters={protocols.find((item) => item.value === modelProtocol)?.imageParameters}
+                                                    inputSchema={protocols.find((item) => item.value === modelProtocol)?.inputSchema}
                                                     workflows={protocols.find((item) => item.value === modelProtocol)?.workflows}
                                                     value={capabilityConfig}
                                                     onChange={(next) => {

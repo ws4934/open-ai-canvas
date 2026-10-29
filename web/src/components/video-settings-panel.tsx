@@ -1,5 +1,7 @@
 import { type ReactNode } from "react";
 import { Switch } from "@/components/ui/base/switch";
+import { ModelInputFields, ModelInputMediaAssignments } from "./model-input-fields";
+import { inputHostPatch, inputMediaAssignments, inputValuesFor, type InputMedia } from "@/lib/model-inputs";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { boolConfig, isSeedanceFastModel, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceRatioOptions } from "@/lib/seedance-video";
@@ -20,13 +22,25 @@ const sizeOptions = [
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoArkPrivateAssetUpload", value: string) => void;
+    onConfigChange: (key: "vquality" | "size" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark" | "videoArkPrivateAssetUpload" | "inputParameters" | "inputMediaRoles", value: string) => void;
+    onConfigPatch?: (patch: Record<string, string>) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     className?: string;
+    media?: InputMedia[];
+    operation?: string;
 };
 
-export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[292px] space-y-3" }: VideoSettingsPanelProps) {
+export function VideoSettingsPanel({ config, onConfigChange, onConfigPatch, theme, showTitle = true, className = "w-[292px] space-y-3", media = [], operation }: VideoSettingsPanelProps) {
+    const inputs = modelCapabilityConfigFor(config, config.model).inputConfig;
+    if (inputs) {
+        const values = inputValuesFor(inputs, config);
+        const operationField = inputs.fields.find(field => field.binding === "operation");
+        if (operation && operationField) values[operationField.name] = operation;
+        const assignments = inputMediaAssignments(config.inputMediaRoles);
+        const bound = media.map(item => ({ ...item, ...assignments[item.id || ""] }));
+        return <ImageSettingsTheme theme={theme}><div className={className} onMouseDown={event => event.stopPropagation()}>{showTitle ? <div className="text-sm font-semibold" style={{ color: theme.node.text }}>视频设置</div> : null}<ModelInputFields config={inputs} values={values} media={bound} onChange={values => { const patch = inputHostPatch(inputs, values); if (onConfigPatch) onConfigPatch(patch); else for (const [key, value] of Object.entries(patch)) onConfigChange(key as Parameters<typeof onConfigChange>[0], value); }} /><ModelInputMediaAssignments config={inputs} media={media} value={config.inputMediaRoles} parameters={values} onChange={value => onConfigChange("inputMediaRoles", value)} /></div></ImageSettingsTheme>;
+    }
     const profile = modelCapabilityConfigFor(config, config.model).video!;
 	const priceTiers = modelPriceTiers(config);
     if (resolveModelRequestConfig(config, config.model).interfaceType === "volcengine-jimeng-video") {

@@ -7,6 +7,8 @@ import { useSearchParams } from "react-router";
 
 import { ImageSizePicker } from "@/components/image-size-picker";
 import { ModelPicker } from "@/components/model-picker";
+import { ModelInputFields, ModelMediaFields } from "@/components/model-input-fields";
+import { inputHostPatch, inputValuesFor, modelInputRequest, type InputValue, type ModelInputConfig } from "@/lib/model-inputs";
 import { SpotlightSurface } from "@/components/ui/aceternity/spotlight-surface";
 import { PaginationBar, WorkspacePage } from "@/components/layout/workspace-page";
 import { CanvasResourceMentionTextarea } from "@/components/canvas/canvas-resource-mention-textarea";
@@ -49,7 +51,8 @@ export type WorkbenchReference = {
     progress: number;
     uploading: boolean;
     error?: string;
-    role: "reference" | "first_frame" | "last_frame";
+    role: string;
+    inputFields?: Record<string, string | number | boolean>;
     slotKey?: string;
 };
 
@@ -77,6 +80,7 @@ type WorkbenchTaskReferenceSnapshot = {
     kind: WorkbenchReference["kind"];
     role?: WorkbenchReference["role"];
     slotKey?: string;
+    inputFields?: Record<string, string | number | boolean>;
 };
 
 type WorkbenchTaskSnapshot = {
@@ -102,9 +106,17 @@ export function workbenchTaskSnapshot(task: GenerationTask): WorkbenchTaskSnapsh
         const resourceId = typeof reference.resourceId === "string" ? reference.resourceId.trim() : "";
         const referenceKind = reference.kind;
         if (!resourceId || (referenceKind !== "image" && referenceKind !== "video" && referenceKind !== "audio")) return [];
-        const role = reference.role === "first_frame" || reference.role === "last_frame" || reference.role === "reference" ? reference.role : undefined;
+        const role = typeof reference.role === "string" ? reference.role : undefined;
         const slotKey = typeof reference.slotKey === "string" ? reference.slotKey : undefined;
-        return [{ resourceId, kind: referenceKind, ...(role ? { role } : {}), ...(slotKey ? { slotKey } : {}) }];
+        return [
+            {
+                resourceId,
+                kind: referenceKind,
+                ...(role ? { role } : {}),
+                ...(slotKey ? { slotKey } : {}),
+                ...(reference.inputFields && typeof reference.inputFields === "object" ? { inputFields: reference.inputFields as Record<string, string | number | boolean> } : {}),
+            },
+        ];
     });
     const rawParameters = snapshot.parameters && typeof snapshot.parameters === "object" ? snapshot.parameters : {};
     return {
@@ -206,6 +218,7 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
     const rememberImageSettings = useCreationPreferencesStore((state) => state.rememberImageSettings);
     const rememberVideoSettings = useCreationPreferencesStore((state) => state.rememberVideoSettings);
     const [settingsReady, setSettingsReady] = useState(false);
+    const appliedSettingsModel = useRef("");
     const [ratio, setRatio] = useState(kind === "image" ? "1:1" : "16:9");
     const [quality, setQuality] = useState("auto");
     const [imageResolution, setImageResolution] = useState("auto");
@@ -220,6 +233,17 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
     const profile = useMemo(() => modelCapabilityConfigFor(config, selectedModel), [config, selectedModel]);
     const imageProfile = profile.image;
     const videoProfile = profile.video;
+    const pluginInputs = profile.inputConfig;
+    const pluginValues = pluginInputs ? inputValuesFor(pluginInputs, { ...config, videoSeconds: seconds, size: ratio, vquality: videoQuality }) : {};
+    const pluginHost = pluginInputs ? inputHostPatch(pluginInputs, pluginValues) : {};
+    const changePluginValues = (values: Record<string, InputValue>) => {
+        if (!pluginInputs) return;
+        const patch = inputHostPatch(pluginInputs, values);
+        if (patch.videoSeconds) setSeconds(patch.videoSeconds);
+        if (patch.size) setRatio(patch.size);
+        if (patch.vquality) setVideoQuality(patch.vquality);
+        for (const [key, value] of Object.entries(patch)) updateConfig(key as keyof typeof config, value);
+    };
     const filteredTools = useMemo(() => filterWorkbenchTools(tools, toolCategory, toolSearch), [toolCategory, toolSearch, tools]);
     const quickTools = useMemo(() => {
         const preferred = tools.filter((item) => item.recommended || item.categoryId === "ecommerce" || item.categoryId === "product");
@@ -243,7 +267,10 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
         [references],
     );
     const composerConfig = useMemo(
-        () => (kind === "video" && selectedModel ? creationVideoConfig(config, selectedModel, { ratio, seconds, videoQuality }) : { ...config, model: selectedModel, imageModel: selectedModel, size: ratio, quality, imageResolution, count }),
+        () =>
+            kind === "video" && selectedModel
+                ? creationVideoConfig(config, selectedModel, { ratio: pluginHost.size || ratio, seconds: pluginHost.videoSeconds || seconds, videoQuality: pluginHost.vquality || videoQuality })
+                : { ...config, model: selectedModel, imageModel: selectedModel, size: ratio, quality, imageResolution, count },
         [config, count, imageResolution, kind, quality, ratio, seconds, selectedModel, videoQuality],
     );
 
@@ -305,6 +332,8 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
 
     useEffect(() => {
         if (!settingsReady || kind !== "image" || !imageProfile) return;
+        if (appliedSettingsModel.current === `${kind}:${selectedModel}`) return;
+        appliedSettingsModel.current = `${kind}:${selectedModel}`;
         const saved = useCreationPreferencesStore.getState().preferences.image;
         const normalized = normalizeImageValue(imageProfile, {
             size: saved?.ratio || imageProfile.size.default,
@@ -320,6 +349,10 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
 
     useEffect(() => {
         if (!settingsReady || kind !== "video" || !videoProfile) return;
+        // Editing plugin parameters updates config too; only a model switch
+        // should reload saved preferences, not every keystroke in this form.
+        if (appliedSettingsModel.current === `${kind}:${selectedModel}`) return;
+        appliedSettingsModel.current = `${kind}:${selectedModel}`;
         const saved = useCreationPreferencesStore.getState().preferences.video;
         const normalized = normalizeVideoValue(videoProfile, {
             seconds: saved?.seconds || String(videoProfile.duration.default),
@@ -337,16 +370,16 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
             input: {
                 textCount: prompt.trim() ? 1 : 0,
                 imageCount: references.filter((reference) => reference.kind === "image").length,
-                referenceImageCount: references.filter((reference) => reference.kind === "image" && reference.role !== "first_frame" && reference.role !== "last_frame").length,
+                referenceImageCount: references.filter((reference) => reference.kind === "image" && reference.role !== "first_frame" && reference.role !== "last_frame" && reference.role !== "keyframe").length,
                 videoCount: references.filter((reference) => reference.kind === "video").length,
                 audioCount: references.filter((reference) => reference.kind === "audio").length,
                 characterCount: 0,
             },
             ...(kind === "image"
                 ? { imageSize: ratio, options: { size: ratio, quality, ...(imageProfile?.resolution.supported ? { imageResolution } : {}), count: selectedCount } }
-                : { videoSeconds: seconds, options: { size: ratio, videoSeconds: Number(seconds), vquality: videoQuality } }),
+                : { videoSeconds: composerConfig.videoSeconds, options: { size: composerConfig.size, videoSeconds: Number(composerConfig.videoSeconds), vquality: composerConfig.vquality } }),
         }),
-        [capability, imageProfile, imageResolution, kind, prompt, quality, ratio, references, seconds, selectedCount, videoQuality],
+        [capability, composerConfig, imageProfile, imageResolution, kind, prompt, quality, ratio, references, seconds, selectedCount, videoQuality],
     );
 
     useEffect(() => {
@@ -361,7 +394,7 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
             modelCosts: priceChannel.modelCosts,
             model: modelOptionName(selectedModel),
             count: kind === "image" ? selectedCount : 1,
-            seconds: kind === "video" ? Number(seconds) || 1 : 1,
+            seconds: kind === "video" ? Number(composerConfig.videoSeconds) || 1 : 1,
             capability,
             config: composerConfig,
             requirements: quoteRequirements,
@@ -512,7 +545,10 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
             previewUrl: URL.createObjectURL(file),
             progress: 0,
             uploading: true,
-            role: "reference" as const,
+            role:
+                pluginInputs?.mediaRoles.find((role) => role.kind === (file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : "audio") && role.maxCount > 0 && role.role.startsWith("reference_"))?.role ||
+                pluginInputs?.mediaRoles.find((role) => role.kind === "image" && role.maxCount > 0)?.role ||
+                "reference",
             ...(targetSlotKey ? { slotKey: targetSlotKey } : {}),
         }));
         setReferences((current) => [...current, ...pending]);
@@ -573,8 +609,8 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
         setBusy(true);
         try {
             const imageRequest = kind === "image" && imageProfile ? normalizeImageValue(imageProfile, { size: ratio, quality, imageResolution, imageParameters: config.imageParameters, count, transparentBackground: config.transparentBackground }) : null;
-            const videoRequest = kind === "video" && videoProfile ? normalizeVideoValue(videoProfile, { seconds, ratio, resolution: videoQuality }) : null;
-            const parameters = imageRequest
+            const videoRequest = kind === "video" && videoProfile ? normalizeVideoValue(videoProfile, { seconds: composerConfig.videoSeconds, ratio: composerConfig.size, resolution: composerConfig.vquality }) : null;
+            const parameters: Record<string, unknown> = imageRequest
                 ? { size: imageRequest.size, quality: imageRequest.quality, imageResolution: imageRequest.imageResolution, count: Number(imageRequest.count) }
                 : {
                       seconds: Number(videoRequest?.seconds || seconds),
@@ -590,8 +626,16 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
                 ...(videoRequest ? { videoModel: selectedModel, size: videoRequest.ratio, videoSeconds: videoRequest.seconds, vquality: videoRequest.resolution.replace(/p$/i, "") } : {}),
             };
             const readyReferences = references.filter((reference) => reference.resourceId);
+            const inputParameters = modelInputRequest(pluginInputs, generationConfig, readyReferences);
+            if (inputParameters) parameters.inputParameters = inputParameters;
             const videoOperation = kind === "video" ? workbenchVideoOperation(readyReferences) : undefined;
-            const referenceSnapshot = readyReferences.map((reference) => ({ resourceId: reference.resourceId!, kind: reference.kind, role: reference.role, ...(reference.slotKey ? { slotKey: reference.slotKey } : {}) }));
+            const referenceSnapshot = readyReferences.map((reference) => ({
+                resourceId: reference.resourceId!,
+                kind: reference.kind,
+                role: reference.role,
+                ...(reference.slotKey ? { slotKey: reference.slotKey } : {}),
+                ...(reference.inputFields ? { inputFields: reference.inputFields } : {}),
+            }));
             const createdTask =
                 logicalModelId || channel?.scope === "system"
                     ? await createWorkbenchTask({
@@ -602,7 +646,7 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
                           model: modelOptionName(selectedModel),
                           ...(logicalModelId ? { logicalModelId } : { channelId: channel.id }),
                           parameters,
-                          references: readyReferences.map((reference) => ({ resourceId: reference.resourceId!, kind: reference.kind, role: reference.role, ...(reference.slotKey ? { slotKey: reference.slotKey } : {}) })),
+                          references: referenceSnapshot,
                       })
                     : await prepareBackendGenerationTask({
                           mode: kind,
@@ -617,6 +661,7 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
                                   dataUrl: "",
                                   storageKey: resourceStorageKey(reference.resourceId!),
                                   role: reference.role,
+                                  inputFields: reference.inputFields,
                                   ...(reference.slotKey ? { slotKey: reference.slotKey } : {}),
                               })),
                           referenceVideos: readyReferences
@@ -692,6 +737,7 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
         const restoredTool = snapshot.toolId ? tools.find((item) => item.id === snapshot.toolId) || null : null;
         const restoredPreset = restoredTool && snapshot.presetId ? restoredTool.presets.find((item) => item.id === snapshot.presetId) || null : null;
         const parameters = snapshot.parameters;
+        if (parameters.inputParameters) updateConfig("inputParameters", JSON.stringify(parameters.inputParameters));
         if (kind === "image") {
             const restoredRatio = typeof parameters.size === "string" ? parameters.size : ratio;
             const restoredQuality = typeof parameters.quality === "string" ? parameters.quality : quality;
@@ -734,6 +780,7 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
                 progress: 100,
                 uploading: false,
                 role: reference.role || "reference",
+                inputFields: reference.inputFields,
                 ...(reference.slotKey ? { slotKey: reference.slotKey } : {}),
             })),
         );
@@ -867,6 +914,10 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
                         rememberImageSettings({ count: value });
                     }}
                 />
+            </div>
+        ) : pluginInputs ? (
+            <div className="workbench-settings-content">
+                <ModelInputFields config={pluginInputs} values={pluginValues} media={references} onChange={changePluginValues} />
             </div>
         ) : videoProfile ? (
             <div className="workbench-settings-content">
@@ -1148,6 +1199,9 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
                                                                     key={reference.id}
                                                                     reference={reference}
                                                                     kind={kind}
+                                                                    inputConfig={pluginInputs}
+                                                                    inputValues={pluginValues}
+                                                                    onFieldsChange={(inputFields) => setReferences((current) => current.map((item) => (item.id === reference.id ? { ...item, inputFields } : item)))}
                                                                     onRemove={removeReference}
                                                                     onRoleChange={(role) => setReferences((current) => current.map((item) => (item.id === reference.id ? { ...item, role } : item)))}
                                                                 />
@@ -1175,11 +1229,14 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
                                                     key={reference.id}
                                                     reference={reference}
                                                     kind={kind}
+                                                    inputConfig={pluginInputs}
+                                                    inputValues={pluginValues}
+                                                    onFieldsChange={(inputFields) => setReferences((current) => current.map((item) => (item.id === reference.id ? { ...item, inputFields } : item)))}
                                                     onRemove={removeReference}
                                                     onRoleChange={(role) => setReferences((current) => current.map((item) => (item.id === reference.id ? { ...item, role } : item)))}
                                                 />
                                             ))}
-                                            {!references.length || (kind === "video" && references.length < 5) ? (
+                                            {!references.length || (kind === "video" && references.length < (videoProfile?.references.maxImages || 0) + (videoProfile?.references.maxVideos || 0) + (videoProfile?.references.maxAudios || 0)) ? (
                                                 <button
                                                     type="button"
                                                     className="workbench-reference-add"
@@ -1678,39 +1735,63 @@ function ToolCard({ tool, selected, onClick }: { tool: WorkbenchTool; selected: 
     );
 }
 
-function ReferenceCard({ reference, kind, onRemove, onRoleChange }: { reference: WorkbenchReference; kind: WorkbenchKind; onRemove: (reference: WorkbenchReference) => void; onRoleChange: (role: WorkbenchReference["role"]) => void }) {
+function ReferenceCard({
+    reference,
+    kind,
+    onRemove,
+    onRoleChange,
+    inputConfig,
+    inputValues = {},
+    onFieldsChange,
+}: {
+    reference: WorkbenchReference;
+    kind: WorkbenchKind;
+    onRemove: (reference: WorkbenchReference) => void;
+    onRoleChange: (role: WorkbenchReference["role"]) => void;
+    inputConfig?: ModelInputConfig;
+    inputValues?: Record<string, InputValue>;
+    onFieldsChange?: (values: Record<string, string | number | boolean>) => void;
+}) {
     return (
-        <div className="workbench-reference">
-            {reference.kind === "video" ? (
-                <video src={reference.previewUrl} muted />
-            ) : reference.kind === "audio" ? (
-                <span className="workbench-audio-reference">
-                    <Mic />
-                </span>
-            ) : (
-                <img src={reference.previewUrl} alt={reference.name} />
-            )}
-            {reference.uploading ? <Progress type="circle" percent={Math.round(reference.progress)} size={34} /> : null}
-            {reference.error ? (
-                <span className="workbench-reference-error" title={reference.error}>
-                    上传失败
-                </span>
-            ) : null}
-            <button type="button" aria-label={`移除${reference.name}`} onClick={() => onRemove(reference)}>
-                <X />
-            </button>
-            {kind === "video" && reference.kind === "image" && !reference.slotKey ? (
-                <Select
-                    size="small"
-                    value={reference.role}
-                    onChange={onRoleChange}
-                    options={[
-                        { label: "参考图", value: "reference" },
-                        { label: "首帧", value: "first_frame" },
-                        { label: "尾帧", value: "last_frame" },
-                    ]}
-                />
-            ) : null}
+        <div className="min-w-0 space-y-1.5">
+            <div className="workbench-reference">
+                {reference.kind === "video" ? (
+                    <video src={reference.previewUrl} muted />
+                ) : reference.kind === "audio" ? (
+                    <span className="workbench-audio-reference">
+                        <Mic />
+                    </span>
+                ) : (
+                    <img src={reference.previewUrl} alt={reference.name} />
+                )}
+                {reference.uploading ? <Progress type="circle" percent={Math.round(reference.progress)} size={34} /> : null}
+                {reference.error ? (
+                    <span className="workbench-reference-error" title={reference.error}>
+                        上传失败
+                    </span>
+                ) : null}
+                <button type="button" aria-label={`移除${reference.name}`} onClick={() => onRemove(reference)}>
+                    <X />
+                </button>
+                {kind === "video" && reference.kind === "image" && !reference.slotKey ? (
+                    <Select
+                        size="small"
+                        aria-label={`${reference.name}用途`}
+                        value={reference.role}
+                        onChange={onRoleChange}
+                        options={
+                            inputConfig
+                                ? inputConfig.mediaRoles.filter((role) => role.kind === reference.kind && role.maxCount > 0).map((role) => ({ label: role.label, value: role.role }))
+                                : [
+                                      { label: "参考图", value: "reference" },
+                                      { label: "首帧", value: "first_frame" },
+                                      { label: "尾帧", value: "last_frame" },
+                                  ]
+                        }
+                    />
+                ) : null}
+            </div>
+            <ModelMediaFields role={inputConfig?.mediaRoles.find((role) => role.role === reference.role)} values={reference.inputFields} parameters={inputValues} onChange={(values) => onFieldsChange?.(values)} />
         </div>
     );
 }

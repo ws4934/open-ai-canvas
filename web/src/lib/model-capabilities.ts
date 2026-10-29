@@ -34,6 +34,7 @@ export {
 
 export type ModelCapabilityConfig = {
     version: number;
+    inputConfig?: import("./model-inputs").ModelInputConfig;
     text?: TextCapabilityConfig;
     image?: ImageCapabilityConfig;
     video?: VideoCapabilityConfig;
@@ -494,7 +495,7 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
             video.references.maxImages = 1;
             video.resolutions.push("1080p");
             video.operations = ["text_to_video", "image_to_video"];
-        } else {
+        } else if (model.trim() === "grok-imagine-video") {
             video.references.maxVideos = 1;
             video.references.maxVideoBytes = 200 * 1024 * 1024;
             video.references.maxVideoDurationSeconds = 15;

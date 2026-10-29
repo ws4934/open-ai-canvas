@@ -318,6 +318,7 @@ func manifestRequestValues(request GenerationRequest) map[string]any {
 		"operation":       request.Operation,
 		"output":          outputValue,
 		"providerOptions": providerOptionsValue,
+		"inputParameters": request.InputParameters,
 		"extra":           request.Extra,
 	}
 }

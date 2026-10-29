@@ -5,6 +5,13 @@ description: 从产品功能快速定位主要代码入口
 
 # 代码功能地图
 
+## 插件参数与模型能力
+
+- 插件合同：`backend/internal/protocol/model_inputs.go` 定义 `inputSchema` / `inputConfig`、类型与绑定解析、模型约束与条件规则；`manifest_adapter.go` 在请求组装前应用合同。xAI 模板源为 `plugin-packages/schemas/xai-video.mjs`，生成器同步独立包与内置清单。
+- 模型保存、准入与计价：`app/model_input_config.go`、`model_capability.go`、`task_creation.go`；媒体保持原资源归属、上传与持久化链路，扩展字段不替代资源引用。
+- 真实表单：`web/src/components/model-input-config-editor.tsx` 为后台编辑器；`model-input-fields.tsx` 为生成字段、素材角色及逐项字段；`lib/model-inputs.ts` 负责投影与提交前校验。视频工作台、画布设置和 Agent 审批复用。
+- 扩展回归：`protocol/model_inputs_test.go`、`app/model_input_config_test.go`、`web/test/model-inputs.test.tsx` 使用未列入模板的模拟型号验证可配置新范围、规范值及媒体参数完整传递。
+
 ## 短剧自动制作
 
 - 纯逻辑：`backend/internal/production/`（作品圣经、分集与剧本提示词 `prompts.go`，模型输出解析 `parse.go`，分镜规则与时长 `storyboard.go` / `timing.go`，按视频模型上限切剧情段 `SegmentShotsForVideo`，段提示词素材稿 `segment_prompt.go` 与撰写要求 `segment_writer.go`，参考图方案 `assets.go`，用户分镜表直接导入 `storyboard_import.go`，原文台词逐句核对 `dialogue_check.go`）。
