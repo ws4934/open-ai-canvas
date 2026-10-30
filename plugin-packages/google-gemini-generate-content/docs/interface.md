@@ -11,6 +11,14 @@
 - Agent：`POST /v1beta/models/{{model}}:generateContent`。
 - 生命周期：同步响应。
 
+## 普通文本与短剧的原生流式
+
+`textOptions.stream=true` 且模型允许流式时，宿主把创建端点切换为 `POST /v1beta/models/{{model}}:streamGenerateContent?alt=sse`，不向 Gemini 请求体添加 OpenAI 的 `stream` 字段。插件原有鉴权、系统指令、生成参数与 `cachedContent` 保留；下方 manifest 的 `create.path` 是未启用流式时的默认模板。Agent 工具回合仍使用原有 Agent 请求模板。
+
+SSE 中 `thought=true` 的文本进入思考摘要，其余文本作为正文增量；只合并第一个候选，不把多个候选拼成一份答案。`usageMetadata` 按累计值更新，后续数据块省略的缓存用量不会清零。收到首个候选的 `finishReason=STOP` 后才接受完整结果；审核拒绝、Token 截断、错误事件和缺少终态的断流均失败，取消会关闭上游连接。非 SSE 响应明确报错，不悄悄当成已实现流式。
+
+通过 sub2api 对接 Vertex 时，织影使用上述统一 Gemini 接口；sub2api 负责 Vertex 服务端点、GCP 凭证、项目和区域。无需在织影新增 GCP 专用配置。
+
 ## 配置字段
 
 | 字段 | 类型 | 必填 | 含义 |
@@ -30,7 +38,7 @@
 | `tools` | array | 否 | `tools/toolConfig` | 工具定义。 |
 | `tool_choice` | object|string | 否 | `tool_choice` | 工具选择策略。 |
 | `response_format` | object | 否 | `response_format/text` | 结构化输出配置。 |
-| `stream` | boolean | 否 | `stream` | 流式开关；后台任务当前以最终响应归一。 |
+| `stream` | boolean | 否 | 宿主创建端点与 SSE 解析 | 普通文本/短剧启用原生流式，最终结果仍在流结束后归一。 |
 
 ## 上游请求模板逐字段清单
 

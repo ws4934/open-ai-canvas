@@ -885,7 +885,7 @@ install 的 Base URL、协议、能力和成本全部从服务端快照读取，
 
 文字步骤与参考图模型：`settings.models` 可选 `bibleText`（资产提取）、`scriptText`（分镜拆分）、`promptText`（视频提示词与自动精简）、`characterImage`、`propImage`、`sceneImage`，为空沿用 `text` / `image`；单独指定的模型必须在当前用户的短剧模型目录里，否则保存返回 400。`settings.bibleSkill`、`settings.scriptSkill` 与 `promptSkill` 同格式，执行该步骤时把技能文件全文交给文本模型；资产提取与分镜拆分的输出 JSON 结构不变，技能与结构冲突时以结构为准。`settings.assets.propResolution`、`sceneResolution` 分别是道具、场景参考图的分辨率档位，`resolution` 只用于角色参考图。
 
-文本任务：短剧的作品圣经、分集、剧本、段提示词与精简任务都以上游流式（`textOptions.stream=true`）请求，避免长输出在中转站网关前因长时间无响应被断开（524）；结果仍在流结束后整段写入任务结果，模型能力声明不支持流式时改走非流式。单次任务仍受运行策略“文本任务超时”约束。
+文本任务：短剧的作品圣经、分集、剧本、段提示词与精简任务都请求上游流式（`textOptions.stream=true`）。Chat Completions、Responses、Claude 与 Gemini 原生文本协议分别使用对应的 SSE 合同；Gemini 使用 `streamGenerateContent?alt=sse`，不是在普通 `generateContent` 请求体里添加开关。通过 sub2api 连接 Vertex 时由中转完成 GCP 认证和端点转换。正文增量沿用任务文本回放，结果仍在流结束后整段写入任务结果；Gemini 只有正常结束才接受完整输出，断流、审核拒绝和 Token 截断不会当成成功，累计用量保留缓存计数。模型能力声明不支持流式时仍使用原非流式接口。单次任务仍受运行策略“文本任务超时”约束；流式不会缩短模型自身的思考时间。
 
 ### 精修画布
 

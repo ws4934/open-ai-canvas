@@ -1,4 +1,4 @@
-// Agent 模型步的流式（SSE）解析：把三种协议的增量事件拼成完整的文本、推理与工具调用。
+// 文本与 Agent 模型步共用的 SSE 解析；各协议分别处理文本、推理与工具调用。
 //
 // 工具调用参数按 index/ID 逐段拼接；解析器只在 flush 时产出结果，中途断流视为失败而不是截断成功。
 
@@ -48,16 +48,18 @@ type streamingAgentToolCall struct {
 }
 
 type streamingAgentParser struct {
-	protocol      string
-	buffer        string
-	text          strings.Builder
-	reasoning     strings.Builder
-	toolCalls     map[int]*streamingAgentToolCall
-	toolCallByID  map[string]int
-	completed     map[string]interface{}
-	err           error
-	emit          func(string)
-	emitReasoning func(string)
+	protocol       string
+	buffer         string
+	text           strings.Builder
+	reasoning      strings.Builder
+	toolCalls      map[int]*streamingAgentToolCall
+	toolCallByID   map[string]int
+	completed      map[string]interface{}
+	err            error
+	emit           func(string)
+	emitReasoning  func(string)
+	geminiFinished bool
+	geminiUsage    map[string]any
 }
 
 func newStreamingAgentParser(protocol string, emit func(string)) *streamingAgentParser {
@@ -123,6 +125,8 @@ func (p *streamingAgentParser) consumeFrame(frame string) {
 		p.consumeResponsesEvent(eventName, payload)
 	case "claude-api":
 		p.consumeClaudeEvent(payload)
+	case "gemini-generate-content":
+		p.consumeGeminiEvent(payload)
 	default:
 		p.consumeChatCompletionEvent(payload)
 	}
@@ -271,6 +275,9 @@ func (p *streamingAgentParser) setToolCall(index int, id string, itemID string, 
 func (p *streamingAgentParser) result() (map[string]interface{}, error) {
 	if p.err != nil {
 		return nil, p.err
+	}
+	if p.protocol == "gemini-generate-content" {
+		return p.geminiTextResult()
 	}
 	if p.completed != nil {
 		result, err := parseAgentToolPayload(p.completed, p.protocol)

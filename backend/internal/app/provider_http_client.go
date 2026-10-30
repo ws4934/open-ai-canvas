@@ -242,7 +242,7 @@ func doBinary(req *http.Request) ([]byte, string, error) {
 // doBinaryWithConsumer 是 Provider 出站响应的统一安全边界。JSON、SSE 和媒体下载最终都在这里执行
 // 渠道并发/熔断、SSRF、超时、响应大小、HTTP 状态和审计检查；onChunk 仅观察已读取的流片段，
 // 不会绕过完整响应的大小上限或错误判定。
-func doBinaryWithConsumer(req *http.Request, onChunk func(string, []byte)) ([]byte, string, error) {
+func doBinaryWithConsumer(req *http.Request, onChunk func(string, []byte), onComplete ...func(string) error) ([]byte, string, error) {
 	startedAt := time.Now()
 	requestTimeout := providerHTTPTimeout
 	if deadline, ok := req.Context().Deadline(); ok {
@@ -359,6 +359,13 @@ func doBinaryWithConsumer(req *http.Request, onChunk func(string, []byte)) ([]by
 		httpErr := providerHTTPError{StatusCode: resp.StatusCode, Status: resp.Status, Body: string(data), RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After"), time.Now())}
 		recordProviderRequest(req, startedAt, resp.StatusCode, data, httpErr)
 		return nil, "", httpErr
+	}
+	// 新流式协议在记录成功和结算前校验终态；未注册校验的现有调用保持原合同。
+	for _, complete := range onComplete {
+		if err := complete(mimeType); err != nil {
+			recordProviderRequest(req, startedAt, resp.StatusCode, data, err)
+			return nil, "", err
+		}
 	}
 	recordProviderRequest(req, startedAt, resp.StatusCode, data, nil)
 	if runtimeService != nil && !cacheManagementRequest {

@@ -35,7 +35,7 @@ func executeProtocolCreateRequest(ctx context.Context, input canvasGenerationInp
 	if wire == string(model.ChannelInterfaceOpenAIResponse) {
 		wire = "responses"
 	}
-	if input.Mode != "text" || !input.StreamText || (wire != "chat-completion" && wire != "responses" && wire != "claude-api") {
+	if input.Mode != "text" || !input.StreamText || (wire != "chat-completion" && wire != "responses" && wire != "claude-api" && wire != "gemini-generate-content") {
 		data, err := executeProtocolRequest(ctx, input.Config, spec)
 		return data, nil, err
 	}
@@ -43,16 +43,28 @@ func executeProtocolCreateRequest(ctx context.Context, input canvasGenerationInp
 	if body == nil {
 		return nil, nil, errors.New("声明式流式文本请求体必须是 JSON 对象")
 	}
-	body["stream"] = true
-	if wire == "chat-completion" {
-		if err := ensureChatCompletionStreamUsage(body); err != nil {
+	if wire == "gemini-generate-content" {
+		var err error
+		spec, err = geminiStreamingRequest(spec)
+		if err != nil {
 			return nil, nil, err
 		}
+	} else {
+		body["stream"] = true
+		if wire == "chat-completion" {
+			if err := ensureChatCompletionStreamUsage(body); err != nil {
+				return nil, nil, err
+			}
+		}
+		spec.Body = body
 	}
-	spec.Body = body
 	parser := newStreamingAgentParser(wire, input.OnTextDelta)
 	parser.emitReasoning = input.OnReasoningDelta
-	data, mimeType, err := executeProtocolBinaryRequestWithConsumer(ctx, input.Config, spec, parser.consume)
+	var onComplete []func(string) error
+	if wire == "gemini-generate-content" {
+		onComplete = append(onComplete, parser.completeGeminiStream)
+	}
+	data, mimeType, err := executeProtocolBinaryRequestWithConsumer(ctx, input.Config, spec, parser.consume, onComplete...)
 	if err != nil || !strings.Contains(strings.ToLower(mimeType), "event-stream") {
 		return data, nil, err
 	}
@@ -65,7 +77,11 @@ func executeProtocolCreateRequest(ctx context.Context, input canvasGenerationInp
 	if text == "" {
 		return nil, nil, errors.New("流式文本接口没有返回内容")
 	}
-	return data, &protocol.Result{Text: text, Reasoning: stringField(parsed, "reasoning")}, nil
+	result := &protocol.Result{Text: text, Reasoning: stringField(parsed, "reasoning")}
+	if wire == "gemini-generate-content" {
+		result.Usage = parser.geminiUsage
+	}
+	return data, result, nil
 }
 
 func runLegacyTextTask(ctx context.Context, input canvasGenerationInput) (map[string]interface{}, error) {
