@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 	"yingce/backend/internal/model"
@@ -12,6 +13,30 @@ import (
 // CleanupPending is the durable hand-off between orchestration and task/canvas
 // cleanup. HTTP cancellation and the background scheduler use the same path.
 func (s *Service) finishCloudAgentCleanup(ctx context.Context, run *model.CloudAgentExecution) error {
+	for attempt := 0; attempt < 8; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err := s.finishCloudAgentCleanupAttempt(ctx, run)
+		if !errors.Is(err, repository.ErrCreationConflict) || attempt == 7 {
+			return err
+		}
+		// The media waiter may commit between cancellation and cleanup. Re-read
+		// the whole checkpoint so retries cannot repeat a settled tool result.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt+1) * 20 * time.Millisecond):
+		}
+		run, err = s.repo.CloudAgent(run.UserID, run.ID)
+		if err != nil {
+			return err
+		}
+	}
+	return repository.ErrCreationConflict
+}
+
+func (s *Service) finishCloudAgentCleanupAttempt(ctx context.Context, run *model.CloudAgentExecution) error {
 	if !run.CleanupPending || !cloudAgentRunTerminal(run.Status) {
 		return nil
 	}
