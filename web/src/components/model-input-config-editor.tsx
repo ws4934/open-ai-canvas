@@ -2,161 +2,231 @@ import { Button, Input, InputNumber, Select, Switch } from "antd";
 import { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { InputConstraintEditor } from "./model-input-fields";
-import { initializeInputConfig, projectInputConfig, resolveInputConfig, type InputField, type InputRule, type InputSchema, type ModelInputConfig } from "@/lib/model-inputs";
+import { formatInputGrid, initializeInputConfig, parseInputGrid, projectInputConfig, resolveInputConfig, type InputField, type InputRole, type InputRule, type InputSchema, type ModelInputConfig } from "@/lib/model-inputs";
 import type { ModelCapabilityConfig } from "@/lib/model-capabilities";
+import "./model-input-config-editor.css";
 
 type Props = { schema: InputSchema; value: ModelCapabilityConfig; model: string; section: "all" | "references" | "protocol"; disabled?: boolean; onChange: (value: ModelCapabilityConfig) => void };
 
+const operationLabels: Record<string, string> = {
+    text_to_video: "文生视频",
+    image_to_video: "图生视频",
+    reference_to_video: "参考图生视频",
+    video_to_video: "视频编辑",
+    edit: "编辑",
+    extend: "视频延长",
+    inpaint: "局部修改",
+    replace_element: "元素替换",
+    camera_motion: "运镜调整",
+    style_transfer: "风格迁移",
+    audio_to_video: "音频生视频",
+    enhance: "画质增强",
+};
+
 export function ModelInputConfigEditor({ schema, value, model, section, disabled, onChange }: Props) {
-    const [templateID, setTemplateID] = useState(schema.templates?.find((template) => template.models?.includes(model))?.id);
+    const [selectedTemplate, setSelectedTemplate] = useState<string>();
+    const [roleCounts, setRoleCounts] = useState<Record<string, number>>({});
+    const templateID = schema.templates?.find((template) => template.id === selectedTemplate)?.id || schema.templates?.find((template) => template.models?.includes(model))?.id;
     const config = value.inputConfig;
     const update = (inputConfig: ModelInputConfig) => onChange(projectInputConfig(value, resolveInputConfig(schema, inputConfig)));
     const applyTemplate = () => {
         const template = schema.templates?.find((template) => template.id === templateID);
-        if (template) update(structuredClone(template.config));
+        if (template) {
+            setRoleCounts({});
+            update(structuredClone(template.config));
+        }
     };
+    const templatePicker = schema.templates?.length ? (
+        <div className="model-input-template-controls">
+            <Select aria-label="模型能力模板" disabled={disabled} value={templateID} placeholder="选择能力模板" options={schema.templates.map((template) => ({ value: template.id, label: template.label }))} onChange={setSelectedTemplate} />
+            <Button disabled={disabled || !templateID} onClick={applyTemplate}>
+                应用模板
+            </Button>
+        </div>
+    ) : null;
     if (!config)
         return (
-            <div className="space-y-3 rounded-lg border border-border bg-surface-secondary p-4">
-                <div className="text-sm font-medium">使用插件参数表单</div>
-                <p className="m-0 text-sm text-foreground/65">选择一个能力模板，再按实际模型调整范围。型号不在模板中也可以使用，应用模板不会修改价格。</p>
-                {schema.templates?.length ? (
-                    <div className="flex gap-2">
-                        <Select
-                            aria-label="模型能力模板"
-                            className="min-w-0 flex-1"
-                            disabled={disabled}
-                            value={templateID}
-                            placeholder="选择接近的能力模板"
-                            options={schema.templates.map((template) => ({ value: template.id, label: template.label }))}
-                            onChange={setTemplateID}
-                        />
-                        <Button disabled={disabled || !templateID} onClick={applyTemplate}>
-                            应用模板
+            <div className="model-input-config-editor">
+                <section className="model-input-panel model-input-initialize">
+                    <div className="model-input-section-heading">
+                        <div>
+                            <h4>设置模型能力</h4>
+                            <p>选择模板，或从当前配置开始调整。价格保持不变。</p>
+                        </div>
+                        <Button disabled={disabled} onClick={() => update(initializeInputConfig(schema, value))}>
+                            自定义能力配置
                         </Button>
                     </div>
-                ) : null}
-                <Button disabled={disabled} onClick={() => update(initializeInputConfig(schema, value))}>
-                    自定义能力配置
-                </Button>
+                    {templatePicker}
+                </section>
             </div>
         );
+    const activeRoles = config.mediaRoles.filter((role) => role.maxCount > 0);
+    const inactiveRoles = config.mediaRoles.filter((role) => role.maxCount === 0);
+    const changeRole = (role: InputRole, patch: Partial<InputRole>) => {
+        if (patch.maxCount === 0 && role.maxCount > 0) setRoleCounts((counts) => ({ ...counts, [role.role]: role.maxCount }));
+        update({ ...config, mediaRoles: config.mediaRoles.map((item) => (item.role === role.role ? { ...item, ...patch } : item)) });
+    };
+    const updateReferences = (patch: Partial<NonNullable<ModelCapabilityConfig["video"]>["references"]>) => {
+        if (value.video) onChange({ ...value, video: { ...value.video, references: { ...value.video.references, ...patch } } });
+    };
     return (
-        <div className="space-y-4">
+        <div className="model-input-config-editor">
             {section !== "protocol" ? (
-                <>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        {config.mediaRoles.map((role) => {
-                            const changeRole = (patch: Partial<typeof role>) => update({ ...config, mediaRoles: config.mediaRoles.map((item) => (item.role === role.role ? { ...item, ...patch } : item)) });
-                            return (
-                                <section key={role.role} className="space-y-3 rounded-lg border border-border p-3 text-sm">
-                                    <label className="flex items-center justify-between gap-3">
-                                        <span>
+                <div className="model-input-reference-layout">
+                    <section className="model-input-panel">
+                        <h4 className="model-input-panel-heading">输入素材</h4>
+                        {activeRoles.length ? (
+                            <div className="model-input-role-list">
+                                {activeRoles.map((role) => (
+                                    <ModelInputRoleEditor key={role.role} role={role} disabled={disabled} onChange={(patch) => changeRole(role, patch)} />
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="model-input-empty">当前未开放素材输入</p>
+                        )}
+                        {inactiveRoles.length ? (
+                            <details className="model-input-inactive-roles">
+                                <summary>未启用的素材（{inactiveRoles.length}）</summary>
+                                <div className="model-input-role-options">
+                                    {inactiveRoles.map((role) => (
+                                        <Button key={role.role} size="small" icon={<Plus size={14} />} aria-label={`启用${role.label}`} disabled={disabled} onClick={() => changeRole(role, { maxCount: roleCounts[role.role] || 1 })}>
                                             {role.label}
-                                            <span className="ml-2 text-xs text-foreground/50">{role.kind}</span>
-                                        </span>
-                                        <InputNumber aria-label={`${role.label}最大数量`} min={0} max={role.single ? 1 : undefined} disabled={disabled} value={role.maxCount} onChange={(count) => changeRole({ maxCount: count || 0 })} />
-                                    </label>
-                                    {role.kind !== "image" ? (
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {(
-                                                [
-                                                    ["minSeconds", "最短秒数"],
-                                                    ["maxSeconds", "最长秒数"],
-                                                ] as const
-                                            ).map(([name, label]) => (
-                                                <label key={name} className="space-y-1 text-xs text-foreground/65">
-                                                    {label}
-                                                    <InputNumber className="w-full" aria-label={`${role.label}${label}`} disabled={disabled} min={0} value={role[name]} placeholder="不限" onChange={(value) => changeRole({ [name]: value ?? undefined })} />
-                                                </label>
-                                            ))}
-                                        </div>
-                                    ) : null}
-                                    {role.uniqueField ? (
-                                        <label className="block space-y-1 text-xs text-foreground/65">
-                                            时间网格（秒，留空不分格）
-                                            <InputNumber className="w-full" aria-label={`${role.label}时间网格`} disabled={disabled} min={0} value={role.grid} onChange={(value) => changeRole({ grid: value ?? undefined })} />
-                                        </label>
-                                    ) : null}
-                                    {role.fields?.length ? <p className="m-0 text-xs text-foreground/55">逐项填写：{role.fields.map((field) => field.label).join("、")}</p> : null}
-                                </section>
-                            );
-                        })}
-                    </div>
+                                        </Button>
+                                    ))}
+                                </div>
+                            </details>
+                        ) : null}
+                    </section>
                     {value.video ? (
-                        <div className="grid gap-3 sm:grid-cols-2">
-                            <label className="space-y-1 text-xs text-foreground/65">
-                                提示词最大字符数
-                                <InputNumber
-                                    aria-label="提示词最大字符数"
-                                    className="w-full"
-                                    min={1}
-                                    disabled={disabled}
-                                    value={value.video.references.promptMaxChars}
-                                    onChange={(number) => onChange({ ...value, video: { ...value.video!, references: { ...value.video!.references, promptMaxChars: number || 1 } } })}
-                                />
-                            </label>
-                            <label className="space-y-1 text-xs text-foreground/65">
-                                单张图片上限 MB
-                                <InputNumber
-                                    aria-label="单张图片上限 MB"
-                                    className="w-full"
-                                    min={0}
-                                    disabled={disabled}
-                                    value={value.video.references.maxImageBytes / 1024 / 1024}
-                                    onChange={(number) => onChange({ ...value, video: { ...value.video!, references: { ...value.video!.references, maxImageBytes: (number || 0) * 1024 * 1024 } } })}
-                                />
-                            </label>
-                        </div>
+                        <section className="model-input-panel">
+                            <h4 className="model-input-panel-heading">请求限制</h4>
+                            <div className="model-input-limits-grid">
+                                <label className="model-input-label">
+                                    <span>提示词最大字符数</span>
+                                    <InputNumber aria-label="提示词最大字符数" min={1} disabled={disabled} value={value.video.references.promptMaxChars} onChange={(number) => updateReferences({ promptMaxChars: number || 1 })} />
+                                </label>
+                                {(["image", "video", "audio"] as const)
+                                    .filter((kind) => activeRoles.some((role) => role.kind === kind))
+                                    .map((kind) => {
+                                        const key = kind === "image" ? "maxImageBytes" : kind === "video" ? "maxVideoBytes" : "maxAudioBytes";
+                                        const label = kind === "image" ? "单张图片上限 MB" : kind === "video" ? "单个视频上限 MB" : "单个音频上限 MB";
+                                        return (
+                                            <label key={kind} className="model-input-label">
+                                                <span>{label}</span>
+                                                <InputNumber aria-label={label} min={0} disabled={disabled} value={value.video!.references[key] / 1024 / 1024} onChange={(number) => updateReferences({ [key]: (number || 0) * 1024 * 1024 })} />
+                                            </label>
+                                        );
+                                    })}
+                            </div>
+                        </section>
                     ) : null}
-                </>
+                </div>
             ) : null}
             {section !== "references" ? (
                 <>
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <span className="text-sm text-foreground/65">字段来自插件；支持值与上限按当前模型设置，不受模板原型号限制。</span>
-                        {schema.templates?.length ? (
-                            <div className="flex gap-2">
-                                <Select aria-label="更换能力模板" disabled={disabled} value={templateID} placeholder="选择模板" options={schema.templates.map((template) => ({ value: template.id, label: template.label }))} onChange={setTemplateID} />
-                                <Button disabled={disabled || !templateID} onClick={applyTemplate}>
-                                    应用模板
-                                </Button>
+                    {templatePicker ? (
+                        <div className="model-input-template-bar">
+                            <div>
+                                <span className="model-input-template-title">能力模板</span>
+                                <p>应用后替换参数、素材和组合限制，价格保持不变。</p>
                             </div>
-                        ) : null}
+                            {templatePicker}
+                        </div>
+                    ) : null}
+                    <div className="model-input-parameter-grid">
+                        {config.fields
+                            .filter((field) => !field.hidden)
+                            .map((field) => (
+                                <section key={field.name} className="model-input-panel model-input-parameter" data-enabled={field.enabled !== false}>
+                                    <div className="model-input-parameter-heading">
+                                        <div>
+                                            <h4>{field.label}</h4>
+                                            {field.pricing ? <span className="model-input-meta">可计价</span> : null}
+                                        </div>
+                                        {field.readOnly ? (
+                                            <span className="model-input-meta">固定</span>
+                                        ) : (
+                                            <Switch
+                                                aria-label={`开放${field.label}`}
+                                                disabled={disabled || field.required}
+                                                checked={field.enabled !== false}
+                                                onChange={(enabled) => update({ ...config, fields: config.fields.map((item) => (item.name === field.name ? { ...item, enabled } : item)) })}
+                                            />
+                                        )}
+                                    </div>
+                                    {field.enabled !== false ? <InputConstraintEditor field={field} disabled={disabled} onChange={(next) => update({ ...config, fields: config.fields.map((item) => (item.name === field.name ? next : item)) })} /> : null}
+                                </section>
+                            ))}
                     </div>
-                    {config.fields
-                        .filter((field) => !field.hidden)
-                        .map((field) => (
-                            <section key={field.name} className="space-y-3 rounded-lg border border-border p-4">
-                                <div className="flex items-center justify-between gap-3">
-                                    <span className="text-sm font-medium">
-                                        {field.label}
-                                        {field.pricing ? <span className="ml-2 text-xs font-normal text-foreground/50">可计价</span> : null}
-                                    </span>
-                                    <Switch
-                                        aria-label={`开放${field.label}`}
-                                        disabled={disabled || field.required || field.readOnly}
-                                        checked={field.enabled !== false}
-                                        onChange={(enabled) => update({ ...config, fields: config.fields.map((item) => (item.name === field.name ? { ...item, enabled } : item)) })}
-                                    />
-                                </div>
-                                <InputConstraintEditor field={field} disabled={disabled || field.enabled === false} onChange={(next) => update({ ...config, fields: config.fields.map((item) => (item.name === field.name ? next : item)) })} />
-                            </section>
-                        ))}
-                    <label className="block space-y-1 text-xs text-foreground/65">
-                        支持的生成方式
-                        <Select
-                            aria-label="支持的生成方式"
-                            mode="tags"
-                            className="w-full"
-                            disabled={disabled}
-                            value={config.operations || []}
-                            onChange={(operations) => update({ ...config, operations })}
-                            options={Array.from(new Set(schema.templates?.flatMap((template) => template.config.operations || []) || [])).map((value) => ({ value, label: value }))}
-                        />
-                    </label>
-                    <ModelInputRulesEditor config={config} disabled={disabled} onChange={(rules) => update({ ...config, rules })} />
+                    <section className="model-input-panel">
+                        <label className="model-input-label">
+                            <span>支持的生成方式</span>
+                            <Select
+                                aria-label="支持的生成方式"
+                                mode="tags"
+                                disabled={disabled}
+                                value={config.operations || []}
+                                onChange={(operations) => update({ ...config, operations })}
+                                options={Array.from(new Set([...(config.operations || []), ...(schema.templates?.flatMap((template) => template.config.operations || []) || [])])).map((value) => ({ value, label: operationLabels[value] || value }))}
+                            />
+                        </label>
+                    </section>
+                    <details className="model-input-panel model-input-rules">
+                        <summary>
+                            组合限制<span className="model-input-meta">{config.rules?.length || 0} 条</span>
+                        </summary>
+                        <ModelInputRulesEditor config={config} disabled={disabled} onChange={(rules) => update({ ...config, rules })} />
+                    </details>
                 </>
+            ) : null}
+        </div>
+    );
+}
+
+function ModelInputRoleEditor({ role, disabled, onChange }: { role: InputRole; disabled?: boolean; onChange: (patch: Partial<InputRole>) => void }) {
+    return (
+        <div className="model-input-role">
+            <div className="model-input-role-heading">
+                <span className="model-input-role-name">{role.label}</span>
+                {role.single ? (
+                    <span className="model-input-single">最多 1 {role.kind === "image" ? "张" : "个"}</span>
+                ) : (
+                    <InputNumber aria-label={`${role.label}最大数量`} min={1} precision={0} disabled={disabled} value={role.maxCount} prefix="最多" suffix={role.kind === "image" ? "张" : "个"} onChange={(count) => onChange({ maxCount: count || 1 })} />
+                )}
+                <Switch aria-label={`开放${role.label}`} disabled={disabled} checked onChange={() => onChange({ maxCount: 0 })} />
+            </div>
+            {role.kind !== "image" || role.uniqueField ? (
+                <div className="model-input-role-details">
+                    {role.kind !== "image"
+                        ? (
+                              [
+                                  ["minSeconds", "最短秒数"],
+                                  ["maxSeconds", "最长秒数"],
+                              ] as const
+                          ).map(([name, label]) => (
+                              <label key={name} className="model-input-label">
+                                  <span>{label}</span>
+                                  <InputNumber aria-label={`${role.label}${label}`} disabled={disabled} min={0} value={role[name]} placeholder="不限" onChange={(value) => onChange({ [name]: value ?? undefined })} />
+                              </label>
+                          ))
+                        : null}
+                    {role.uniqueField ? (
+                        <label className="model-input-label">
+                            <span>时间网格（秒）</span>
+                            <InputNumber
+                                aria-label={`${role.label}时间网格`}
+                                disabled={disabled}
+                                min={0}
+                                value={role.grid}
+                                formatter={(number, info) => (info.userTyping ? info.input : formatInputGrid(number === undefined ? undefined : Number(number)))}
+                                parser={(text) => parseInputGrid(text) ?? NaN}
+                                placeholder="不分格"
+                                onChange={(value) => onChange({ grid: value ?? undefined })}
+                            />
+                        </label>
+                    ) : null}
+                </div>
             ) : null}
         </div>
     );
@@ -168,8 +238,7 @@ function ModelInputRulesEditor({ config, onChange, disabled }: { config: ModelIn
     const conditions = [...config.mediaRoles.map((role) => ({ label: `含${role.label}`, value: `media:${role.role}` })), ...config.fields.map((field) => ({ label: `${field.label}已填写 / 指定值`, value: `field:${field.name}` }))];
     return (
         <section className="space-y-3">
-            <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">组合限制</span>
+            <div className="flex justify-end">
                 <Button disabled={disabled} size="small" icon={<Plus size={14} />} onClick={() => onChange([...rules, { message: "请调整当前参数组合", when: [{ mediaRole: config.mediaRoles[0]?.role }], limits: [] }])}>
                     添加规则
                 </Button>

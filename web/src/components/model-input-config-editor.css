@@ -1,0 +1,272 @@
+.model-input-config-editor {
+    --input-editor-border: var(--admin-divider, var(--border));
+    --input-editor-surface: var(--admin-surface, var(--surface));
+    --input-editor-muted: var(--admin-text-muted, var(--muted-foreground));
+    --input-editor-label: var(--admin-text-secondary, var(--foreground));
+    --input-editor-radius: var(--admin-radius-lg, 8px);
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+    font-size: 13px;
+}
+
+.model-input-config-editor .model-input-panel {
+    min-width: 0;
+    align-self: start;
+    overflow-wrap: anywhere;
+    border: 1px solid var(--input-editor-border);
+    border-radius: var(--input-editor-radius);
+    background: var(--input-editor-surface);
+    padding: 14px;
+}
+
+.model-input-config-editor h4,
+.model-input-config-editor p {
+    margin: 0;
+}
+
+.model-input-config-editor h4 {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.5;
+}
+
+.model-input-config-editor p,
+.model-input-config-editor .model-input-meta,
+.model-input-config-editor .model-input-single {
+    color: var(--input-editor-muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.model-input-config-editor .model-input-reference-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+}
+
+.model-input-config-editor .model-input-limits-grid,
+.model-input-config-editor .model-input-parameter-grid,
+.model-input-config-editor .model-input-string-constraints,
+.model-input-config-editor .model-input-role-details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 12px;
+    min-width: 0;
+}
+
+.model-input-config-editor .model-input-numeric-constraints {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.model-input-config-editor .model-input-label {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    color: var(--input-editor-label);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.model-input-config-editor .model-input-label > span:first-child {
+    display: block;
+}
+
+.model-input-config-editor .model-input-label > :is(.ant-input-number, .ant-select, .ant-input) {
+    width: 100%;
+    min-width: 0;
+    color: var(--admin-text, var(--foreground));
+}
+
+.model-input-config-editor .model-input-panel-heading {
+    margin-bottom: 10px;
+}
+
+.model-input-config-editor .model-input-role-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    column-gap: 20px;
+}
+
+.model-input-config-editor .model-input-role:nth-child(n + 3) {
+    border-top: 1px solid var(--input-editor-border);
+}
+
+.model-input-config-editor .model-input-role-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 120px auto;
+    align-items: center;
+    gap: 12px;
+    min-height: 48px;
+}
+
+.model-input-config-editor .model-input-role-name {
+    font-weight: 500;
+}
+
+.model-input-config-editor .model-input-single {
+    text-align: right;
+}
+
+.model-input-config-editor .model-input-role-heading > .ant-input-number {
+    width: 100%;
+}
+
+.model-input-config-editor .model-input-role-details {
+    margin: 0 0 12px;
+}
+
+.model-input-config-editor .model-input-role-details:has(> label:only-child) {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.model-input-config-editor .model-input-section-heading,
+.model-input-config-editor .model-input-template-bar,
+.model-input-config-editor .model-input-parameter-heading,
+.model-input-config-editor .model-input-template-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+}
+
+.model-input-config-editor .model-input-parameter-heading {
+    margin-bottom: 12px;
+}
+
+.model-input-config-editor .model-input-parameter-heading > div {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.model-input-config-editor .model-input-template-title {
+    font-weight: 500;
+}
+
+.model-input-config-editor .model-input-template-controls {
+    flex-shrink: 0;
+    gap: 8px;
+}
+
+.model-input-config-editor .model-input-template-controls > .ant-select {
+    width: 240px;
+}
+
+.model-input-config-editor .model-input-initialize {
+    display: grid;
+    gap: 16px;
+}
+
+.model-input-config-editor .model-input-initialize > .model-input-template-controls {
+    justify-content: flex-start;
+}
+
+.model-input-config-editor .model-input-parameter[data-enabled="false"] .model-input-parameter-heading {
+    margin-bottom: 0;
+}
+
+.model-input-config-editor .model-input-boolean-default {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--input-editor-muted);
+    font-size: 12px;
+}
+
+.model-input-config-editor .model-input-readonly {
+    color: var(--input-editor-muted);
+}
+
+.model-input-config-editor .model-input-array-limit {
+    max-width: 200px;
+}
+
+.model-input-config-editor .model-input-inactive-roles {
+    margin-top: 8px;
+    border-top: 1px solid var(--input-editor-border);
+    padding-top: 10px;
+    color: var(--input-editor-muted);
+    font-size: 12px;
+}
+
+.model-input-config-editor :is(.model-input-inactive-roles, .model-input-rules) > summary {
+    cursor: pointer;
+    list-style-position: inside;
+}
+
+.model-input-config-editor :is(.model-input-inactive-roles, .model-input-rules) > summary:focus-visible {
+    outline: 2px solid var(--admin-focus, var(--ring));
+    outline-offset: 4px;
+}
+
+.model-input-config-editor .model-input-role-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.model-input-config-editor .model-input-rules > summary {
+    font-weight: 500;
+}
+
+.model-input-config-editor .model-input-rules > summary .model-input-meta {
+    margin-left: 8px;
+    font-weight: 400;
+}
+
+.model-input-config-editor .model-input-rules[open] > summary {
+    margin-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+    .model-input-config-editor .model-input-reference-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .model-input-config-editor .model-input-numeric-constraints {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .model-input-config-editor .model-input-template-bar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 640px) {
+    .model-input-config-editor :is(.model-input-reference-layout, .model-input-parameter-grid, .model-input-string-constraints, .model-input-role-list) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .model-input-config-editor .model-input-section-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .model-input-config-editor .model-input-template-controls {
+        width: 100%;
+    }
+
+    .model-input-config-editor .model-input-template-controls > .ant-select {
+        flex: 1;
+        width: 0;
+        min-width: 0;
+    }
+
+    .model-input-config-editor .model-input-role-heading {
+        grid-template-columns: minmax(0, 1fr) 130px auto;
+        gap: 8px;
+    }
+
+    .model-input-config-editor .model-input-role:nth-child(n + 2) {
+        border-top: 1px solid var(--input-editor-border);
+    }
+}

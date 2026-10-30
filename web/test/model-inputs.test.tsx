@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import manifest from "../../plugin-packages/xai-video/manifest.json";
 import { ModelInputConfigEditor } from "../src/components/model-input-config-editor";
 import { ModelInputFields, ModelInputMediaAssignments } from "../src/components/model-input-fields";
-import { effectiveInputFields, initializeInputConfig, inputDefaults, inputHostPatch, modelInputRequest, projectInputConfig, resolveInputConfig, type InputSchema } from "../src/lib/model-inputs";
+import { effectiveInputFields, formatInputGrid, initializeInputConfig, inputDefaults, inputHostPatch, modelInputRequest, parseInputGrid, projectInputConfig, resolveInputConfig, type InputSchema } from "../src/lib/model-inputs";
 import { defaultModelCapabilityConfig } from "../src/lib/model-capabilities";
 import { projectLogicalCapability } from "../src/lib/user-session";
 import { capabilitySpecFromChannelModel, mergeCapabilitySpecs } from "../src/pages/admin/logical-models/model-routing-capabilities";
@@ -20,6 +20,17 @@ const schema = manifest.contributes.providers[0].inputSchema as unknown as Input
 const preset = () => structuredClone(schema.templates!.find((template) => template.id === "video-1.5")!.config);
 
 describe("plugin fields and model-owned limits", () => {
+    test("frame time grids are readable fractions without rounding the actual constraint", () => {
+        expect(formatInputGrid(1 / 3)).toBe("1/3");
+        expect(formatInputGrid(1 / 24)).toBe("1/24");
+        expect(parseInputGrid("1/3")).toBe(1 / 3);
+        expect(parseInputGrid("0.125")).toBe(0.125);
+        expect(parseInputGrid("0")).toBe(0);
+        expect(formatInputGrid(0.4)).toBe("0.4");
+        expect(formatInputGrid(1 / 3 + 1e-12)).toBe(String(1 / 3 + 1e-12));
+        expect(parseInputGrid("1/0")).toBeUndefined();
+        expect(parseInputGrid("1/3s")).toBeUndefined();
+    });
     test("a future model can widen presets without another host/model-name branch", () => {
         const configured = preset();
         configured.fields.find((field) => field.name === "videoSeconds")!.max = 30;
@@ -65,6 +76,40 @@ describe("plugin fields and model-owned limits", () => {
         expect(assignments).toContain("时间点（秒）");
         expect(workbenchVideoOperation([{ kind: "image", role: "keyframe" }])).toBe("image_to_video");
         expect(effectiveInputFields(inputs, { ...values, vquality: "720p" }, [{ kind: "image", role: "keyframe", inputFields: { timestamp_s: 8 } }]).errors).not.toHaveLength(0);
+    });
+
+    test("custom initialization retains existing limits instead of disabling every material role", () => {
+        const original = defaultModelCapabilityConfig("xai-video", "grok-imagine-video");
+        original.video!.references.maxImages = 7;
+        original.video!.references.maxVideos = 1;
+        original.video!.references.maxVideoDurationSeconds = 8.7;
+        const initialized = initializeInputConfig(schema, original);
+        expect(initialized.mediaRoles.filter((role) => role.kind === "image").reduce((sum, role) => sum + role.maxCount, 0)).toBe(7);
+        expect(initialized.mediaRoles.find((role) => role.role === "first_frame")?.maxCount).toBe(1);
+        expect(initialized.mediaRoles.find((role) => role.role === "reference_image")?.maxCount).toBeGreaterThan(0);
+        expect(initialized.mediaRoles.find((role) => role.role === "keyframe")?.maxCount).toBe(0);
+        expect(initialized.mediaRoles.find((role) => role.role === "reference_video")).toMatchObject({ maxCount: 1, maxSeconds: 8.7 });
+        expect(initialized.fields.find((field) => field.binding === "generateAudio")?.default).toBe(true);
+        expect(original.inputConfig).toBeUndefined();
+        const customized = projectInputConfig(original, preset());
+        expect(initializeInputConfig(schema, customized)).toEqual(resolveInputConfig(schema, customized.inputConfig!));
+    });
+
+    test("disabled roles and advanced rules stay compact while actual quantities remain editable", () => {
+        const inputs = structuredClone(schema.templates!.find((template) => template.id === "video")!.config);
+        const value = projectInputConfig(defaultModelCapabilityConfig("xai-video", "grok-imagine-video"), inputs);
+        const html = renderToStaticMarkup(<ModelInputConfigEditor schema={schema} model="grok-imagine-video" section="all" value={value} onChange={() => {}} />);
+        expect(html).toContain('class="model-input-reference-layout"');
+        expect(html).toContain('class="model-input-label"');
+        expect(html).toContain("未启用的素材（2）");
+        expect(html).not.toContain('aria-label="关键帧时间网格"');
+        expect(html).toContain('aria-label="启用关键帧"');
+        expect(html).toContain('class="model-input-panel model-input-rules"');
+        expect(html).not.toContain('class="model-input-panel model-input-rules" open');
+        expect(html).not.toContain("固定输出：true");
+        const none = { ...inputs, mediaRoles: inputs.mediaRoles.map((role) => ({ ...role, maxCount: 0 })) };
+        value.video!.references.minImages = 1;
+        expect(projectInputConfig(value, none).video!.references.minImages).toBe(0);
     });
 
     test("model config cannot change types, readonly values or binding destinations", () => {

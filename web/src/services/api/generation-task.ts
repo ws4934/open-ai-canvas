@@ -288,10 +288,11 @@ export async function prepareBackendGenerationTask(options: BackendGenerationTas
 
 function backendGenerationTaskInput(options: BackendGenerationTaskOptions, prepared: PreparedGenerationReferences): CreateTaskInput {
     const { projectId, mode, prompt, config, metadata } = options;
-    const assignments = mode === "video" ? inputMediaAssignments(config.inputMediaRoles) : {};
+    const workflow = resolveGenerationWorkflowExecution(config, mode);
+    const modelInputs = mode === "video" && !workflow ? modelCapabilityConfigFor(config, config.model).inputConfig : undefined;
+    const assignments = modelInputs ? inputMediaAssignments(config.inputMediaRoles) : {};
     prepared = { ...prepared, referenceImages: prepared.referenceImages.map(image => ({ ...image, ...assignments[image.id] })) };
     const videoOperation = generationOperation(options);
-    const workflow = resolveGenerationWorkflowExecution(config, mode);
     const logicalModelId = workflow ? "" : logicalModelIDForConfig(config);
     return {
         ...(projectId ? { projectId } : {}),
@@ -414,9 +415,9 @@ export function backendProviderConfig(config: AiConfig, mode: BackendGenerationM
     const requestConfig = resolveModelRequestConfig(config, config.model);
     const workflow = resolveGenerationWorkflowExecution(config, mode);
     if (workflow) return workflowProviderConfig(config, requestConfig, workflow);
+    const modelInputs = modelCapabilityConfigFor(config, config.model).inputConfig;
     const generationOptions = {
-        inputParameters: modelInputRequest(modelCapabilityConfigFor(config, config.model).inputConfig, config),
-        inputMediaRoles: config.inputMediaRoles,
+        ...(modelInputs ? { inputParameters: modelInputRequest(modelInputs, config), inputMediaRoles: config.inputMediaRoles } : {}),
         ...(mode === "image" ? { imageParameters: imageParameterRequest(modelCapabilityConfigFor(config, config.model).image!, config, true) } : {}),
         size: config.size,
         imageResolution: omittedImageQuality(config.imageResolution),

@@ -33,6 +33,20 @@ export type ModelInputConfig = { fields: InputField[]; mediaRoles: InputRole[]; 
 export type InputSchema = { fields: InputField[]; mediaRoles: InputRole[]; templates?: { id: string; label: string; models?: string[]; config: ModelInputConfig }[] };
 export type InputMedia = { id?: string; label?: string; kind: string; role?: string; durationMs?: number; inputFields?: Record<string, ImageParameterValue> };
 
+export function formatInputGrid(value: number | undefined): string {
+    if (value === undefined || !Number.isFinite(value)) return "";
+    const denominator = Math.round(1 / value);
+    return value > 0 && denominator > 1 && value === 1 / denominator ? `1/${denominator}` : String(value);
+}
+
+export function parseInputGrid(value: string | undefined): number | undefined {
+    const text = value?.trim();
+    if (!text) return undefined;
+    const fraction = text.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/);
+    const number = fraction ? Number(fraction[1]) / Number(fraction[2]) : Number(text);
+    return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
 export function inputFieldAccepts(field: InputField, value: unknown): value is InputValue {
     if (value === undefined || value === null || value === "") return !field.required;
     if (field.type === "string[]" || field.type === "object[]") {
@@ -83,16 +97,33 @@ export function resolveInputConfig(schema: InputSchema, config: ModelInputConfig
 }
 
 export function initializeInputConfig(schema: InputSchema, value: ModelCapabilityConfig): ModelInputConfig {
+    if (value.inputConfig) return resolveInputConfig(schema, structuredClone(value.inputConfig));
     const video = value.video;
+    const remaining = { image: video?.references.maxImages ?? 0, video: video?.references.maxVideos ?? 0, audio: video?.references.maxAudios ?? 0 };
+    const primaryRoles = { image: "reference_image", video: "reference_video", audio: "reference_audio" };
+    const mediaRoles = structuredClone(schema.mediaRoles).map((role) => {
+        const firstFrame = role.role === "first_frame" && video?.operations.includes("image_to_video");
+        const primary = role.role === primaryRoles[role.kind] || !schema.mediaRoles.some((item) => item.kind === role.kind && item.role === primaryRoles[role.kind]);
+        const count = firstFrame || primary ? Math.min(remaining[role.kind], role.single ? 1 : remaining[role.kind]) : 0;
+        remaining[role.kind] -= count;
+        return {
+            ...role,
+            maxCount: count,
+            ...(role.kind === "video" && video?.references.maxVideoDurationSeconds ? { maxSeconds: video.references.maxVideoDurationSeconds } : {}),
+            ...(role.kind === "audio" && video?.references.maxAudioDurationSeconds ? { maxSeconds: video.references.maxAudioDurationSeconds } : {}),
+        };
+    });
     return {
         operations: video?.operations,
-        mediaRoles: structuredClone(schema.mediaRoles),
+        mediaRoles,
         fields: structuredClone(schema.fields).map((field) => {
             if (!video) return field;
             if (field.binding === "duration")
                 return { ...field, min: video.duration.min, max: video.duration.max, step: video.duration.step, default: video.duration.default, values: video.duration.selection === "enum" ? video.duration.values : undefined };
             if (field.binding === "resolution") return { ...field, values: video.resolutions, default: video.defaultResolution };
             if (field.binding === "aspectRatio") return { ...field, values: video.ratios, default: video.defaultRatio };
+            if (field.binding === "generateAudio") return { ...field, enabled: video.generateAudio.supported, default: field.readOnly ? field.default : video.generateAudio.default };
+            if (field.binding === "watermark") return { ...field, enabled: video.watermark.supported, default: video.watermark.default };
             return field;
         }),
         rules: [],
@@ -236,6 +267,7 @@ export function projectInputConfig(value: ModelCapabilityConfig, config: ModelIn
         video.defaultOperation = config.operations[0];
     }
     video.references.maxImages = config.mediaRoles.filter((role) => role.kind === "image").reduce((sum, role) => sum + role.maxCount, 0);
+    video.references.minImages = Math.min(video.references.minImages, video.references.maxImages);
     video.references.maxVideos = config.mediaRoles.filter((role) => role.kind === "video").reduce((sum, role) => sum + role.maxCount, 0);
     video.references.maxAudios = config.mediaRoles.filter((role) => role.kind === "audio").reduce((sum, role) => sum + role.maxCount, 0);
     video.references.maxVideoDurationSeconds = 0;

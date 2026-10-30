@@ -46,7 +46,7 @@ type Props = {
 };
 
 export function ModelCapabilityEditor({ value, onChange, protocol, capability = "video", model = "", workflows = [], imageParameters, inputSchema, disabled = false, section = "all" }: Props) {
-    if (inputSchema) return <ModelInputConfigEditor schema={inputSchema} value={value || defaultModelCapabilityConfig(protocol, model)} model={model} section={section} disabled={disabled} onChange={next => onChange?.(next)} />;
+    if (inputSchema) return <ModelInputConfigEditor key={protocol} schema={inputSchema} value={value || defaultModelCapabilityConfig(protocol, model)} model={model} section={section} disabled={disabled} onChange={next => onChange?.(next)} />;
     if (capability === "text") {
         return <TextCapabilityEditor value={value} onChange={onChange} protocol={protocol} disabled={disabled} section={section} />;
     }

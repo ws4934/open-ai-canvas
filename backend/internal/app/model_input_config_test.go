@@ -8,6 +8,27 @@ import (
 	"yingce/backend/internal/protocol"
 )
 
+func TestModelInputConfigurationIsOptInForOtherProtocols(t *testing.T) {
+	for _, name := range []string{"newapi", "minimax-video", "volcengine-ark-video", "gemini-veo"} {
+		t.Run(name, func(t *testing.T) {
+			profile := DefaultModelCapabilityConfigForModel(name, "test-video")
+			normalized, err := NormalizeModelCapabilityConfigForModel("video", name, "test-video", profile)
+			if err != nil || normalized.InputConfig != nil {
+				t.Fatalf("original protocol configuration changed: %+v, err=%v", normalized, err)
+			}
+			input := map[string]any{"mode": "video", "config": map[string]any{"inputMediaRoles": "{", "videoSeconds": "8"}}
+			before, _ := json.Marshal(input)
+			if err := applyTaskModelInputs(input, normalized); err != nil {
+				t.Fatal(err)
+			}
+			after, _ := json.Marshal(input)
+			if string(before) != string(after) {
+				t.Fatal("unconfigured model inputs changed the task")
+			}
+		})
+	}
+}
+
 func TestFutureModelInputAdmissionCountsUnhydratedResources(t *testing.T) {
 	adapter, _ := protocol.Builtins().Get("xai-video")
 	profile := DefaultModelCapabilityConfigForModel("xai-video", "grok-future-test")

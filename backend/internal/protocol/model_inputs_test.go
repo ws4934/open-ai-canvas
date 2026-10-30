@@ -2,9 +2,43 @@ package protocol
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestModelInputsDoNotChangeOtherProtocolRequests(t *testing.T) {
+	adapters := map[string]Adapter{
+		"minimax-package": officialPackageAdapter(t, "minimax-hailuo-video-v2.yingce-plugin", "minimax-video"),
+	}
+	for _, id := range []string{"newapi", "volcengine-ark-video", "gemini-veo"} {
+		adapter, ok := Builtins().Get(id)
+		if !ok {
+			t.Fatalf("protocol %s not found", id)
+		}
+		adapters[id] = adapter
+	}
+	for name, adapter := range adapters {
+		t.Run(name, func(t *testing.T) {
+			if adapter.Metadata().InputSchema != nil {
+				t.Fatal("fixture unexpectedly declares model inputs")
+			}
+			request := GenerationRequest{Capability: CapabilityVideo, Model: "test-video", Prompt: "a scene", Duration: 8, Resolution: "720p", AspectRatio: "16:9"}
+			before, err := adapter.BuildCreate(context.Background(), RequestContext{Request: request})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.InputParameters = map[string]any{"videoSeconds": 30, "reference_audios": []any{map[string]any{"voice_id": "eve"}}}
+			after, err := adapter.BuildCreate(context.Background(), RequestContext{Request: request})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(before, after) {
+				t.Fatalf("unconfigured inputs changed %s request: before=%+v after=%+v", name, before, after)
+			}
+		})
+	}
+}
 
 // This deliberately invented model/config tests extensibility, not xAI's
 // advertised limits. It must work without adding its name to any plugin list.

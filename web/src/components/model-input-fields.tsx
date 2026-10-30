@@ -139,23 +139,24 @@ export function ModelInputMediaAssignments({ config, media, value, parameters, o
 }
 
 export function InputConstraintEditor({ field, onChange, disabled }: { field: InputField; onChange: (field: InputField) => void; disabled?: boolean }) {
-    if (field.readOnly) return <div className="text-sm text-foreground/65">固定输出：{String(field.default)}</div>;
+    if (field.readOnly) return <div className="model-input-readonly">{typeof field.default === "boolean" ? (field.default ? "开启" : "关闭") : String(field.default ?? "")}</div>;
     if (field.type === "boolean")
         return (
-            <label className="flex items-center gap-3 text-xs text-foreground/65">
-                默认值 <Switch disabled={disabled} checked={field.default === true} onChange={(value) => onChange({ ...field, default: value })} />
+            <label className="model-input-boolean-default">
+                默认开启 <Switch aria-label={`${field.label}默认值`} disabled={disabled} checked={field.default === true} onChange={(value) => onChange({ ...field, default: value })} />
             </label>
         );
     if (field.type === "object[]" || field.type === "string[]")
         return (
-            <label className="flex items-center gap-3 text-xs text-foreground/65">
-                最多项数 <InputNumber aria-label={`${field.label}最多项数`} min={0} disabled={disabled} value={field.maxItems} onChange={(value) => onChange({ ...field, maxItems: value || 0 })} />
+            <label className="model-input-label model-input-array-limit">
+                <span>最多项数（0 为不限）</span>
+                <InputNumber aria-label={`${field.label}最多项数`} min={0} precision={0} disabled={disabled} value={field.maxItems} onChange={(value) => onChange({ ...field, maxItems: value || 0 })} />
             </label>
         );
     if (field.type === "string")
         return (
-            <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1 text-xs text-foreground/65">
+            <div className="model-input-constraint-editor model-input-string-constraints">
+                <label className="model-input-label">
                     <span>支持值</span>
                     <Select
                         aria-label={`${field.label}支持值`}
@@ -167,14 +168,24 @@ export function InputConstraintEditor({ field, onChange, disabled }: { field: In
                         onChange={(values) => onChange({ ...field, values, default: values.includes(String(field.default)) ? field.default : values[0] })}
                     />
                 </label>
-                <label className="space-y-1 text-xs text-foreground/65">
+                <label className="model-input-label">
                     <span>默认值</span>
-                    <Input aria-label={`${field.label}默认值`} disabled={disabled} value={String(field.default ?? "")} onChange={(event) => onChange({ ...field, default: event.target.value })} />
+                    {field.values?.length ? (
+                        <Select
+                            aria-label={`${field.label}默认值`}
+                            disabled={disabled}
+                            value={field.default === undefined ? undefined : String(field.default)}
+                            options={field.values.map((value) => ({ value: String(value), label: String(value) }))}
+                            onChange={(value) => onChange({ ...field, default: value })}
+                        />
+                    ) : (
+                        <Input aria-label={`${field.label}默认值`} disabled={disabled} value={String(field.default ?? "")} onChange={(event) => onChange({ ...field, default: event.target.value })} />
+                    )}
                 </label>
             </div>
         );
     return (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="model-input-constraint-editor model-input-numeric-constraints">
             {(
                 [
                     ["min", "最小值"],
@@ -183,9 +194,15 @@ export function InputConstraintEditor({ field, onChange, disabled }: { field: In
                     ["default", "默认值"],
                 ] as const
             ).map(([key, label]) => (
-                <label key={key} className="space-y-1 text-xs text-foreground/65">
+                <label key={key} className="model-input-label">
                     <span>{label}</span>
-                    <InputNumber aria-label={`${field.label}${label}`} className="w-full" disabled={disabled} value={field[key] as number | undefined} onChange={(value) => onChange({ ...field, [key]: value ?? undefined })} />
+                    <InputNumber
+                        aria-label={`${field.label}${label}`}
+                        precision={field.type === "integer" ? 0 : undefined}
+                        disabled={disabled}
+                        value={field[key] as number | undefined}
+                        onChange={(value) => onChange({ ...field, [key]: value ?? undefined })}
+                    />
                 </label>
             ))}
         </div>
