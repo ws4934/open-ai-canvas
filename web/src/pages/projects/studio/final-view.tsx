@@ -5,7 +5,7 @@ import { Download, Film, Scissors } from "lucide-react";
 import type { DramaEpisodeDetail } from "@/services/api/drama";
 
 import { aspectRatioValue, downloadResource, formatDuration, MediaThumb, STAGE_LABEL, useResourceMediaUrl } from "../drama-shared";
-import { secondsLabel } from "./segment-parts";
+import { segmentDurationLabel, segmentPlaybackStarts, segmentTimingLabel } from "./segment-timing";
 
 /** 成片：各剧情段视频按顺序拼接，保留视频模型生成的对白与音效。片段条可跳到对应段并打开该段详情。 */
 export function FinalView({
@@ -29,11 +29,7 @@ export function FinalView({
     const videoRef = useRef<HTMLVideoElement>(null);
     const url = useResourceMediaUrl(episode.finalResourceId, "playback");
     const readySegments = segments.filter((segment) => segment.videoResourceId && (segment.videoStatus === "ready" || segment.videoStatus === "stale")).length;
-    const starts: number[] = [];
-    segments.reduce((cursor, segment) => {
-        starts.push(cursor);
-        return cursor + (segment.request.seconds || segment.durationMs / 1000);
-    }, 0);
+    const starts = segmentPlaybackStarts(segments);
     const download = () => {
         if (!episode.finalResourceId) return;
         void downloadResource(episode.finalResourceId, `${title}-第${episode.number}集.mp4`).catch((error) => message.error(error instanceof Error ? error.message : "下载失败"));
@@ -64,8 +60,8 @@ export function FinalView({
                             }}
                         >
                             <MediaThumb resourceId={segment.tailFrameResourceId} alt={segment.title} fallback={<span className="drama-filmstrip-empty" />} />
-                            <span>
-                                第 {segment.index + 1} 段 · {secondsLabel(segment.durationMs)}
+                            <span title={segmentTimingLabel(segment)}>
+                                第 {segment.index + 1} 段 · {segmentDurationLabel(segment)}
                             </span>
                         </button>
                     ))}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -916,9 +917,14 @@ func (r *dramaRun) applyDirectStoryboard(e *model.DramaEpisode) (bool, error) {
 // hints 是剧本给出的新设定外观，用于即时建档；info 补齐逐集追加时缺少的梗概。
 // imported 表示镜头来自用户分镜：写明的时长照写执行，只有模型写的剧本才按镜头节奏夹紧。
 func (r *dramaRun) applyScriptShots(episode *model.DramaEpisode, scripted []production.ScriptShot, hints []production.ScriptCast, info production.ScriptEpisode, imported bool) error {
-	shotMs := r.settings.Storyboard.ShotMs
-	if imported {
-		shotMs = r.settings.Storyboard.ImportedShotMs
+	profile, err := r.s.dramaVideoProfile(r.settings.Models.Video)
+	if err != nil {
+		return err
+	}
+	limits := r.settings.Storyboard.SegmentLimits(profile.maxSeconds())
+	scripted, err = production.PrepareScriptShotTiming(scripted, r.settings.Storyboard, imported, limits.MaxMs)
+	if err != nil {
+		return err
 	}
 	casts, err := r.s.repo.DramaCasts(r.project.ID)
 	if err != nil {
@@ -972,23 +978,14 @@ func (r *dramaRun) applyScriptShots(episode *model.DramaEpisode, scripted []prod
 				propIDs = append(propIDs, id)
 			}
 		}
-		shot := model.DramaShot{ID: newID(), ProjectID: r.project.ID, EpisodeID: episode.ID, Position: index, Scene: truncateRunes(item.Scene, 120), SceneCastID: resolve(scenes, "scene", item.Scene), CastIDsJSON: encodeStringList(castIDs), PropIDsJSON: encodeStringList(propIDs), Speaker: truncateRunes(item.Speaker, 60), Dialogue: truncateRunes(item.Dialogue, dramaMaxDialogueRunes), Action: truncateRunes(item.Action, 1000), ShotSize: truncateRunes(item.ShotSize, 30), Camera: truncateRunes(item.Camera, 60), DurationMs: shotMs(item.DurationSeconds, item.Dialogue), ImagePrompt: truncateRunes(item.ImagePrompt, 2000), VideoPrompt: truncateRunes(item.VideoPrompt, 2000), SourceQuote: truncateRunes(item.SourceQuote, 300), Transition: production.NormalizeTransition(item.Transition), CreatedAt: now, UpdatedAt: now}
+		shot := model.DramaShot{ID: newID(), ProjectID: r.project.ID, EpisodeID: episode.ID, Position: index, Scene: truncateRunes(item.Scene, 120), SceneCastID: resolve(scenes, "scene", item.Scene), CastIDsJSON: encodeStringList(castIDs), PropIDsJSON: encodeStringList(propIDs), Speaker: truncateRunes(item.Speaker, 60), Dialogue: truncateRunes(item.Dialogue, dramaMaxDialogueRunes), Action: truncateRunes(item.Action, 1000), ShotSize: truncateRunes(item.ShotSize, 30), Camera: truncateRunes(item.Camera, 60), DurationMs: int64(math.Round(item.DurationSeconds * 1000)), ImagePrompt: truncateRunes(item.ImagePrompt, 2000), VideoPrompt: truncateRunes(item.VideoPrompt, 2000), SourceQuote: truncateRunes(item.SourceQuote, 300), Transition: production.NormalizeTransition(item.Transition), CreatedAt: now, UpdatedAt: now}
 		shots = append(shots, shot)
 	}
-	profile, err := r.s.dramaVideoProfile(r.settings.Models.Video)
-	if err != nil {
-		return err
-	}
-	// 说完长台词的镜头可能超过视频模型单次上限：夹到上限而不是整集失败，台词保持原样，用户可在剧本里拆镜。
-	limit := int64(profile.maxSeconds()) * 1000
 	var total int64
 	for i := range shots {
-		if limit > 0 && shots[i].DurationMs > limit {
-			shots[i].DurationMs = limit
-		}
 		total += shots[i].DurationMs
 	}
-	assignDramaSegments(shots, r.settings.Storyboard.SegmentLimits(profile.maxSeconds()))
+	assignDramaSegments(shots, limits)
 	if err := r.s.repo.CreateDramaCasts(created); err != nil {
 		return err
 	}
@@ -1158,14 +1155,15 @@ func (r *dramaRun) submitSegmentPrompt(job *model.DramaJob) (*model.Task, bool, 
 		if err != nil {
 			return nil, false, err
 		}
-		if draft.view.DurationMs > int64(profile.maxSeconds())*1000 {
-			return nil, false, errors.New("剧情段时长超过所选模型上限")
+		seconds, err := production.SnapVideoSeconds(draft.view.DurationMs, profile.Durations)
+		if err != nil {
+			return nil, false, err
 		}
-		seconds := production.SnapVideoSeconds(draft.view.DurationMs, profile.Durations)
 		// 并行出片不带上一段尾帧，提示词不能写“首帧承接上一段”。
 		draft.input.FirstFrame = position > 0 && !r.settings.parallelVideo()
-		if len(draft.input.Shots) > 0 {
-			draft.input.Shots[len(draft.input.Shots)-1].DurationMs += int64(seconds)*1000 - draft.view.DurationMs
+		draft.input, err = production.FitSegmentVideoDuration(draft.input, seconds)
+		if err != nil {
+			return nil, false, err
 		}
 		maxChars, err := r.segmentPromptBudget(profile, draft, segment, rows, castByID)
 		if err != nil {
@@ -1173,7 +1171,11 @@ func (r *dramaRun) submitSegmentPrompt(job *model.DramaJob) (*model.Task, bool, 
 		}
 		// 文本模型数字数常常超出要求，写作目标比硬上限再留一成；硬上限在结果回写时校验。
 		draft.input.MaxChars = maxChars * 9 / 10
-		payload, _ := json.Marshal(dramaRevisionPayload{Revision: segment.Revision, Seconds: seconds, MaxChars: maxChars})
+		durations := make([]int64, len(draft.input.Shots))
+		for i, shot := range draft.input.Shots {
+			durations[i] = shot.DurationMs
+		}
+		payload, _ := json.Marshal(dramaRevisionPayload{Revision: segment.Revision, Seconds: seconds, ShotDurations: durations, MaxChars: maxChars})
 		job.PayloadJSON = string(payload)
 		skill, err := r.s.dramaWritingSkill(r.project.UserID, r.settings.PromptSkill, "视频提示词")
 		if err != nil {
@@ -1225,6 +1227,9 @@ func (r *dramaRun) applySegmentPrompt(job *model.DramaJob, task *model.Task) err
 	}
 	var payload dramaRevisionPayload
 	if err := json.Unmarshal([]byte(job.PayloadJSON), &payload); err != nil {
+		return err
+	}
+	if err := production.ValidateSegmentPromptTiming(prompt, payload.Seconds, payload.ShotDurations...); err != nil {
 		return err
 	}
 	if chars := utf8.RuneCountInString(prompt); payload.MaxChars > 0 && chars > payload.MaxChars {

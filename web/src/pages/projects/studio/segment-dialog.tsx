@@ -11,7 +11,8 @@ import { dramaChoiceKey } from "@/lib/drama/model-choice";
 import { DramaModelPicker } from "../drama-model-picker";
 
 import { CAST_KIND_LABEL, formatCredits, mediaBusy, MediaThumb, parseList } from "../drama-shared";
-import { promptReady, referenceMissingReason, secondsLabel, SegmentStatus, SegmentVideo, videoWaitLabel } from "./segment-parts";
+import { promptReady, referenceMissingReason, SegmentStatus, SegmentVideo, videoWaitLabel } from "./segment-parts";
+import { secondsLabel, segmentTimingLabel } from "./segment-timing";
 import { DramaTakeList } from "./take-list";
 import { CanvasResourceMentionTextarea } from "@/components/canvas/canvas-resource-mention-textarea";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -122,7 +123,7 @@ export function SegmentDialog({
                             </div>
                             <div className="drama-sd-title">
                                 <h2>{segment.title}</h2>
-                                <span className="drama-sdx-total">总时长 {secondsLabel(segment.durationMs)}</span>
+                                <span className="drama-sdx-total">{segmentTimingLabel(segment)}</span>
                                 <SegmentStatus segment={segment} />
                             </div>
                         </div>

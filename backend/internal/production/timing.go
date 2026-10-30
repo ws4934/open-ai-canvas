@@ -1,8 +1,8 @@
 package production
 
 import (
+	"fmt"
 	"math"
-	"sort"
 	"strings"
 	"unicode"
 )
@@ -27,39 +27,43 @@ type DurationOptions struct {
 	Step   int
 }
 
-// SnapVideoSeconds 选择不短于镜头时长的最小可用秒数；渲染时再裁到镜头时长。
-func SnapVideoSeconds(shotMs int64, options DurationOptions) int {
+// MaxSeconds 返回实际可选的最长档位；范围上限不一定落在步长网格上。
+func (options DurationOptions) MaxSeconds() int {
+	if len(options.Values) > 0 {
+		longest := 0
+		for _, value := range options.Values {
+			longest = max(longest, value)
+		}
+		return longest
+	}
+	if options.Min < 1 || options.Max < options.Min || options.Step < 1 {
+		return 0
+	}
+	return options.Min + (options.Max-options.Min)/options.Step*options.Step
+}
+
+// SnapVideoSeconds 选择不短于分镜合计的最小合法整数秒数，不能把超长内容塞进更短档位。
+func SnapVideoSeconds(shotMs int64, options DurationOptions) (int, error) {
 	need := int(math.Ceil(float64(shotMs) / 1000))
-	if need < 1 {
-		need = 1
+	need = max(need, 1)
+	longest := options.MaxSeconds()
+	if longest <= 0 {
+		return 0, fmt.Errorf("视频模型未声明可用时长")
 	}
-	candidates := append([]int(nil), options.Values...)
-	if len(candidates) == 0 && options.Max > 0 {
-		step := options.Step
-		if step <= 0 {
-			step = 1
-		}
-		start := options.Min
-		if start <= 0 {
-			start = step
-		}
-		for value := start; value <= options.Max && len(candidates) < 64; value += step {
-			candidates = append(candidates, value)
-		}
+	if need > longest {
+		return 0, fmt.Errorf("分镜合计 %.1f 秒，超过视频模型单次最长 %d 秒，请拆分剧情段或重新改编", float64(shotMs)/1000, longest)
 	}
-	if len(candidates) == 0 {
-		if need <= 5 {
-			return 5
+	if len(options.Values) > 0 {
+		seconds := longest
+		for _, value := range options.Values {
+			if value >= need {
+				seconds = min(seconds, value)
+			}
 		}
-		return 10
+		return seconds, nil
 	}
-	sort.Ints(candidates)
-	for _, value := range candidates {
-		if value >= need {
-			return value
-		}
-	}
-	return candidates[len(candidates)-1]
+	steps := max(0, (need-options.Min+options.Step-1)/options.Step)
+	return options.Min + steps*options.Step, nil
 }
 
 // NormalizeName 用于角色、场景名与别名的归并比较。

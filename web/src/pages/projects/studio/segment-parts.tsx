@@ -4,13 +4,9 @@ import { AlertCircle, Check, Film, Loader2 } from "lucide-react";
 import type { DramaCast, DramaSegment } from "@/services/api/drama";
 
 import { aspectRatioValue, CAST_KIND_LABEL, mediaBusy, MediaThumb, useResourceMediaUrl } from "../drama-shared";
+import { segmentTimingLabel } from "./segment-timing";
 
 // 剧情段的共用展示：状态、视频、生成依据（首帧 + 参考图）。分镜卡片与镜头弹窗共用，保证两处说法一致。
-
-export function secondsLabel(ms: number) {
-    const seconds = Math.round(ms / 100) / 10;
-    return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}s`;
-}
 
 export type SegmentTone = "idle" | "busy" | "ready" | "stale" | "failed" | "blocked";
 
@@ -77,7 +73,7 @@ export function SegmentVideo({ segment, aspectRatio, className = "" }: { segment
                     <Film className="size-5" aria-hidden />
                     <span>{state.label}</span>
                     <small>
-                        {secondsLabel(segment.durationMs)}
+                        {segmentTimingLabel(segment)}
                         {segment.request.aspectRatio ? ` · ${segment.request.generateAudio ? "对白与音效由视频模型生成" : "当前模型不生成声音"}` : ""}
                     </small>
                 </span>

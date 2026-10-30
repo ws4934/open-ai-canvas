@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { SegmentInputs, SegmentVideo } from "@/pages/projects/studio/segment-parts";
 import { Storyboard } from "@/pages/projects/studio/storyboard";
+import { segmentDurationLabel, segmentPlaybackStarts, segmentTimingLabel } from "@/pages/projects/studio/segment-timing";
 import type { DramaSegment, DramaShot } from "@/services/api/drama";
 
 const segment: DramaSegment = {
@@ -68,4 +69,17 @@ test("视频占位按模型实际声音能力说明，不把能力读取失败�
     expect(renderToStaticMarkup(<SegmentVideo segment={silent} aspectRatio="9:16" />)).toContain("当前模型不生成声音");
     const audio = { ...silent, request: { ...silent.request, generateAudio: true } };
     expect(renderToStaticMarkup(<SegmentVideo segment={audio} aspectRatio="9:16" />)).toContain("对白与音效由视频模型生成");
+});
+
+test("分镜估时与合法生成档位分开显示，已有视频不冒充新时长", () => {
+    const planned = { ...segment, durationMs: 12200, request: { ...segment.request, seconds: 13, maxVideoSeconds: 15 } };
+    expect(segmentDurationLabel(planned)).toBe("13s");
+    expect(segmentTimingLabel(planned)).toBe("分镜 12.2s · 生成 13s");
+    const placeholder = renderToStaticMarkup(<SegmentVideo segment={planned} aspectRatio="9:16" />);
+    expect(placeholder).toContain("分镜 12.2s · 生成 13s");
+    const existing = { ...planned, videoSeconds: 6, videoResourceId: "existing-video" };
+    expect(segmentDurationLabel(existing)).toBe("6s");
+    expect(segmentTimingLabel(existing)).toBe("分镜 12.2s · 已生成 6s");
+    expect(segmentPlaybackStarts([existing, planned, planned])).toEqual([0, 6, 19]);
+    expect(segmentDurationLabel({ ...segment, durationMs: 12200 })).toBe("分镜 12.2s");
 });

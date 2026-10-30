@@ -7,7 +7,8 @@ import type { DramaCast, DramaModelChoice, DramaSegment, DramaShot } from "@/ser
 
 import { DramaModelPicker } from "../drama-model-picker";
 import { aspectRatioValue, formatClock, mediaBusy, MediaThumb, useResourceMediaUrl } from "../drama-shared";
-import { promptReady, secondsLabel, SegmentInputs, SegmentStatus, segmentState } from "./segment-parts";
+import { promptReady, SegmentInputs, SegmentStatus, segmentState } from "./segment-parts";
+import { segmentDurationLabel, segmentTimingLabel } from "./segment-timing";
 import { isTypingTarget } from "./use-studio";
 import { progressFillStyle } from "@/lib/progress-fill";
 
@@ -142,7 +143,9 @@ const SegmentCard = memo(function SegmentCard({ segment, segmentShots, aspectRat
                             <Film className="size-4" aria-hidden />
                         </span>
                     )}
-                    <span className="drama-sg-cover-dur">{secondsLabel(segment.durationMs)}</span>
+                    <span className="drama-sg-cover-dur" title={segmentTimingLabel(segment)}>
+                        {segmentDurationLabel(segment)}
+                    </span>
                     {segment.videoResourceId ? (
                         <span className="drama-sg-cover-play">
                             <Play className="size-3" aria-hidden />

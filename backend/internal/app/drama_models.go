@@ -397,7 +397,10 @@ func (s *Service) dramaVideoProfile(choice DramaModelChoice) (dramaVideoProfile,
 		return dramaVideoProfile{}, errors.New("模型未声明视频能力")
 	}
 	video := capability.Video
-	options := production.DurationOptions{Values: video.Duration.Values, Min: video.Duration.Min, Max: video.Duration.Max, Step: video.Duration.Step}
+	options := production.DurationOptions{Min: video.Duration.Min, Max: video.Duration.Max, Step: video.Duration.Step}
+	if video.Duration.Selection == "enum" {
+		options = production.DurationOptions{Values: video.Duration.Values}
+	}
 	// 不声明同步生成声音的模型也可以用：段视频没有对白与音效，由用户在选模型时自行取舍。
 	profile := dramaVideoProfile{Durations: options, Operations: video.Operations, MaxImages: video.References.MaxImages, GenerateAudio: video.GenerateAudio.Supported, PromptMaxChars: max(video.References.PromptMaxChars, 0), video: video}
 	if profile.maxSeconds() <= 0 {
@@ -491,7 +494,11 @@ func (s *Service) EstimateDrama(userID string, req DramaEstimateRequest) (DramaE
 	}
 	operation, inputs := dramaSegmentOperation(settings, profile)
 	// 与剧情段提交时的画面参数和声音开关一致，价格档可能按分辨率与是否出声区分。
-	videoOptions := map[string]any{"videoSeconds": itoa(production.SnapVideoSeconds(int64(segmentSeconds)*1000, profile.Durations)), "videoGenerateAudio": strconv.FormatBool(profile.GenerateAudio)}
+	videoSeconds, err := production.SnapVideoSeconds(int64(segmentSeconds)*1000, profile.Durations)
+	if err != nil {
+		return DramaEstimate{}, err
+	}
+	videoOptions := map[string]any{"videoSeconds": itoa(videoSeconds), "videoGenerateAudio": strconv.FormatBool(profile.GenerateAudio)}
 	if screen := profile.screen(settings.AspectRatio, settings.VideoResolution); screen.Issue == "" {
 		screen.apply(videoOptions)
 	}
@@ -962,11 +969,7 @@ func dramaVideoResolutionsFor(video *VideoCapabilityConfig) ([]string, string) {
 
 // dramaMaxVideoSeconds 是视频模型单次可生成的最长秒数，也是一个剧情段的时长上限。
 func dramaMaxVideoSeconds(options production.DurationOptions) int {
-	longest := options.Max
-	for _, value := range options.Values {
-		longest = max(longest, value)
-	}
-	return longest
+	return options.MaxSeconds()
 }
 
 // dramaWritingSkill 读取作品为某个文字步骤选定的写作技能；技能不可读时报错，不悄悄退回内置写法。label 用于错误提示。

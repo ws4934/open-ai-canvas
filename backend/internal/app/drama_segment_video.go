@@ -23,6 +23,8 @@ import (
 type dramaRevisionPayload struct {
 	Revision int64 `json:"revision"`
 	Seconds  int   `json:"seconds,omitempty"`
+	// ShotDurations 固定撰写时的镜头时间轴；精简只改文字，不能改镜头数和起止。
+	ShotDurations []int64 `json:"shotDurations,omitempty"`
 	// MaxChars 是段提示词正文的字符上限：视频模型提示词上限减去撰写时的参考图说明；0 表示不限。
 	MaxChars int `json:"maxChars,omitempty"`
 	// Condensed 是本次撰写已做的自动精简次数。
@@ -118,14 +120,14 @@ func (s *Service) prepareDramaSegment(settings DramaSettings, draft dramaSegment
 		return request, nil, err
 	}
 	screen := profile.screen(settings.AspectRatio, settings.VideoResolution)
-	request.Seconds = production.SnapVideoSeconds(draft.view.DurationMs, profile.Durations)
 	request.MaxVideoSeconds = profile.maxSeconds()
+	request.Seconds, err = production.SnapVideoSeconds(draft.view.DurationMs, profile.Durations)
+	if err != nil {
+		return request, nil, err
+	}
 	request.AspectRatio, request.Size, request.Resolution = settings.AspectRatio, screen.Size, screen.Resolution
 	request.PromptMaxChars = profile.PromptMaxChars
 	request.GenerateAudio = profile.GenerateAudio
-	if draft.view.DurationMs > int64(request.MaxVideoSeconds)*1000 {
-		return request, nil, errors.New("剧情段超过所选视频模型的时长上限，请调整分镜时长或重新改编")
-	}
 	refs := []any{}
 	header := []string{}
 	if previous != nil {
@@ -226,6 +228,12 @@ func (s *Service) prepareDramaSegment(settings DramaSettings, draft dramaSegment
 	if screen.Issue != "" {
 		return request, refs, errors.New(screen.Issue)
 	}
+	if strings.TrimSpace(segment.VideoPromptOverride) == "" && segment.PromptSeconds > 0 && segment.PromptSeconds != request.Seconds {
+		return request, refs, errors.New("所选模型时长档位与提示词不同，请先用该模型重新撰写提示词")
+	}
+	if err := production.ValidateSegmentPromptTiming(firstNonEmpty(segment.VideoPromptOverride, segment.VideoPrompt), request.Seconds); err != nil {
+		return request, refs, err
+	}
 	return request, refs, nil
 }
 
@@ -301,9 +309,6 @@ func (r *dramaRun) submitSegmentVideo(job *model.DramaJob) (*model.Task, bool, e
 		request, refs, err := r.s.prepareDramaSegment(r.settings, draft, *segment, previous, casts)
 		if err != nil {
 			return nil, false, err
-		}
-		if segment.PromptSeconds > 0 && segment.PromptSeconds != request.Seconds {
-			return nil, false, errors.New("所选模型时长档位与提示词不同，请先用该模型重新撰写提示词")
 		}
 		if len(request.UnknownReferences) > 0 {
 			return nil, false, errors.New(request.Warning)

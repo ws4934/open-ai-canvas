@@ -105,6 +105,7 @@ func projectVideoModelInputs(video *VideoCapabilityConfig, input *protocol.Model
 			}
 			if len(field.Values) > 0 {
 				video.Duration.Selection = "enum"
+				video.Duration.Min, video.Duration.Max, video.Duration.Step = 0, 0, 0
 				video.Duration.Values = nil
 				for _, value := range field.Values {
 					number, _ := strconv.Atoi(fmt.Sprint(value))
@@ -112,6 +113,7 @@ func projectVideoModelInputs(video *VideoCapabilityConfig, input *protocol.Model
 				}
 			} else {
 				video.Duration.Selection = "range"
+				video.Duration.Values = nil
 			}
 			if field.Default != nil {
 				video.Duration.Default, _ = strconv.Atoi(fmt.Sprint(field.Default))

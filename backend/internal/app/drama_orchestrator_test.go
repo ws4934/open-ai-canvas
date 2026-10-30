@@ -63,7 +63,11 @@ func (f *fakeDramaBackend) submit(userID string, req CreateTaskRequest, timeline
 			result = map[string]any{"mode": "text", "text": `{"logline":"退婚少年逆袭","visualRules":"冷色调","characters":[{"name":"萧炎","aliases":["炎儿"],"appearance":"黑发少年"},{"name":"纳兰嫣然","appearance":"白衣少女"}],"props":[{"name":"退婚书","appearance":"烫金红纸卷轴"}],"scenes":[{"name":"萧家大厅","appearance":"古朴大厅"}]}`}
 		case strings.Contains(system, "整段视频提示词"):
 			f.byKind["segment_prompt"]++
-			result = map[string]any{"mode": "text", "text": "```\n第1段视频《退婚·登门》——纳兰嫣然当众退婚\n3秒｜9:16｜写实电影感｜中文对白｜无字幕｜1个主镜头\n\n【视觉与首帧】\n萧家大厅，纳兰嫣然立于厅中央，面朝萧炎。\n\n【00.00—03.00秒｜镜头一：当众退婚】\n50mm近景。纳兰嫣然抬手：“我今日来，是要退婚。”\n```"}
+			_, draft, ok := strings.Cut(req.Prompt, "【本段素材稿】\n")
+			if !ok {
+				f.t.Fatal("segment writer did not receive the authoritative shot timeline")
+			}
+			result = map[string]any{"mode": "text", "text": "```\n" + strings.TrimSpace(draft) + "\n```"}
 		case strings.Contains(system, "分集"):
 			f.byKind["plan"]++
 			result = map[string]any{"mode": "text", "text": `{"episodes":[{"title":"退婚","chapters":[1,2],"synopsis":"纳兰嫣然登门退婚","hook":"登门","cliffhanger":"三年之约"},{"title":"药老","chapters":[3],"synopsis":"戒指里的老者现身"}]}`}

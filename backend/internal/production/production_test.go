@@ -143,17 +143,17 @@ func TestStoryboardRules(t *testing.T) {
 }
 
 func TestSnapVideoSeconds(t *testing.T) {
-	if got := SnapVideoSeconds(4700, DurationOptions{Values: []int{10, 5}}); got != 5 {
+	if got, err := SnapVideoSeconds(4700, DurationOptions{Values: []int{10, 5}}); err != nil || got != 5 {
 		t.Fatalf("want 5, got %d", got)
 	}
-	if got := SnapVideoSeconds(5100, DurationOptions{Values: []int{5, 10}}); got != 10 {
+	if got, err := SnapVideoSeconds(5100, DurationOptions{Values: []int{5, 10}}); err != nil || got != 10 {
 		t.Fatalf("want 10, got %d", got)
 	}
-	if got := SnapVideoSeconds(3200, DurationOptions{Min: 2, Max: 12, Step: 1}); got != 4 {
+	if got, err := SnapVideoSeconds(3200, DurationOptions{Min: 2, Max: 12, Step: 1}); err != nil || got != 4 {
 		t.Fatalf("want 4, got %d", got)
 	}
-	if got := SnapVideoSeconds(20000, DurationOptions{Values: []int{5, 10}}); got != 10 {
-		t.Fatalf("longest available, got %d", got)
+	if got, err := SnapVideoSeconds(20000, DurationOptions{Values: []int{5, 10}}); err == nil || got != 0 {
+		t.Fatalf("overlong story must not be shortened: got %d err=%v", got, err)
 	}
 }
 
