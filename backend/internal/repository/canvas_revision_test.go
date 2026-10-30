@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -156,4 +157,41 @@ func testCanvasRevision(t *testing.T, db *gorm.DB) {
 		t.Fatalf("deleted canvas was recreated: %v", err)
 	}
 	t.Run("history", func(t *testing.T) { testCanvasHistory(t, db) })
+	t.Run("receipt_cleanup", func(t *testing.T) { testCanvasMutationReceiptCleanup(t, db) })
+}
+
+func testCanvasMutationReceiptCleanup(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.AutoMigrate(&model.CanvasMutationReceipt{}); err != nil {
+		t.Fatal(err)
+	}
+	cutoff := time.Now().UTC().Truncate(time.Second).Add(-7 * 24 * time.Hour)
+	rows := make([]model.CanvasMutationReceipt, 0, 10)
+	for index := 0; index < 10; index++ {
+		created := cutoff.Add(time.Duration(index-7) * time.Second)
+		rows = append(rows, model.CanvasMutationReceipt{ID: fmt.Sprintf("receipt-%d", index), UserID: fmt.Sprintf("user-%d", index%2), CanvasID: "canvas", MutationID: fmt.Sprintf("mutation-%d", index), PayloadDigest: "fixture", ResultJSON: `{"summary":{"id":"canvas"}}`, Revision: int64(index + 1), CreatedAt: created})
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	repo := New(db)
+	deleted, err := repo.DeleteCanvasMutationReceiptsBefore(cutoff, 3)
+	if err != nil || deleted != 7 {
+		t.Fatalf("batched deletion: deleted=%d, err=%v", deleted, err)
+	}
+	var kept []model.CanvasMutationReceipt
+	if err := db.Order("id").Find(&kept).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(kept) != 3 || kept[0].ID != "receipt-7" || kept[1].ID != "receipt-8" || kept[2].ID != "receipt-9" {
+		t.Fatalf("cleanup removed receipts at or after cutoff: %+v", kept)
+	}
+	if deleted, err := repo.DeleteCanvasMutationReceiptsBefore(cutoff, 0); err != nil || deleted != 0 {
+		t.Fatalf("idempotent default batch: deleted=%d, err=%v", deleted, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if deleted, err := repo.WithContext(ctx).DeleteCanvasMutationReceiptsBefore(cutoff.Add(time.Hour), 1); !errors.Is(err, context.Canceled) || deleted != 0 {
+		t.Fatalf("cancelled cleanup must not delete: deleted=%d, err=%v", deleted, err)
+	}
 }

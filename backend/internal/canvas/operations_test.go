@@ -50,6 +50,13 @@ func TestApplyCanvasOperationsReplaysSameMutationAndRejectsDifferentPayload(t *t
 	if receipt.Revision != first.Revision || receipt.PayloadDigest == "" || receipt.ResultJSON == "" {
 		t.Fatalf("invalid receipt: %#v", receipt)
 	}
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(receipt.ResultJSON), &wire); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := wire["document"]; exists || len(wire["summary"]) == 0 {
+		t.Fatalf("receipt must retain only the commit summary: %s", receipt.ResultJSON)
+	}
 
 	request.Operations[0].Patch["metadata.title"] = json.RawMessage(`"冲突"`)
 	_, err = svc.ApplyUserCanvasOperations("user", "canvas", request)

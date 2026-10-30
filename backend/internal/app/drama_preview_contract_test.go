@@ -31,6 +31,34 @@ func TestDramaSegmentPreviewModelErrorsKeepReferenceArray(t *testing.T) {
 	}
 }
 
+func TestDramaSegmentPreviewKeepsResolutionAndPromptBudget(t *testing.T) {
+	svc, fake := newDramaTestService(t)
+	video := dramaVideoFixture()
+	video.Resolutions, video.DefaultResolution = []string{"480p", "720p"}, "720p"
+	video.References.PromptMaxChars = 1800
+	setDramaVideoCapability(t, svc, fake, video)
+	settings := DramaSettings{VideoResolution: "480p", Models: fakeDramaModels}
+	settings.AspectRatio = "9:16"
+	segment := model.DramaSegment{ID: "segment", SegmentIndex: 1}
+	request, _, err := svc.prepareDramaSegment(settings, dramaSegmentDraft{}, segment, nil, nil)
+	if err != nil || request.Resolution != "480p" || request.PromptMaxChars != 1800 {
+		t.Fatalf("preview must use selected resolution and actual prompt limit: %+v, %v", request, err)
+	}
+	assertDramaReferenceArray(t, request)
+	profile, err := svc.dramaVideoProfile(settings.Models.Video)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := dramaRun{s: svc, settings: settings}
+	budget, err := run.segmentPromptBudget(profile, dramaSegmentDraft{}, &segment, nil, nil)
+	if err != nil || budget != 1798 {
+		t.Fatalf("prompt budget: got=%d, err=%v", budget, err)
+	}
+	if len(fake.requests) != 0 {
+		t.Fatal("read-only preview must not submit generation tasks")
+	}
+}
+
 func TestDramaEpisodeRemainsReadableAfterVideoModelRemoved(t *testing.T) {
 	svc, fake := newDramaTestService(t)
 	project := createTestDramaWithMedia(t, svc, DramaReviewEvery, DramaMediaManual).Project.ID
