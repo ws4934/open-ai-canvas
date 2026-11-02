@@ -77,8 +77,7 @@ async function launchVite(port) {
     // 直接用 Vite CLI 的 Node 运行时启动本地入口，不经过 bunx 包装进程。
     // 收尾终止的 PID 必须就是 Vite，否则包装进程退出后服务仍持有输出管道，E2E 无法退出。
     const viteEntry = join(process.cwd(), "node_modules", "vite", "bin", "vite.js");
-    const command = process.versions.bun ? "node" : process.execPath;
-    const child = spawn(command, [viteEntry, "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
+    const child = spawn(process.execPath, [viteEntry, "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
         cwd: process.cwd(),
         stdio: ["ignore", "pipe", "pipe"],
     });
