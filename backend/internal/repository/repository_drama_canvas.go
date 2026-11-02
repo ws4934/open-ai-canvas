@@ -162,7 +162,7 @@ func (r *Repository) DramaSegmentsAwaitingTail(episodeID string) ([]model.DramaS
 // DramaResourceReferenceKind 标记由短剧表直接持有的资源；素材删除和孤儿清理都保留这些资源。
 const DramaResourceReferenceKind = "短剧"
 
-// DramaResourceReferences 返回短剧制作仍在使用的资源：设定参考图、剧情段视频与尾帧、成片以及全部产物版本。
+// DramaResourceReferences 返回短剧制作仍在使用的资源：设定参考图与声音样本、剧情段视频与尾帧、成片以及全部产物版本。
 // 这些引用不在任何 JSON 文档里，必须单独查询，否则素材库“彻底删除”或孤儿清理会删掉短剧正在用的媒体。
 func (r *Repository) DramaResourceReferences(userID string, resourceIDs []string) ([]ResourceDirectReference, error) {
 	references := []ResourceDirectReference{}
@@ -190,20 +190,24 @@ func (r *Repository) dramaResourceReferences(userID string, resourceIDs []string
 		}
 		return query
 	}
+	wanted := make(map[string]struct{}, len(resourceIDs))
+	for _, id := range resourceIDs {
+		wanted[id] = struct{}{}
+	}
 	var casts []model.DramaCast
-	if err := filter(r.db.Select("id", "name", "image_resource_id").Where("image_resource_id <> ''"), "image_resource_id IN ?", resourceIDs).Find(&casts).Error; err != nil {
+	if err := filter(r.db.Select("id", "name", "image_resource_id", "voice_sample_resource_id").Where("image_resource_id <> '' OR voice_sample_resource_id <> ''"), "(image_resource_id IN ? OR voice_sample_resource_id IN ?)", resourceIDs, resourceIDs).Find(&casts).Error; err != nil {
 		return nil, err
 	}
 	for _, cast := range casts {
-		references = append(references, ResourceDirectReference{Kind: DramaResourceReferenceKind, ID: cast.ID, Title: cast.Name, ResourceID: cast.ImageResourceID})
+		for _, id := range []string{cast.ImageResourceID, cast.VoiceSampleResourceID} {
+			if _, ok := wanted[id]; id != "" && (ok || len(resourceIDs) == 0) {
+				references = append(references, ResourceDirectReference{Kind: DramaResourceReferenceKind, ID: cast.ID, Title: cast.Name, ResourceID: id})
+			}
+		}
 	}
 	var segments []model.DramaSegment
 	if err := filter(r.db.Select("id", "segment_index", "video_resource_id", "tail_frame_resource_id"), "(video_resource_id IN ? OR tail_frame_resource_id IN ?)", resourceIDs, resourceIDs).Find(&segments).Error; err != nil {
 		return nil, err
-	}
-	wanted := make(map[string]struct{}, len(resourceIDs))
-	for _, id := range resourceIDs {
-		wanted[id] = struct{}{}
 	}
 	for _, segment := range segments {
 		for _, id := range []string{segment.VideoResourceID, segment.TailFrameResourceID} {

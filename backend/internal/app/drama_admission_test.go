@@ -98,6 +98,9 @@ func TestDramaResourceWritesRejectForeignMissingAndUnreadyResources(t *testing.T
 		t.Fatal(err)
 	}
 	for _, id := range []string{foreign, "missing", unready} {
+		if err := s.repo.UpdateDramaCastFields("cast", map[string]any{"voice_sample_resource_id": id}); err == nil {
+			t.Fatalf("voice binding accepted invalid resource %s", id)
+		}
 		if err := s.repo.CreateDramaTake(&model.DramaTake{ID: "take-" + id, ProjectID: project, OwnerID: "segment", ResourceID: id}); err == nil {
 			t.Fatalf("invalid take resource accepted: %s", id)
 		}

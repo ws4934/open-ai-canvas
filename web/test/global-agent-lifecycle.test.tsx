@@ -131,7 +131,8 @@ test("run controls and old node references do not borrow a different page's canv
     expect(source).toContain("const otherAgentRunning = !running &&");
     expect(source).toContain("approval && run?.canvasId === canvasId ? approvalTargetGenerating : undefined");
     expect(source).toContain("onFocusNode={run && run.canvasId !== canvasId ? undefined : onFocusNode}");
-    expect(source).toContain("pending && pending.canvasId !== canvasId");
+    expect(source).toContain("canvasId,");
+    expect(source).toContain("outboxDispatchBlocker");
     expect(source).toContain("prefillRequest.canvasId !== canvasId");
     expect(source).toContain("const key = `${canvasId}:${prefillRequest.id}`");
     expect(source).toMatch(/accepted = true;\s*if \(isCurrentScope\(scope\)\) \{/);

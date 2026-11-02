@@ -118,7 +118,7 @@ func TestFixedVideoModelSplitsStoryWithoutDroppingDialogueOrReferences(t *testin
 	for i, shot := range shots {
 		scenes[i], durations[i] = shot.Scene, int64(shot.DurationSeconds*1000)
 	}
-	for _, segment := range SegmentShotsForVideo(scenes, durations, settings.SegmentLimits(5)) {
+	for _, segment := range SegmentShotsForVideo(scenes, durations, settings.SegmentLimits(DurationOptions{Values: []int{5}})) {
 		var planned int64
 		for _, ms := range durations[segment.Start:segment.End] {
 			planned += ms

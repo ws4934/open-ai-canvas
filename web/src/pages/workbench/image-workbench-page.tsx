@@ -17,6 +17,7 @@ import { imageResolutionUsesQuality } from "@/lib/image-size-presets";
 import { modelCapabilityConfigFor, normalizeImageValue, normalizeVideoValue } from "@/lib/model-capabilities";
 import { creationVideoConfig } from "@/pages/create/creation-generation-config";
 import { imageQualityLabel } from "@/lib/image-quality";
+import { taskBillingLabel } from "@/lib/generation-task-billing";
 import { generationTaskFailureReason, generationTaskStatusLabel } from "@/lib/generation-task-display";
 import { modelQuoteRequest } from "@/lib/model-pricing";
 import { quoteModel } from "@/services/api/logical-models";
@@ -24,7 +25,7 @@ import { prepareBackendGenerationTask } from "@/services/api/generation-task";
 import { createGenerationTask, cancelGenerationTask, queryGenerationTask, recoverGenerationTaskMedia, retryGenerationTask, type GenerationTask } from "@/services/api/task-center";
 import { capabilitySupportedModes, createWorkbenchTask, listWorkbenchTools, normalizeWorkbenchGuide, resolveWorkbenchResourceURL, type WorkbenchKind, type WorkbenchPromptPreset, type WorkbenchTool } from "@/services/api/workbench";
 import { resourceStorageKey, resolveResourceUrl, uploadResourceFile } from "@/services/api/resources";
-import { formatCredits, requestCreditCost } from "@/constant/credits";
+import { requestCreditCost } from "@/constant/credits";
 import { useCreationPreferencesStore } from "@/stores/use-creation-preferences-store";
 import { logicalModelIDForConfig, modelDisplayName, modelOptionName, resolveModelChannel, selectableModelsByCapability, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -1527,7 +1528,7 @@ function WorkbenchWorkspace({ kind }: { kind: WorkbenchKind }) {
                                 </div>
                                 <div>
                                     <dt>积分</dt>
-                                    <dd>{detailTask.billing ? `${formatCredits(detailTask.billing.amountMicrocredits)} · ${detailTask.billing.status}` : "--"}</dd>
+                                    <dd>{detailTask.billing ? taskBillingLabel(detailTask.billing) : "--"}</dd>
                                 </div>
                                 <div>
                                     <dt>创建时间</dt>

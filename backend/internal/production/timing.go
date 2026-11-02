@@ -42,6 +42,25 @@ func (options DurationOptions) MaxSeconds() int {
 	return options.Min + (options.Max-options.Min)/options.Step*options.Step
 }
 
+// Bounds 返回模型单次实际可选的最短与最长秒数；未声明有效时长时返回 0。
+func (options DurationOptions) Bounds() (int, int) {
+	longest := options.MaxSeconds()
+	if longest <= 0 {
+		return 0, 0
+	}
+	shortest := longest
+	if len(options.Values) > 0 {
+		for _, value := range options.Values {
+			if value > 0 {
+				shortest = min(shortest, value)
+			}
+		}
+	} else {
+		shortest = options.Min
+	}
+	return shortest, longest
+}
+
 // SnapVideoSeconds 选择不短于分镜合计的最小合法整数秒数，不能把超长内容塞进更短档位。
 func SnapVideoSeconds(shotMs int64, options DurationOptions) (int, error) {
 	need := int(math.Ceil(float64(shotMs) / 1000))
@@ -126,6 +145,8 @@ type Segment struct {
 //   - 段总时长不超过 limits.MaxMs（已按视频模型单次上限收紧）；单个镜头已超过上限时独占一段。
 //   - 智能与范围模式在场景切换处断开，范围模式要求当前段先达到 limits.MinMs；固定模式只按时长装箱。
 //   - 时长不足下限或镜头过少的段，在不超上限时并入前一段。
+//   - 最后一段不足下限又并不进前一段时，从前一段末尾挪镜头过来，两段都不低于下限、不超上限才挪；
+//     挪不动就保留原样，提交时按模型档位向上取整补足时长。
 func SegmentShotsForVideo(scenes []string, durations []int64, limits SegmentLimits) []Segment {
 	if len(scenes) == 0 || len(durations) != len(scenes) {
 		return nil
@@ -167,10 +188,34 @@ func SegmentShotsForVideo(scenes []string, durations []int64, limits SegmentLimi
 		}
 		merged = append(merged, run)
 	}
+	rebalanceTrailingSegment(merged, span, limits)
 	for i := range merged {
 		merged[i].Title = segmentTitle(scenes[merged[i].Start:merged[i].End])
 	}
 	return merged
+}
+
+// rebalanceTrailingSegment 让最后一段尽量达到下限：从前一段末尾挪最少的镜头过来。
+// 挪完后前一段仍不低于下限、至少留一个镜头，最后一段不超上限和镜头上限才生效；否则不改动。
+func rebalanceTrailingSegment(segments []Segment, span func(start, end int) int64, limits SegmentLimits) {
+	last := len(segments) - 1
+	if last < 1 || limits.MinMs <= 0 || span(segments[last].Start, segments[last].End) >= limits.MinMs {
+		return
+	}
+	prev, tail := segments[last-1], segments[last]
+	for start := tail.Start - 1; start > prev.Start; start-- {
+		moved := span(start, tail.End)
+		if (limits.MaxMs > 0 && moved > limits.MaxMs) || tail.End-start > MaxSegmentShots {
+			return
+		}
+		if span(prev.Start, start) < limits.MinMs {
+			return
+		}
+		if moved >= limits.MinMs {
+			segments[last-1].End, segments[last].Start = start, start
+			return
+		}
+	}
 }
 
 // segmentTitle 用段内依次出现的场景命名，最多 3 个。

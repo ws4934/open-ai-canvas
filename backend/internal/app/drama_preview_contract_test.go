@@ -19,7 +19,7 @@ func TestDramaSegmentPreviewModelErrorsKeepReferenceArray(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			settings := DramaSettings{Models: DramaModels{Video: test.choice}}
-			request, refs, err := svc.prepareDramaSegment(settings, dramaSegmentDraft{}, model.DramaSegment{}, nil, nil)
+			request, refs, _, err := svc.prepareDramaSegment(settings, dramaSegmentDraft{}, model.DramaSegment{}, nil, nil)
 			if err == nil || refs != nil || request.Operation != "" || request.Seconds != 0 || request.MaxVideoSeconds != 0 {
 				t.Fatalf("invalid model must remain blocked, without inventing a request: %+v %v", request, err)
 			}
@@ -40,7 +40,7 @@ func TestDramaSegmentPreviewKeepsResolutionAndPromptBudget(t *testing.T) {
 	settings := DramaSettings{VideoResolution: "480p", Models: fakeDramaModels}
 	settings.AspectRatio = "9:16"
 	segment := model.DramaSegment{ID: "segment", SegmentIndex: 1}
-	request, _, err := svc.prepareDramaSegment(settings, dramaSegmentDraft{}, segment, nil, nil)
+	request, _, _, err := svc.prepareDramaSegment(settings, dramaSegmentDraft{}, segment, nil, nil)
 	if err != nil || request.Resolution != "480p" || request.PromptMaxChars != 1800 {
 		t.Fatalf("preview must use selected resolution and actual prompt limit: %+v, %v", request, err)
 	}

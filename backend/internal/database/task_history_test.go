@@ -22,8 +22,17 @@ func TestTaskHistoryVisibilityMigrationPreservesTasks(t *testing.T) {
 	if err := db.Exec(`INSERT INTO tasks VALUES ('existing', 'failed', 'original', '{"url":"/api/resources/media/file"}')`).Error; err != nil {
 		t.Fatal(err)
 	}
+	var historyMigration migration
+	for _, item := range schemaMigrations {
+		if item.version == 78 {
+			historyMigration = item
+		}
+	}
+	if historyMigration.apply == nil {
+		t.Fatal("task history migration 78 is missing")
+	}
 	for i := 0; i < 2; i++ {
-		if err := db.Transaction(schemaMigrations[len(schemaMigrations)-1].apply); err != nil {
+		if err := db.Transaction(historyMigration.apply); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -76,7 +85,7 @@ func TestPostgresTaskHistoryVisibilityUpgrade(t *testing.T) {
 	if err := db.Migrator().DropColumn(&model.Task{}, "HistoryHiddenAt"); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Delete(&schemaMigration{}, "version = ?", 78).Error; err != nil {
+	if err := db.Delete(&schemaMigration{}, "version >= ?", 78).Error; err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 2; i++ {

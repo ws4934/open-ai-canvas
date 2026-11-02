@@ -31,7 +31,7 @@ func TestDramaSegmentDurationUsesSelectedContract(t *testing.T) {
 			draft := dramaSegmentDraft{view: DramaSegmentView{DurationMs: tc.planned}}
 			settings := DramaSettings{Models: fakeDramaModels}
 			settings.AspectRatio = "9:16"
-			request, _, err := svc.prepareDramaSegment(settings, draft, model.DramaSegment{}, nil, nil)
+			request, _, _, err := svc.prepareDramaSegment(settings, draft, model.DramaSegment{}, nil, nil)
 			if (err != nil) != tc.wantErr || request.MaxVideoSeconds != tc.maximum || (!tc.wantErr && request.Seconds != tc.seconds) {
 				t.Fatalf("request=%+v err=%v; want seconds=%d maximum=%d error=%v", request, err, tc.seconds, tc.maximum, tc.wantErr)
 			}
@@ -67,11 +67,11 @@ func TestDramaPromptDurationChangeAllowsExplicitManualRewrite(t *testing.T) {
 	settings.AspectRatio = "9:16"
 	draft := dramaSegmentDraft{view: DramaSegmentView{DurationMs: 12200}}
 	segment := model.DramaSegment{PromptSeconds: 6, VideoPrompt: "【00—06秒｜镜头一：拉远】"}
-	if _, _, err := svc.prepareDramaSegment(settings, draft, segment, nil, nil); err == nil {
+	if _, _, _, err := svc.prepareDramaSegment(settings, draft, segment, nil, nil); err == nil {
 		t.Fatal("old generated prompt must be rewritten for the new duration")
 	}
 	segment.VideoPromptOverride = "【00—13秒｜镜头一：拉远】"
-	if request, _, err := svc.prepareDramaSegment(settings, draft, segment, nil, nil); err != nil || request.Seconds != 13 {
+	if request, _, _, err := svc.prepareDramaSegment(settings, draft, segment, nil, nil); err != nil || request.Seconds != 13 {
 		t.Fatalf("explicit valid manual rewrite must not depend on the old generated prompt: %+v %v", request, err)
 	}
 }
@@ -112,7 +112,7 @@ func TestDramaFixedVideoModelSplitsLongDialogueInPersistedStoryboard(t *testing.
 		t.Fatalf("dialogue was clipped: %q shots=%d", dialogue.String(), len(shots))
 	}
 	for _, draft := range buildDramaSegmentDrafts(run.settings, dramaBibleMeta{}, shots, nil, nil) {
-		request, _, err := svc.prepareDramaSegment(run.settings, draft, model.DramaSegment{}, nil, nil)
+		request, _, _, err := svc.prepareDramaSegment(run.settings, draft, model.DramaSegment{}, nil, nil)
 		if err != nil || request.Seconds != 6 || draft.view.DurationMs > 6000 {
 			t.Fatalf("fixed model cannot generate split segment: %+v err=%v", request, err)
 		}
@@ -146,7 +146,7 @@ func TestDramaRejectsReversedPromptBeforeReadyOrVideoSubmission(t *testing.T) {
 	segment.VideoPromptOverride = prompt
 	shots, _ := svc.repo.DramaShots(segment.EpisodeID)
 	drafts := buildDramaSegmentDrafts(run.settings, dramaBibleMeta{}, shots, nil, rows)
-	if _, _, err := svc.prepareDramaSegment(run.settings, drafts[0], segment, nil, nil); err == nil || !strings.Contains(err.Error(), "时间码") {
+	if _, _, _, err := svc.prepareDramaSegment(run.settings, drafts[0], segment, nil, nil); err == nil || !strings.Contains(err.Error(), "时间码") {
 		t.Fatalf("invalid saved prompt accepted for video generation: %v", err)
 	}
 	if len(dramaVideoRequests(fake)) != 0 {
