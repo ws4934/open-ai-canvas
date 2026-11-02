@@ -12,7 +12,7 @@ describe("plugin category sections (#428)", () => {
 
     test("omits empty sections and category navigation entries", () => {
         expect(source).toContain("section.plugins.length > 0");
-        expect(source).toContain("pluginSectionMeta.filter((section) => categoryCounts[section.key] > 0)");
+        expect(source).toMatch(/pluginSectionMeta\s*\.filter\(\(section\) => categoryCounts\[section\.key\] > 0\)/);
         expect(source).not.toContain("暂无该类型的插件");
     });
 
