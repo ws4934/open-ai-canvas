@@ -74,13 +74,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** 启动 Vite DEV，等待 ready 行或 TCP 可连接；超时即抛。 */
 async function launchVite(port) {
-    // package.json 仍可由 Bun 直接执行；没有 Bun 时用 Node 调本地 Vite 入口。
-    // 不能把 `vite` 同时当作 bunx 子命令和 Vite 根目录传入，否则会启动到
-    // <web>/vite，SPA 根路径与 /dev/previs-repro 都会返回 404。
+    // 直接启动本地入口，Bun/Node 都不经过 bunx 包装进程。
+    // 收尾终止的 PID 必须就是 Vite，否则包装进程退出后服务仍持有输出管道，E2E 无法退出。
     const viteEntry = join(process.cwd(), "node_modules", "vite", "bin", "vite.js");
-    const command = process.versions.bun ? "bunx" : process.execPath;
-    const args = process.versions.bun ? ["vite"] : [viteEntry];
-    const child = spawn(command, [...args, "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
+    const child = spawn(process.execPath, [viteEntry, "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
         cwd: process.cwd(),
         stdio: ["ignore", "pipe", "pipe"],
     });
