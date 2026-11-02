@@ -406,7 +406,7 @@ func applyCloudAgentBatchTableMutation(repo *repository.Repository, userID, canv
 			return nil, err
 		}
 	}
-	return map[string]any{"canvasId": canvasID, "nodeId": appliedPreview.Items[0].NodeID, "snapshotHash": cloudAgentNodeHash(plan.Document, appliedPreview.Items[0].NodeID), "summary": appliedPreview.Description, "preview": appliedPreview}, nil
+	return map[string]any{"canvasId": canvasID, "nodeId": appliedPreview.Items[0].NodeID, "snapshotHash": cloudAgentNodeHash(plan.Document, appliedPreview.Items[0].NodeID), "canvasSnapshotHash": cloudAgentCanvasHash(plan.Document), "summary": appliedPreview.Description, "preview": appliedPreview}, nil
 }
 
 func cloudAgentBatchTableReadResult(view any, nodeID, nodeHash string) (map[string]any, error) {
@@ -432,5 +432,5 @@ func cloudAgentBatchTableReadResult(view any, nodeID, nodeHash string) (map[stri
 			row["rowId"] = row["id"]
 		}
 	}
-	return map[string]any{"nodeId": nodeID, "title": node["title"], "snapshotHash": nodeHash, "batchTable": table}, nil
+	return map[string]any{"nodeId": nodeID, "title": node["title"], "snapshotHash": nodeHash, "canvasSnapshotHash": state["snapshotHash"], "batchTable": table}, nil
 }

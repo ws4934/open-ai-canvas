@@ -274,7 +274,7 @@ func TestCloudAgentVisionHydrationPreservesProtocolImages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, body := range map[string]any{"chat": expanded.ChatCompletion, "responses": expanded.Responses, "claude": expanded.Claude, "gemini": expanded.Gemini} {
+	for name, body := range map[string]any{"chat": expanded.ChatCompletion, "responses": expanded.Responses, "claude": expanded.Claude, "plugin": geminiAgentBodyForTest(expanded.Canonical)} {
 		raw, _ := json.Marshal(body)
 		if strings.Count(string(raw), base64.StdEncoding.EncodeToString(pixels)) != 2 || strings.Contains(string(raw), "resource:") {
 			t.Errorf("%s lost image data or retained unresolved resource", name)

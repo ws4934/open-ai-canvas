@@ -102,6 +102,9 @@ func canonicalFromRuntimeMessages(messages []map[string]any, tools []map[string]
 						if itemID != "" {
 							call["item_id"] = itemID
 						}
+						if signature := firstNonEmptyString(stringField(part, "thoughtSignature"), stringField(part, "thought_signature")); signature != "" {
+							call["thoughtSignature"] = signature
+						}
 						calls = append(calls, call)
 					}
 				}
@@ -296,6 +299,9 @@ func runtimeToolCalls(calls []cloudAgentCall) []map[string]any {
 		entry := map[string]any{"id": call.ID, "name": call.Function.Name, "arguments": arguments}
 		if call.ItemID != "" {
 			entry["item_id"] = call.ItemID
+		}
+		if call.ThoughtSignature != "" {
+			entry["thoughtSignature"] = call.ThoughtSignature
 		}
 		result = append(result, entry)
 	}

@@ -130,6 +130,7 @@ func (s *Service) cloudAgentPiModel(ctx context.Context, userID, runID string, p
 			return nil, err
 		}
 		var outputLimitErr *cloudAgentPiOutputLimitError
+		var emptyOutputErr *cloudAgentPiEmptyOutputError
 		if errors.As(err, &outputLimitErr) {
 			correction = []map[string]any{cloudAgentRuntimeMessage(cloudAgentRuntimeContext{
 				Kind: cloudAgentContextInvalidOutput, Detail: outputLimitErr.Detail,
@@ -137,6 +138,8 @@ func (s *Service) cloudAgentPiModel(ctx context.Context, userID, runID string, p
 			})}
 		} else if errors.Is(err, errCloudAgentTruncatedToolArguments) {
 			correction = []map[string]any{cloudAgentRuntimeMessage(cloudAgentRuntimeContext{Kind: cloudAgentContextTruncatedArguments})}
+		} else if errors.As(err, &emptyOutputErr) {
+			correction = []map[string]any{cloudAgentRuntimeMessage(cloudAgentRuntimeContext{Kind: cloudAgentContextEmptyOutput})}
 		}
 	}
 	return nil, lastErr
@@ -177,6 +180,8 @@ var errCloudAgentAwaitingApproval = errors.New("run is waiting for approval")
 // errCloudAgentTruncatedToolArguments 标记"模型返回的工具参数不是完整 JSON"：
 // 调用未执行，可以带纠偏上下文重做同一步。
 var errCloudAgentTruncatedToolArguments = errors.New("truncated tool arguments")
+
+type cloudAgentPiEmptyOutputError struct{ error }
 
 // cloudAgentPiOutputLimitError 标记整批未执行的输出超限，向有限重试提供具体纠正原因。
 type cloudAgentPiOutputLimitError struct {
@@ -298,7 +303,7 @@ func (s *Service) runCloudAgentModelStep(ctx context.Context, userID, runID stri
 			},
 			"textOptions": map[string]any{
 				"stream":          true,
-				"thinking":        cloudAgentPiThinkingEnabled(thinkingLevel),
+				"thinking":        cloudAgentPiThinkingEnabled(thinkingLevel) && !state.ForceThinkingOff,
 				"maxOutputTokens": cloudAgentStepOutputBudget(state.StepLimits, state.BoostStepOutputBudget),
 			},
 		}
@@ -347,18 +352,28 @@ func (s *Service) runCloudAgentModelStep(ctx context.Context, userID, runID stri
 	task, err := s.waitCloudAgentTask(ctx, taskID)
 	if err != nil {
 		truncated := false
+		empty := false
 		if failed, lookupErr := s.repo.Task(taskID); lookupErr == nil && failed != nil && failed.Status != model.TaskStatusSucceeded {
 			truncated = cloudAgentTruncatedToolArguments(failed)
+			empty = cloudAgentEmptyModelOutput(failed)
 		}
 		retryable := ctx.Err() == nil && (truncated || s.cloudAgentModelTaskRetryable(taskID))
 		if retryable {
 			// 释放失败的步骤，下一次重试才能重新入队。
-			if releaseErr := s.finishCloudAgentPiModelStep(userID, runID, taskID, "", ""); releaseErr != nil {
+			var releaseErr error
+			if empty && !compactionSummary {
+				releaseErr = s.correctCloudAgentPiEmptyOutput(userID, runID, taskID)
+			} else {
+				releaseErr = s.finishCloudAgentPiModelStep(userID, runID, taskID, "", "")
+			}
+			if releaseErr != nil {
 				return nil, false, releaseErr
 			}
 		}
 		if truncated {
 			err = fmt.Errorf("%w: %v", errCloudAgentTruncatedToolArguments, err)
+		} else if empty {
+			err = &cloudAgentPiEmptyOutputError{err}
 		}
 		return nil, retryable, err
 	}

@@ -39,7 +39,7 @@ func TestOfficialProtocolPackagesAreSelfContainedDeclarativePlugins(t *testing.T
 			// the declarative AI provider contract covered by this catalog test.
 			continue
 		}
-		if pkg.Manifest.APIVersion != "yingce.plugin/v2" {
+		if pkg.Manifest.APIVersion != "yingce.plugin/v2" && pkg.Manifest.APIVersion != "yingce.plugin/v3" {
 			t.Fatalf("%s apiVersion = %q", filepath.Base(path), pkg.Manifest.APIVersion)
 		}
 		if strings.HasPrefix(strings.TrimSpace(pkg.Manifest.Runtime.Backend), "host:") {
@@ -193,7 +193,7 @@ func TestOfficialAgentProfilesMapToolRequestsAndResponses(t *testing.T) {
 		"chatCompletion": map[string]any{"messages": []any{map[string]any{"role": "user", "content": "inspect"}}, "tools": []any{map[string]any{"type": "function"}}, "tool_choice": "required", "marker": "chat"},
 		"responses":      map[string]any{"input": []any{map[string]any{"role": "user", "content": "inspect"}}, "tools": []any{map[string]any{"type": "function"}}, "tool_choice": "required", "marker": "responses"},
 		"claude":         map[string]any{"messages": []any{map[string]any{"role": "user", "content": "inspect"}}, "tools": []any{map[string]any{"name": "canvas_get_state"}}, "tool_choice": map[string]any{"type": "any"}, "max_tokens": 512, "marker": "claude"},
-		"gemini":         map[string]any{"contents": []any{map[string]any{"role": "user", "parts": []any{map[string]any{"text": "inspect"}}}}, "tools": []any{map[string]any{"functionDeclarations": []any{}}}, "toolConfig": map[string]any{"functionCallingConfig": map[string]any{"mode": "ANY"}}, "marker": "gemini"},
+		"conversation":   map[string]any{"messages": []any{map[string]any{"role": "user", "parts": []any{map[string]any{"kind": "text", "text": "inspect"}}}}, "tools": []any{map[string]any{"name": "canvas_get_state", "parameters": map[string]any{"type": "object"}}}, "toolChoice": "required"},
 	}
 	tests := []struct {
 		name, packageName, providerID, marker, wantPath, response, wantID, wantSignature string
@@ -234,7 +234,11 @@ func TestOfficialAgentProfilesMapToolRequestsAndResponses(t *testing.T) {
 				t.Fatalf("request path = %q, want %q", spec.Path, test.wantPath)
 			}
 			body := manifestTestBody(t, spec)
-			if body["marker"] != test.marker {
+			if test.providerID == "gemini-generate-content" {
+				if pathValue(body, "contents.0.parts.0.text") != "inspect" || pathValue(body, "toolConfig.functionCallingConfig.mode") != "ANY" {
+					t.Fatalf("conversation mapping lost: %#v", body)
+				}
+			} else if body["marker"] != test.marker {
 				t.Fatalf("request selected wrong protocol body: %#v", body)
 			}
 			if test.providerID != "gemini-generate-content" && body["model"] != "gemini-test" {

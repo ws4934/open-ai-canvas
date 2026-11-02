@@ -121,11 +121,23 @@ eagle-asset-connector.yingce-plugin
 
 - `id`：全局唯一，使用小写 kebab-case；安装后不能随意变更。
 - `version`：遵循 SemVer，用于更新和回滚判断。
-- `apiVersion`：固定为 `yingce.plugin/v1`，不接受旧版本或平行 Manifest。
+- `apiVersion`：支持 `yingce.plugin/v1`、`yingce.plugin/v2` 和 `yingce.plugin/v3`。v2 增加编辑器插槽；v3 增加服务端会话、SSE 和 Prompt Cache 声明。使用新合同的包必须声明 v3，让不支持的旧宿主在安装时明确拒绝。
 - `contributes`：声明 provider、workflow、canvasNodes、transforms、assetSources、agents 等能力。
 - `permissions`：最小权限集合，宿主在安装和首次使用时展示。
 - `dependencies`：插件依赖的其他插件或宿主能力。
 - `integrity`：用于校验远程产物是否被替换。
+
+### 5.1 文本协议的 v3 执行合同
+
+以 `google-gemini-generate-content` 为例，修改协议不需要在 Go 中添加 Provider ID 分支。请求和解析源位于 `plugin-packages/schemas/gemini-text.mjs`，正式运行从同版本 `.yingce-plugin` 加载：
+
+- `agent.input: "conversation"` 接收 `request.extra.agent.conversation`。其中 `instructions` 是系统指令，`messages[].parts[]` 包含文本、媒体、工具调用或工具结果事实，工具保留 ID、名称、JSON 参数和签名；`tools` 是定义列表，`toolChoice` 是选择策略，`options` 含本步思考开关和输出上限。插件决定上游角色、字段及媒体编码。
+- `agentResponse.text/reasoning/error` 和 `response.text/reasoning/error` 使用既有表达式；工具名称、参数、ID 和签名使用路径映射。正文列表按顺序拼接并保留空格。`$schemaSubset` 可声明去除的 JSON Schema 关键字、字符串 const 转 enum 及枚举限制，不修改原工具定义。
+- `create.stream` / `agent.stream` 的 `request` 继承主请求，覆盖方法、路径、请求体、请求头或查询参数。`text/reasoning` 读取每个 JSON SSE 事件；`append` 追加数组，`merge` 合并累计用量，`complete` 声明成功终态，`error` 声明错误，`response` 用 `stream.text/reasoning/append/merge` 生成最终响应供原解析器消费。默认拒绝非 SSE；`allowFullResponse: true` 才接受完整 JSON。无成功终态的断流保持失败和账务不确定状态。
+- `agent.promptCache` 声明可缓存的顶层 `fields`、模型、最小上下文估算阈值、`create/delete` 操作、响应资源名及到期时间、完整匹配的 `resourcePattern`、引用字段 `applyField` 和 `missing` 失效条件。创建可读取 `cache.prefix/model`，删除可读取 `cache.resourceName/model`；缓存失败继续未缓存请求，确认资源缺失时最多重建一次。
+- `providers[].streaming` 用于声明仍由现有宿主流式引擎执行的协议能力；带 `stream` 规则的协议自动导出该能力。它是展示能力，不会仅凭一个布尔值创建 SSE 解析器。
+
+宿主保留认证、出站 SSRF 限制、缓存按用户/凭证/协议隔离、并发锁、超时、计费、Agent 会话、审批、工具幂等和画布并发校验。升级内置包不会覆盖管理员保存的模型能力和价格。
 
 ## 6. 宿主 API 边界
 

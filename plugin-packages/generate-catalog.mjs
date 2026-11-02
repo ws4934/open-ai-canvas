@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { xaiVideoInputSchema } from "./schemas/xai-video.mjs";
+import { geminiTextProtocol } from "./schemas/gemini-text.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const scopes = ["admin.system-channel", "user.custom-channel", "canvas", "creation", "agent"];
@@ -105,7 +106,7 @@ function add(spec) {
 }
 
 add({
-  id: "openai-chat-completions", providerId: "chat-completion", name: "OpenAI Chat Completions", vendor: "OpenAI", capability: "text",
+  id: "openai-chat-completions", providerId: "chat-completion", name: "OpenAI Chat Completions", vendor: "OpenAI", capability: "text", streaming: true, version: "2.0.1",
   baseUrl: "https://api.openai.com", auth: bearer, params: textParams,
   create: jsonCreate("/chat/completions", {
     model: ref("request.model"), messages: ref("request.messages"),
@@ -130,11 +131,14 @@ add({
 });
 
 add({
-  id: "openai-responses", providerId: "openai-response", name: "OpenAI Responses", vendor: "OpenAI", capability: "text",
-  baseUrl: "https://api.openai.com", auth: bearer, params: textParams,
+  id: "openai-responses", providerId: "openai-response", name: "OpenAI Responses", vendor: "OpenAI", capability: "text", streaming: true, version: "2.0.2",
+  baseUrl: "https://api.openai.com", auth: bearer, params: textParams.map((item) => item[0] === "messages" ? ["messages", "message[]", true, "input", "过滤 system 消息；保留消息角色、顺序和字符串 content；内容块 text 转为 input_text，image_url 转为 input_image，并将 image_url.url 映射为字符串 image_url；其他类型内容块保持原值。"] : item),
   create: jsonCreate("/responses", {
     model: ref("request.model"),
-    input: filter(ref("request.messages"), "message", ne(ref("message.role"), "system")),
+    input: map(filter(ref("request.messages"), "message", ne(ref("message.role"), "system")), "message", { $merge: [ref("message"), { content: conditional(ref("message.content.0.type"), map(ref("message.content"), "part", { $switch: { cases: [
+      { when: eq(ref("part.type"), "text"), then: { type: "input_text", text: ref("part.text") } },
+      { when: eq(ref("part.type"), "image_url"), then: { type: "input_image", image_url: ref("part.image_url.url") } }
+    ], default: ref("part") } }), ref("message.content")) }] }),
     instructions: omit(ref("request.instructions")),
     temperature: omit(ref("request.providerOptions.openai-response.temperature")),
     top_p: omit(ref("request.providerOptions.openai-response.top_p")),
@@ -152,7 +156,7 @@ add({
 });
 
 add({
-  id: "anthropic-messages", providerId: "claude-api", name: "Anthropic Messages", vendor: "Anthropic", capability: "text",
+  id: "anthropic-messages", providerId: "claude-api", name: "Anthropic Messages", vendor: "Anthropic", capability: "text", streaming: true, version: "2.0.1",
   baseUrl: "https://api.anthropic.com", auth: { type: "anthropic", field: "apiKey" }, params: textParams,
   create: jsonCreate("/v1/messages", {
     model: ref("request.model"),
@@ -178,21 +182,7 @@ add({
 add({
   id: "google-gemini-generate-content", providerId: "gemini-generate-content", name: "Google Gemini generateContent", vendor: "Google", capability: "text",
   baseUrl: "https://generativelanguage.googleapis.com", auth: { type: "google-api-key", field: "apiKey" }, params: textParams,
-  create: jsonCreate("/v1beta/models/{{model}}:generateContent", {
-    contents: map(filter(ref("request.messages"), "message", ne(ref("message.role"), "system")), "message", {
-      role: conditional(eq(ref("message.role"), "assistant"), "model", "user"),
-      parts: [{ text: ref("message.content") }]
-    }),
-    systemInstruction: conditional(ref("request.instructions"), { parts: [{ text: ref("request.instructions") }] }),
-    generationConfig: omit(ref("request.providerOptions.gemini-generate-content.generationConfig")),
-    safetySettings: omit(ref("request.providerOptions.gemini-generate-content.safetySettings")),
-    tools: omit(ref("request.providerOptions.gemini-generate-content.tools")),
-    toolConfig: omit(ref("request.providerOptions.gemini-generate-content.toolConfig")),
-    cachedContent: omit(ref("request.providerOptions.gemini-generate-content.cachedContent"))
-  }),
-  agent: jsonCreate("/v1beta/models/{{model}}:generateContent", ref("request.extra.agent.gemini")),
-  agentResponse: { textPaths: ["candidates.0.content.parts.0.text"], toolCallsPath: "candidates.0.content.parts", toolCallIdPaths: ["functionCall.id"], toolCallNamePaths: ["functionCall.name"], toolCallArgumentsPaths: ["functionCall.args"], toolCallThoughtSignaturePaths: ["thoughtSignature", "thought_signature"] },
-  response: { status: "succeeded", text: map(ref("response.candidates.0.content.parts"), "part", omit(ref("part.text"))), usage: ref("response.usageMetadata"), errorPaths: ["error.code"], messagePaths: ["error.message"] }
+  ...geminiTextProtocol(),
 });
 
 add({
@@ -1387,7 +1377,7 @@ for (const [id, name, capability, createPath, pollPath, resultPath] of [
 
 function manifestFor(spec) {
   return {
-    apiVersion: "yingce.plugin/v2",
+    apiVersion: spec.apiVersion || "yingce.plugin/v2",
     id: spec.id,
     name: spec.name,
     version: spec.version || "2.0.0",
@@ -1404,6 +1394,7 @@ function manifestFor(spec) {
         scopes,
         baseUrl: spec.baseUrl,
         requiresPublicMediaUrls: spec.requiresPublicMediaUrls === true,
+        ...(spec.streaming ? { streaming: true } : {}),
         auth: spec.auth,
         ...(spec.imageParameters ? { imageParameters: spec.imageParameters } : {}),
         ...(spec.inputSchema ? { inputSchema: spec.inputSchema } : {}),
@@ -1452,6 +1443,8 @@ function operationFieldRows(operation, label) {
   collectTemplateFields(operation.query, `${label}.query`, rows);
   collectTemplateFields(operation.headers, `${label}.headers`, rows);
   collectTemplateFields(operation.files, `${label}.files`, rows);
+  collectTemplateFields(operation.stream, `${label}.stream`, rows);
+  collectTemplateFields(operation.promptCache, `${label}.promptCache`, rows);
   return rows;
 }
 
@@ -1472,7 +1465,7 @@ function docsFor(spec) {
   const optionRefs = [...new Set([...manifestJSON.matchAll(new RegExp(`request\\.providerOptions\\.${spec.providerId.replaceAll("-", "\\-")}\\.([A-Za-z0-9_.-]+)`, "g"))].map((match) => match[1]))].sort();
   const optionRows = optionRefs.length ? optionRefs.map((name) => `- \`providerOptions.${spec.providerId}.${name}\``).join("\n") : "- 无额外扩展键。";
   const configRows = (spec.configuration || config()).fields.map((field) => `| \`${field.name}\` | ${field.type} | ${field.required ? "是" : "否"} | ${field.label || ""} |`).join("\n");
-  return `# ${spec.name} 接口字段\n\n## 协议身份\n\n- 插件 ID：\`${spec.id}\`。\n- Provider ID：\`${spec.providerId}\`。\n- 能力：\`${spec.capability}\`。\n- 默认 Base URL：\`${spec.baseUrl}\`。\n- 鉴权驱动：\`${spec.auth?.type || "默认"}\`。\n- 创建：\`${spec.create.method} ${spec.create.path || "动态路径"}\`。\n${spec.agent ? `- Agent：\`${spec.agent.method} ${spec.agent.path || "动态路径"}\`。\n` : ""}${spec.poll ? `- 查询：\`${spec.poll.method} ${spec.poll.path}\`。\n` : "- 生命周期：同步响应。\n"}${spec.cancel ? `- 取消：\`${spec.cancel.method} ${spec.cancel.path}\`。\n` : ""}\n## 配置字段\n\n| 字段 | 类型 | 必填 | 含义 |\n| --- | --- | --- | --- |\n${configRows}\n\n## 统一字段映射\n\n| 统一字段 | 类型 | 必填 | 上游映射 | 说明 |\n| --- | --- | --- | --- | --- |\n${rows}\n\n## 上游请求模板逐字段清单\n\n下表由插件请求模板生成，覆盖 body、query、headers 和 multipart 文件声明中的每个字段。\n\n| 上游位置 | 值或转换表达式 |\n| --- | --- |\n${operationRows || "| `create` | 无请求字段 |"}\n\n## Provider 扩展键\n\n${optionRows}\n\n动态模型或工作流允许使用文档声明的完整 \`parameters/input/extra_body\` 对象；该对象是协议本身的开放 schema，不会被宿主裁剪。\n\n## 响应映射逐字段清单\n\n| 映射位置 | 上游路径或转换表达式 |\n| --- | --- |\n${mappedResponseRows || "| `response` | 无显式映射 |"}\n\n## 响应与错误\n\n插件把上游 task/status/text/media/usage 映射为统一结果。临时媒体 URL 标记为 ephemeral，由宿主立即下载持久化。HTTP 错误、业务 code 和 error object 保持失败语义，不包装成成功。\n\n## 兼容边界\n\n${spec.notes || "该包只代表上述线协议 profile；同一品牌的其他 endpoint、云区域或网关包装必须使用独立插件，不能根据模型名猜测。"}\n`;
+  return `# ${spec.name} 接口字段\n\n## 协议身份\n\n- 插件 ID：\`${spec.id}\`。\n- Provider ID：\`${spec.providerId}\`。\n- 能力：\`${spec.capability}\`。\n- 默认 Base URL：\`${spec.baseUrl}\`。\n- 鉴权驱动：\`${spec.auth?.type || "默认"}\`。\n- 创建：\`${spec.create.method} ${spec.create.path || "动态路径"}\`。\n${spec.agent ? `- Agent：\`${spec.agent.method} ${spec.agent.path || "动态路径"}\`。\n` : ""}${spec.poll ? `- 查询：\`${spec.poll.method} ${spec.poll.path}\`。\n` : `- 响应：${spec.create.stream || spec.streaming ? "完整响应 / 流式响应" : "完整响应"}。\n`}${spec.cancel ? `- 取消：\`${spec.cancel.method} ${spec.cancel.path}\`。\n` : ""}\n## 配置字段\n\n| 字段 | 类型 | 必填 | 含义 |\n| --- | --- | --- | --- |\n${configRows}\n\n## 统一字段映射\n\n| 统一字段 | 类型 | 必填 | 上游映射 | 说明 |\n| --- | --- | --- | --- | --- |\n${rows}\n\n## 上游请求模板逐字段清单\n\n下表由插件请求模板生成，覆盖 body、query、headers 和 multipart 文件声明中的每个字段。\n\n| 上游位置 | 值或转换表达式 |\n| --- | --- |\n${operationRows || "| `create` | 无请求字段 |"}\n\n## Provider 扩展键\n\n${optionRows}\n\n动态模型或工作流允许使用文档声明的完整 \`parameters/input/extra_body\` 对象；该对象是协议本身的开放 schema，不会被宿主裁剪。\n\n## 响应映射逐字段清单\n\n| 映射位置 | 上游路径或转换表达式 |\n| --- | --- |\n${mappedResponseRows || "| `response` | 无显式映射 |"}\n\n## 响应与错误\n\n插件把上游 task/status/text/media/usage 映射为统一结果。临时媒体 URL 标记为 ephemeral，由宿主立即下载持久化。HTTP 错误、业务 code 和 error object 保持失败语义，不包装成成功。\n\n## 兼容边界\n\n${spec.notes || "该包只代表上述线协议 profile；同一品牌的其他 endpoint、云区域或网关包装必须使用独立插件，不能根据模型名猜测。"}\n`;
 }
 
 const requestedPackageIDs = new Set(process.argv.slice(2).map((value) => value.trim()).filter(Boolean));

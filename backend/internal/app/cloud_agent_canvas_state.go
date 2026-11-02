@@ -36,7 +36,7 @@ var cloudAgentStructuredProjectors = map[string]cloudAgentStructuredProjector{
 func cloudAgentNodeHash(doc map[string]any, nodeID string) string {
 	for _, node := range creationMaps(doc["nodes"]) {
 		if stringValue(node["id"]) == nodeID {
-			return creationHash(node)
+			return creationHash(cloudAgentSnapshotNode(node))
 		}
 	}
 	return ""
@@ -74,14 +74,36 @@ func cloudAgentCanvasHash(doc map[string]any) string {
 			content[key] = []any{}
 		}
 	}
-	content["nodes"] = cloudAgentNodesWithoutTimestamps(content["nodes"])
+	content["nodes"] = cloudAgentSnapshotNodes(content["nodes"])
 	return creationHash(content)
 }
 
-// cloudAgentNodesWithoutTimestamps 去掉节点层的 createdAt/updatedAt。前端会给 Agent 新建或
-// 修改过的节点补写时间戳并自动保存，单纯的时间戳变化不代表内容被改，不应让模型手上的
-// 快照失效；节点其他字段（含未知字段）仍全部参与哈希。没有时间戳的节点原样保留，哈希不变。
-func cloudAgentNodesWithoutTimestamps(value any) any {
+// 浏览器补写时间戳、测量分镜输入框高度不代表内容变化。几何、业务与未知字段仍参与校验。
+func cloudAgentSnapshotNode(node map[string]any) map[string]any {
+	projected := make(map[string]any, len(node))
+	for key, value := range node {
+		if key == "createdAt" || key == "updatedAt" {
+			continue
+		}
+		if key == "metadata" && node["type"] == "script" {
+			if metadata, ok := value.(map[string]any); ok {
+				if _, measured := metadata["storyboardComposerHeight"]; measured {
+					copy := make(map[string]any, len(metadata))
+					for field, content := range metadata {
+						if field != "storyboardComposerHeight" {
+							copy[field] = content
+						}
+					}
+					value = copy
+				}
+			}
+		}
+		projected[key] = value
+	}
+	return projected
+}
+
+func cloudAgentSnapshotNodes(value any) any {
 	items, ok := value.([]any)
 	if !ok {
 		if typed, isMaps := value.([]map[string]any); isMaps {
@@ -100,19 +122,7 @@ func cloudAgentNodesWithoutTimestamps(value any) any {
 			projected[index] = item
 			continue
 		}
-		_, hasCreated := node["createdAt"]
-		_, hasUpdated := node["updatedAt"]
-		if !hasCreated && !hasUpdated {
-			projected[index] = node
-			continue
-		}
-		copied := make(map[string]any, len(node))
-		for key, field := range node {
-			if key != "createdAt" && key != "updatedAt" {
-				copied[key] = field
-			}
-		}
-		projected[index] = copied
+		projected[index] = cloudAgentSnapshotNode(node)
 	}
 	return projected
 }

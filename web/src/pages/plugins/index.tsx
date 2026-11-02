@@ -13,7 +13,7 @@ import { EAGLE_PLUGIN_ID } from "@/lib/plugins/builtin/eagle";
 import { PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
 import { RUNNINGHUB_PLUGIN_ID } from "@/lib/plugins/builtin/workflows";
 import { isOfficialApplicationPluginId } from "@/lib/plugins/official-applications";
-import type { PluginManifest, PluginManifestV2, RegisteredPlugin } from "@/lib/plugins/plugin-types";
+import type { AnyPluginManifest, RegisteredPlugin } from "@/lib/plugins/plugin-types";
 import { getEagleLibrary, type EagleFolder } from "@/services/api/eagle";
 import { fetchPlugins, setUserPluginEnabled, type BackendPlugin, type PluginState } from "@/services/api/plugins";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
@@ -127,10 +127,14 @@ export default function PluginsPage() {
         return [...byId.values()];
     }, [builtinPlugins, remotePlugins]);
     const backendPluginById = useMemo(() => new Map(backendPlugins.map((plugin) => [plugin.manifest.id, plugin])), [backendPlugins]);
-    const visiblePlugins = useMemo(() => registeredPlugins.filter((plugin) => {
-        const isApplicationPlugin = backendPluginById.get(plugin.manifest.id)?.management.kind === "application" || isOfficialApplicationPluginId(plugin.manifest.id);
-        return user?.role === "admin" || features.systemPluginsVisibleToUsers || isApplicationPlugin;
-    }), [backendPluginById, features.systemPluginsVisibleToUsers, registeredPlugins, user?.role]);
+    const visiblePlugins = useMemo(
+        () =>
+            registeredPlugins.filter((plugin) => {
+                const isApplicationPlugin = backendPluginById.get(plugin.manifest.id)?.management.kind === "application" || isOfficialApplicationPluginId(plugin.manifest.id);
+                return user?.role === "admin" || features.systemPluginsVisibleToUsers || isApplicationPlugin;
+            }),
+        [backendPluginById, features.systemPluginsVisibleToUsers, registeredPlugins, user?.role],
+    );
 
     const eagle = installations.find((item) => item.manifest.id === EAGLE_PLUGIN_ID);
 
@@ -256,37 +260,44 @@ export default function PluginsPage() {
                                 </span>
                                 <span>{categoryCounts.all}</span>
                             </button>
-                            {pluginSectionMeta.filter((section) => categoryCounts[section.key] > 0).map((section) => {
-                                const SectionIcon = section.icon;
-                                return (
-                                    <button
-                                        key={section.key}
-                                        type="button"
-                                        className={`plugins-sidebar-item${categoryFilter === section.key ? " is-active" : ""}`}
-                                        aria-current={categoryFilter === section.key ? "page" : undefined}
-                                        onClick={() => selectCategory(section.key)}
-                                    >
-                                        <span className="plugins-sidebar-item-label">
-                                            <SectionIcon className="size-4" />
-                                            {section.label}
-                                        </span>
-                                        <span>{categoryCounts[section.key] || 0}</span>
-                                    </button>
-                                );
-                            })}
+                            {pluginSectionMeta
+                                .filter((section) => categoryCounts[section.key] > 0)
+                                .map((section) => {
+                                    const SectionIcon = section.icon;
+                                    return (
+                                        <button
+                                            key={section.key}
+                                            type="button"
+                                            className={`plugins-sidebar-item${categoryFilter === section.key ? " is-active" : ""}`}
+                                            aria-current={categoryFilter === section.key ? "page" : undefined}
+                                            onClick={() => selectCategory(section.key)}
+                                        >
+                                            <span className="plugins-sidebar-item-label">
+                                                <SectionIcon className="size-4" />
+                                                {section.label}
+                                            </span>
+                                            <span>{categoryCounts[section.key] || 0}</span>
+                                        </button>
+                                    );
+                                })}
                         </nav>
                     </aside>
                     <div className="plugins-page-content">
-                        <CollectionToolbar label="插件筛选" trailing={<div className="plugins-toolbar-actions">
-                                <Button icon={<RefreshCw className="size-4" />} loading={backendPluginsLoading} onClick={() => void reloadBackendPlugins()}>
-                                    刷新插件
-                                </Button>
-                                {user?.role === "admin" ? (
-                                    <Button type="primary" onClick={() => navigate("/admin/plugins")}>
-                                        管理员插件管理
+                        <CollectionToolbar
+                            label="插件筛选"
+                            trailing={
+                                <div className="plugins-toolbar-actions">
+                                    <Button icon={<RefreshCw className="size-4" />} loading={backendPluginsLoading} onClick={() => void reloadBackendPlugins()}>
+                                        刷新插件
                                     </Button>
-                                ) : null}
-                            </div>}>
+                                    {user?.role === "admin" ? (
+                                        <Button type="primary" onClick={() => navigate("/admin/plugins")}>
+                                            管理员插件管理
+                                        </Button>
+                                    ) : null}
+                                </div>
+                            }
+                        >
                             <Input
                                 className="plugins-search"
                                 prefix={<Search className="size-4 text-foreground/38" aria-hidden="true" />}
@@ -613,7 +624,7 @@ function pluginSourceLabel(plugin: RegisteredPlugin, state?: PluginState) {
     return "系统插件";
 }
 
-function contributionKindsFor(manifest: PluginManifest | PluginManifestV2): string[] {
+function contributionKindsFor(manifest: AnyPluginManifest): string[] {
     const contributions = manifest.contributes;
     const kinds: string[] = [];
     if (contributions.providers?.length) kinds.push("provider");
@@ -629,11 +640,11 @@ function contributionKindsFor(manifest: PluginManifest | PluginManifestV2): stri
     return kinds;
 }
 
-function providerCapabilitiesFor(manifest: PluginManifest | PluginManifestV2) {
+function providerCapabilitiesFor(manifest: AnyPluginManifest) {
     return [...new Set((manifest.contributes.providers || []).flatMap((provider) => provider.capabilities))];
 }
 
-function pluginMatchesCategory(manifest: PluginManifest | PluginManifestV2, category: string) {
+function pluginMatchesCategory(manifest: AnyPluginManifest, category: string) {
     const providerCapabilities = providerCapabilitiesFor(manifest);
     const isPaymentProtocol = Boolean(manifest.contributes.paymentProviders?.length);
     if (category === "payment") return isPaymentProtocol;

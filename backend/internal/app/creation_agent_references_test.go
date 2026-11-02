@@ -10,7 +10,7 @@ func TestCreationAgentImagesResolveOnlyApprovedResources(t *testing.T) {
 	input := canvasGenerationInput{ReferenceImages: []providerMedia{{StorageKey: "resource:allowed", DataURL: "data:image/png;base64,aW1hZ2U="}}, AgentRequests: &agentToolRequests{
 		ChatCompletion: map[string]any{"messages": []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "image_url", "image_url": map[string]any{"url": "resource:allowed"}}}}}},
 		Claude:         map[string]any{"messages": []any{map[string]any{"content": []any{map[string]any{"type": "image", "source": map[string]any{"type": "url", "url": "resource:allowed"}}}}}},
-		Gemini:         map[string]any{"contents": []any{map[string]any{"parts": []any{map[string]any{"fileData": map[string]any{"fileUri": "resource:allowed", "mimeType": "image/png"}}}}}},
+		Canonical:      &canonicalAgentRequest{Messages: []map[string]any{{"role": "user", "content": []any{map[string]any{"type": "image_url", "image_url": map[string]any{"url": "resource:allowed"}}}}}},
 	}}
 	if err := validateAgentResourcePlaceholders(input); err != nil {
 		t.Fatal(err)
@@ -21,10 +21,14 @@ func TestCreationAgentImagesResolveOnlyApprovedResources(t *testing.T) {
 	}
 	b, _ := json.Marshal(resolved.AgentRequests)
 	text := string(b)
-	for _, want := range []string{"data:image/png;base64,aW1hZ2U=", `"type":"base64"`, `"inlineData"`} {
+	for _, want := range []string{"data:image/png;base64,aW1hZ2U=", `"type":"base64"`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing protocol image: %s", want)
 		}
+	}
+	gemini, _ := json.Marshal(geminiAgentBodyForTest(resolved.AgentRequests.Canonical))
+	if !strings.Contains(string(gemini), `"inlineData":{"data":"aW1hZ2U=","mimeType":"image/png"}`) {
+		t.Fatalf("plugin did not encode hydrated canonical image: %s", gemini)
 	}
 	original, _ := json.Marshal(input.AgentRequests)
 	if strings.Contains(string(original), "base64") {

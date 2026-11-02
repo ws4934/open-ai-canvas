@@ -9,7 +9,7 @@
 - 鉴权驱动：`anthropic`。
 - 创建：`POST /v1/messages`。
 - Agent：`POST /v1/messages`。
-- 生命周期：同步响应。
+- 响应：完整响应 / 流式响应。
 
 ## 配置字段
 
@@ -117,7 +117,7 @@
   "apiVersion": "yingce.plugin/v2",
   "id": "anthropic-messages",
   "name": "Anthropic Messages",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "author": "Anthropic / 影策",
   "description": "Anthropic Messages 独立请求协议插件。",
   "documentation": "<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>",
@@ -152,6 +152,7 @@
         ],
         "baseUrl": "https://api.anthropic.com",
         "requiresPublicMediaUrls": false,
+        "streaming": true,
         "auth": {
           "type": "anthropic",
           "field": "apiKey"

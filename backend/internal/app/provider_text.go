@@ -31,11 +31,15 @@ func runTextTask(ctx context.Context, input canvasGenerationInput) (map[string]i
 // Known text protocols keep the plugin's request mapping and host transport,
 // while sharing the SSE parser used by text generation and Agent requests.
 func executeProtocolCreateRequest(ctx context.Context, input canvasGenerationInput, spec protocol.RequestSpec) ([]byte, *protocol.Result, error) {
+	if input.Mode == "text" && input.StreamText && spec.Stream != nil {
+		data, err := executeDeclarativeStream(ctx, input, spec)
+		return data, nil, err
+	}
 	wire := input.Config.InterfaceType
 	if wire == string(model.ChannelInterfaceOpenAIResponse) {
 		wire = "responses"
 	}
-	if input.Mode != "text" || !input.StreamText || (wire != "chat-completion" && wire != "responses" && wire != "claude-api" && wire != "gemini-generate-content") {
+	if input.Mode != "text" || !input.StreamText || (wire != "chat-completion" && wire != "responses" && wire != "claude-api") {
 		data, err := executeProtocolRequest(ctx, input.Config, spec)
 		return data, nil, err
 	}
@@ -43,28 +47,16 @@ func executeProtocolCreateRequest(ctx context.Context, input canvasGenerationInp
 	if body == nil {
 		return nil, nil, errors.New("声明式流式文本请求体必须是 JSON 对象")
 	}
-	if wire == "gemini-generate-content" {
-		var err error
-		spec, err = geminiStreamingRequest(spec)
-		if err != nil {
+	body["stream"] = true
+	if wire == "chat-completion" {
+		if err := ensureChatCompletionStreamUsage(body); err != nil {
 			return nil, nil, err
 		}
-	} else {
-		body["stream"] = true
-		if wire == "chat-completion" {
-			if err := ensureChatCompletionStreamUsage(body); err != nil {
-				return nil, nil, err
-			}
-		}
-		spec.Body = body
 	}
+	spec.Body = body
 	parser := newStreamingAgentParser(wire, input.OnTextDelta)
 	parser.emitReasoning = input.OnReasoningDelta
-	var onComplete []func(string) error
-	if wire == "gemini-generate-content" {
-		onComplete = append(onComplete, parser.completeGeminiStream)
-	}
-	data, mimeType, err := executeProtocolBinaryRequestWithConsumer(ctx, input.Config, spec, parser.consume, onComplete...)
+	data, mimeType, err := executeProtocolBinaryRequestWithConsumer(ctx, input.Config, spec, parser.consume)
 	if err != nil || !strings.Contains(strings.ToLower(mimeType), "event-stream") {
 		return data, nil, err
 	}
@@ -78,9 +70,6 @@ func executeProtocolCreateRequest(ctx context.Context, input canvasGenerationInp
 		return nil, nil, errors.New("流式文本接口没有返回内容")
 	}
 	result := &protocol.Result{Text: text, Reasoning: stringField(parsed, "reasoning")}
-	if wire == "gemini-generate-content" {
-		result.Usage = parser.geminiUsage
-	}
 	return data, result, nil
 }
 

@@ -1,5 +1,5 @@
 import { ChoiceBrowser } from "./choice-browser";
-import type { ModelProtocolDefinition, ProtocolCapability } from "@/lib/model-protocols";
+import { modelProtocolResponseLabel, type ModelProtocolDefinition, type ProtocolCapability } from "@/lib/model-protocols";
 
 export function ModelProtocolBrowser({
     capability,
@@ -26,7 +26,7 @@ export function ModelProtocolBrowser({
             details: [
                 { label: "请求", value: <code>{protocol.create}</code> },
                 { label: "请求体", value: protocol.contentType },
-                { label: "响应", value: protocol.poll ? "异步轮询" : "同步响应" },
+                { label: "响应", value: modelProtocolResponseLabel(protocol) },
                 { label: "来源", value: protocol.media },
                 ...(protocol.imageParameters ? [{ label: "图片参数", value: protocol.imageParameters.map((p) => p.label).join("、") }] : []),
             ],

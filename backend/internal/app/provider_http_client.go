@@ -39,28 +39,6 @@ func postGeminiJSON(ctx context.Context, config providerConfig, path string, bod
 	return doJSON(req, target)
 }
 
-func deleteGeminiCachedContent(ctx context.Context, config providerConfig, resourceName string) error {
-	if err := validateGeminiCachedContentName(resourceName); err != nil {
-		return err
-	}
-	suffix := strings.TrimPrefix(strings.TrimSpace(resourceName), "cachedContents/")
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, geminiVeoURL(config.BaseURL, "/cachedContents/"+suffix), nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("x-goog-api-key", config.APIKey)
-	ApplyOutboundHeaders(req, config.Headers)
-	_, _, err = doBinary(req)
-	if err == nil {
-		return nil
-	}
-	var httpErr providerHTTPError
-	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
-		return nil
-	}
-	return err
-}
-
 func getGeminiJSON(ctx context.Context, config providerConfig, path string, target interface{}) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, geminiVeoURL(config.BaseURL, path), nil)
 	if err != nil {

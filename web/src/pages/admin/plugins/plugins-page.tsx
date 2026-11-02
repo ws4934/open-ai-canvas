@@ -12,7 +12,7 @@ import { EAGLE_PLUGIN_ID } from "@/lib/plugins/builtin/eagle";
 import { RUNNINGHUB_PLUGIN_ID } from "@/lib/plugins/builtin/workflows";
 import { isOfficialApplicationPluginId } from "@/lib/plugins/official-applications";
 import { listRegisteredPlugins } from "@/lib/plugins/plugin-registry";
-import type { PluginManifest, PluginManifestV2 } from "@/lib/plugins/plugin-types";
+import type { AnyPluginManifest } from "@/lib/plugins/plugin-types";
 import { fetchAdminPlugins, setPluginPlatformAvailability, uninstallPlugin, uploadPlugin, type AdminPluginState, type BackendPlugin, type PluginManagement } from "@/services/api/plugins";
 import { UploadPluginModal } from "@/pages/plugins/plugin-documentation-modals";
 
@@ -21,7 +21,7 @@ import { AdminDataTable, AdminStatusBadge, AdminTableEmpty } from "../components
 import { Select } from "@/components/ui/base/select";
 
 type AdminPluginItem = {
-    manifest: PluginManifest | PluginManifestV2;
+    manifest: AnyPluginManifest;
     source: string;
     management: PluginManagement;
     status?: string;

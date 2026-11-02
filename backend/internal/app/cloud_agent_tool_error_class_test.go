@@ -86,6 +86,9 @@ func TestCloudAgentToolResultCarriesErrorClass(t *testing.T) {
 	if detail["errorClassLabel"] != "画布状态已变化" || detail["retryable"] != true || detail["requiredAction"] != "reread_canvas" {
 		t.Fatalf("回执里的归类字段不对：%+v", detail)
 	}
+	if detail["exampleArguments"] != nil || detail["recovery"].(map[string]any)["toolName"] != "canvas_get_state" {
+		t.Fatalf("快照冲突应要求重读而不是再次新增节点：%+v", detail)
+	}
 }
 
 // 真机踩到的场景：canvas_read_storyboard 缺 nodeId 时，业务校验抛的是普通 AppError

@@ -10,17 +10,33 @@ import (
 )
 
 type ManifestOperation struct {
-	Method              string             `json:"method"`
-	Path                string             `json:"path"`
-	PathTemplate        any                `json:"pathTemplate,omitempty"`
-	OriginPath          bool               `json:"originPath,omitempty"`
-	ContentType         string             `json:"contentType,omitempty"`
-	ContentTypeTemplate any                `json:"contentTypeTemplate,omitempty"`
-	Headers             map[string]any     `json:"headers,omitempty"`
-	Query               map[string]any     `json:"query,omitempty"`
-	Body                any                `json:"body,omitempty"`
-	Fields              map[string]string  `json:"fields,omitempty"`
-	Files               []ManifestFilePart `json:"files,omitempty"`
+	Method              string               `json:"method"`
+	Path                string               `json:"path"`
+	PathTemplate        any                  `json:"pathTemplate,omitempty"`
+	OriginPath          bool                 `json:"originPath,omitempty"`
+	ContentType         string               `json:"contentType,omitempty"`
+	ContentTypeTemplate any                  `json:"contentTypeTemplate,omitempty"`
+	Headers             map[string]any       `json:"headers,omitempty"`
+	Query               map[string]any       `json:"query,omitempty"`
+	Body                any                  `json:"body,omitempty"`
+	Fields              map[string]string    `json:"fields,omitempty"`
+	Files               []ManifestFilePart   `json:"files,omitempty"`
+	Stream              *ManifestStream      `json:"stream,omitempty"`
+	Input               string               `json:"input,omitempty"`
+	PromptCache         *ManifestPromptCache `json:"promptCache,omitempty"`
+}
+
+// Stream rules translate SSE events without selecting a provider-specific engine.
+type ManifestStream struct {
+	AllowFullResponse bool               `json:"allowFullResponse,omitempty"`
+	Request           *ManifestOperation `json:"request"`
+	Text              any                `json:"text,omitempty"`
+	Reasoning         any                `json:"reasoning,omitempty"`
+	Append            map[string]any     `json:"append,omitempty"`
+	Merge             map[string]any     `json:"merge,omitempty"`
+	Complete          any                `json:"complete"`
+	Error             any                `json:"error,omitempty"`
+	Response          any                `json:"response"`
 }
 
 // ManifestUpload 声明“先上传素材、再按上游素材 ID 引用”的前置步骤。宿主在 create 之前
@@ -66,6 +82,7 @@ type ManifestResponse struct {
 	QueueAhead any `json:"queueAhead,omitempty"`
 	Text       any `json:"text,omitempty"`
 	Reasoning  any `json:"reasoning,omitempty"`
+	Error      any `json:"error,omitempty"`
 	Images     any `json:"images,omitempty"`
 	Videos     any `json:"videos,omitempty"`
 	Audios     any `json:"audios,omitempty"`
@@ -76,6 +93,9 @@ type ManifestResponse struct {
 // tool-capable text request. Tool call paths are resolved against each item in
 // ToolCallsPath.
 type ManifestAgentResponse struct {
+	Text                   any      `json:"text,omitempty"`
+	Reasoning              any      `json:"reasoning,omitempty"`
+	Error                  any      `json:"error,omitempty"`
 	TextPaths              []string `json:"textPaths,omitempty"`
 	ReasoningPaths         []string `json:"reasoningPaths,omitempty"`
 	ToolCallsPath          string   `json:"toolCallsPath,omitempty"`
@@ -273,7 +293,7 @@ func ValidateManifest(manifest Manifest) error {
 		}
 		seenSMS[provider.ID] = true
 	}
-	if version := strings.TrimSpace(manifest.APIVersion); version != "yingce.plugin/v1" && version != "yingce.plugin/v2" {
+	if version := strings.TrimSpace(manifest.APIVersion); version != "yingce.plugin/v1" && version != "yingce.plugin/v2" && version != "yingce.plugin/v3" {
 		return fmt.Errorf("unsupported protocol manifest apiVersion %q", manifest.APIVersion)
 	}
 	if strings.TrimSpace(manifest.Metadata.ID) == "" || strings.TrimSpace(manifest.Metadata.Version) == "" {
@@ -306,6 +326,13 @@ func ValidateManifest(manifest Manifest) error {
 			return fmt.Errorf("duplicate provider contribution %q", provider.ID)
 		}
 		providerIDs[provider.ID] = struct{}{}
+		if manifest.APIVersion != "yingce.plugin/v3" {
+			for _, operation := range []*ManifestOperation{&provider.Create, provider.Agent} {
+				if operation != nil && (operation.Stream != nil || operation.PromptCache != nil || operation.Input != "") {
+					return fmt.Errorf("provider %q conversation, stream and promptCache require yingce.plugin/v3", provider.ID)
+				}
+			}
+		}
 		if err := ValidateInputSchema(provider.InputSchema, provider.ID); err != nil {
 			return fmt.Errorf("provider %q input schema: %w", provider.ID, err)
 		}
@@ -458,6 +485,7 @@ func normalizeManifestForProvider(manifest *Manifest, index int) error {
 	manifest.Metadata.Poll = operationSummaryPtr(provider.Poll)
 	manifest.Metadata.Cancel = operationSummaryPtr(provider.Cancel)
 	manifest.Metadata.ContentType = provider.Create.ContentType
+	manifest.Metadata.Streaming = provider.Streaming || provider.Create.Stream != nil || (provider.Agent != nil && provider.Agent.Stream != nil)
 	manifest.Metadata.RequiresPublicMediaURLs = provider.RequiresPublicMediaURLs
 	manifest.Metadata.DetachedPolling = provider.DetachedPolling
 	manifest.Metadata.IdempotentCreate = provider.IdempotentCreate
@@ -497,6 +525,9 @@ func operationSummaryPtr(operation *ManifestOperation) string {
 }
 
 func validateManifestOperation(operation ManifestOperation) error {
+	if operation.Input != "" && operation.Input != "conversation" {
+		return fmt.Errorf("unsupported operation input %q", operation.Input)
+	}
 	method := strings.ToUpper(strings.TrimSpace(operation.Method))
 	if method != http.MethodGet && method != http.MethodPost && method != http.MethodDelete && method != http.MethodPut {
 		return fmt.Errorf("unsupported HTTP method %q", operation.Method)
@@ -516,6 +547,22 @@ func validateManifestOperation(operation ManifestOperation) error {
 	for _, file := range operation.Files {
 		if strings.TrimSpace(file.Name) == "" || file.Source == nil {
 			return fmt.Errorf("multipart file part requires name and source")
+		}
+	}
+	if stream := operation.Stream; stream != nil {
+		if stream.Request == nil || stream.Complete == nil || stream.Response == nil || stream.Request.Stream != nil || stream.Request.PromptCache != nil {
+			return fmt.Errorf("stream requires request, complete and response; nested streams are not supported")
+		}
+		base := operation
+		base.Stream = nil
+		base.PromptCache = nil
+		if err := validateManifestOperation(mergeStreamOperation(base, *stream.Request)); err != nil {
+			return fmt.Errorf("stream request: %w", err)
+		}
+	}
+	if operation.PromptCache != nil {
+		if err := validatePromptCache(*operation.PromptCache); err != nil {
+			return err
 		}
 	}
 	return nil

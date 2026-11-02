@@ -124,6 +124,13 @@ type RequestSpec struct {
 	Body        any                 `json:"body,omitempty"`
 	Files       []RequestFilePart   `json:"files,omitempty"`
 	Auth        ManifestAuth        `json:"auth,omitempty"`
+	Stream      *StreamSpec         `json:"stream,omitempty"`
+	PromptCache *PromptCacheSpec    `json:"promptCache,omitempty"`
+}
+
+type StreamSpec struct {
+	Request RequestSpec    `json:"request"`
+	Rules   ManifestStream `json:"rules"`
 }
 
 type RequestFilePart struct {
@@ -186,6 +193,7 @@ type Metadata struct {
 	Poll                    string           `json:"-"`
 	Cancel                  string           `json:"-"`
 	ContentType             string           `json:"-"`
+	Streaming               bool             `json:"streaming,omitempty"`
 	Documentation           string           `json:"documentation,omitempty"`
 	LegacyAliases           []string         `json:"-"`
 	Enabled                 bool             `json:"enabled"`
@@ -367,6 +375,7 @@ type ManifestProvider struct {
 	BaseURL                 string                 `json:"baseUrl,omitempty"`
 	RequiresPublicMediaURLs bool                   `json:"requiresPublicMediaUrls,omitempty"`
 	DetachedPolling         bool                   `json:"detachedPolling,omitempty"`
+	Streaming               bool                   `json:"streaming,omitempty"`
 	IdempotentCreate        bool                   `json:"idempotentCreate,omitempty"`
 	Auth                    ManifestAuth           `json:"auth,omitempty"`
 	Parameters              []Parameter            `json:"parameters,omitempty"`

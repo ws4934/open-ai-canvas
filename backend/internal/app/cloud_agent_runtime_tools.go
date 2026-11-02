@@ -95,6 +95,9 @@ func cloudAgentToolResult(runID string, state *cloudAgentRuntime, call cloudAgen
 					detail["exampleArguments"] = map[string]any{"snapshotHash": "<canvas_get_state.snapshotHash>", "ops": []any{map[string]any{"type": "add_node", "id": "<new-node-id>", "nodeType": "text", "content": "<content>"}}}
 				}
 			}
+			if fieldErr != nil && fieldErr.Issue == "stale_snapshot" {
+				cloudAgentSnapshotRecovery(detail, call)
+			}
 		}
 		// 稳定归类 + 可行动字段：只加标注，不改任何放行/拒绝判定。
 		// allowed 与执行器用的是同一份判定（cloudAgentToolAllowed 是纯函数，结果一致）。
@@ -164,6 +167,25 @@ func cloudAgentToolResult(runID string, state *cloudAgentRuntime, call cloudAgen
 	state.CallIndex++
 	state.Approval = nil
 	return exhausted
+}
+
+// 快照错误不能用新增节点的参数示例纠正；明确重读对象，避免拿节点版本去整理整张画布。
+func cloudAgentSnapshotRecovery(detail map[string]any, call cloudAgentCall) {
+	toolName := agenttool.CanvasGetState
+	arguments := map[string]any{}
+	var original map[string]any
+	_ = json.Unmarshal([]byte(call.Function.Arguments), &original)
+	switch call.Function.Name {
+	case agenttool.CanvasEditStoryboard:
+		toolName, arguments["nodeId"] = agenttool.CanvasReadStoryboard, original["nodeId"]
+	case agenttool.CanvasEditBatchTable:
+		toolName, arguments["nodeId"] = agenttool.CanvasReadBatchTable, original["nodeId"]
+	case agenttool.PrevisApplyPatch:
+		toolName, arguments["sceneId"] = agenttool.PrevisSceneRead, original["sceneId"]
+	}
+	detail["recovery"] = map[string]any{"toolName": toolName, "arguments": arguments}
+	detail["guidance"] = "本次没有写入。先按 recovery 重读目标并核对最新状态，再用该读取结果的 snapshotHash 重新提交原操作；不要原样重发旧快照。分镜/批量表的 snapshotHash 只用于该节点，整理或连线使用 canvas_get_state.snapshotHash 或回执的 canvasSnapshotHash。"
+	delete(detail, "exampleArguments")
 }
 
 func cloudAgentMarkReadLoopNudge(state *cloudAgentRuntime, call cloudAgentCall, count int) {

@@ -12,6 +12,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"yingce/backend/internal/protocol"
 )
 
 func postStreamingAgent(ctx context.Context, config providerConfig, path string, body map[string]interface{}, protocol string, onDelta func(string), onReasoning ...func(string)) (map[string]interface{}, error) {
@@ -48,18 +49,17 @@ type streamingAgentToolCall struct {
 }
 
 type streamingAgentParser struct {
-	protocol       string
-	buffer         string
-	text           strings.Builder
-	reasoning      strings.Builder
-	toolCalls      map[int]*streamingAgentToolCall
-	toolCallByID   map[string]int
-	completed      map[string]interface{}
-	err            error
-	emit           func(string)
-	emitReasoning  func(string)
-	geminiFinished bool
-	geminiUsage    map[string]any
+	protocol      string
+	buffer        string
+	text          strings.Builder
+	reasoning     strings.Builder
+	toolCalls     map[int]*streamingAgentToolCall
+	toolCallByID  map[string]int
+	completed     map[string]interface{}
+	err           error
+	emit          func(string)
+	emitReasoning func(string)
+	declarative   *protocol.StreamDecoder
 }
 
 func newStreamingAgentParser(protocol string, emit func(string)) *streamingAgentParser {
@@ -116,6 +116,13 @@ func (p *streamingAgentParser) consumeFrame(frame string) {
 		p.err = fmt.Errorf("Agent 流式事件解析失败：%w", err)
 		return
 	}
+	if p.declarative != nil {
+		text, reasoning, err := p.declarative.Consume(eventName, payload)
+		p.err = err
+		p.appendText(text)
+		p.appendReasoning(reasoning)
+		return
+	}
 	if err := validateTextPayload(payload); err != nil {
 		p.err = err
 		return
@@ -125,8 +132,6 @@ func (p *streamingAgentParser) consumeFrame(frame string) {
 		p.consumeResponsesEvent(eventName, payload)
 	case "claude-api":
 		p.consumeClaudeEvent(payload)
-	case "gemini-generate-content":
-		p.consumeGeminiEvent(payload)
 	default:
 		p.consumeChatCompletionEvent(payload)
 	}
@@ -275,9 +280,6 @@ func (p *streamingAgentParser) setToolCall(index int, id string, itemID string, 
 func (p *streamingAgentParser) result() (map[string]interface{}, error) {
 	if p.err != nil {
 		return nil, p.err
-	}
-	if p.protocol == "gemini-generate-content" {
-		return p.geminiTextResult()
 	}
 	if p.completed != nil {
 		result, err := parseAgentToolPayload(p.completed, p.protocol)

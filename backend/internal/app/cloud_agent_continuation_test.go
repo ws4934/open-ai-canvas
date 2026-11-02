@@ -199,7 +199,7 @@ func TestCloudAgentContinuationSourceNeverReachesUpstreamBody(t *testing.T) {
 	for _, body := range []map[string]any{
 		canonicalAgentChatBody(&canonical, false),
 		responses,
-		canonicalAgentGeminiBody(&canonical),
+		geminiAgentBodyForTest(&canonical),
 		claudeAgentBody(canonicalAgentChatBody(&canonical, true)),
 	} {
 		encoded, err := json.Marshal(body)

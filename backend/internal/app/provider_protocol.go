@@ -92,7 +92,7 @@ func runProtocolAdapterTaskWithPolicy(ctx context.Context, input canvasGeneratio
 			}
 		}
 		if err != nil {
-			return nil, err
+			return nil, protocolResponseError(err)
 		}
 		taskID = created.TaskID
 		if taskID == "" {

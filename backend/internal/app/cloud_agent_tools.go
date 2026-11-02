@@ -27,7 +27,7 @@ func cloudAgentCanonicalFor(system string, history []providerTextMessage, prompt
 
 const (
 	cloudAgentPromptCacheSchemaVersion = "cloud-agent-prompt-cache/v2"
-	cloudAgentToolSchemaVersion        = "cloud-agent-tools/v8"
+	cloudAgentToolSchemaVersion        = "cloud-agent-tools/v9"
 	cloudAgentMediaSizeDescription     = "默认省略；用户指定时填目录值；imageSize/image.size.parameter 是上游映射；仅 allowCustom=true 可自定"
 )
 
@@ -260,7 +260,7 @@ func cloudAgentAllToolSchemas() []map[string]any {
 	}
 	add("canvas_apply_ops", "创建空白节点、编辑或连线；先读画布传 snapshotHash，生成用 generate_media。每次最多20项，禁止删除、任意 metadata 和媒体 URL。必填字段见 schema；add_node 可用 x/y，省略自动排位；update_node 按能力填 patch，可用 x/y 或视频首尾帧。镜头绑定示例：资产→分镜 {\"toHandleId\":\"row:<rowId>\"}；输出示例：分镜→图片/视频 {\"fromHandleId\":\"row:<rowId>\"}；rowId 取读取结果，不是镜头编号；整表用 storyboard:context。连线不改变已提交任务输入；来源须 canSource，目标须 canTarget 且接受来源 inputKind。批量排位用 canvas_arrange_nodes。", map[string]any{"snapshotHash": str("canvas_get_state返回的snapshotHash"), "ops": map[string]any{"type": "array", "maxItems": 20, "items": opItem}}, "snapshotHash", "ops")
 	add("canvas_arrange_nodes", "整理节点位置：只改坐标，不改内容、不改/建连线、不增删；先读并传 snapshotHash。mode 默认 auto（有连线按依赖，否则按媒体类型分区）；groups 为横向分带（label 展示名，可覆盖组 mode）。省略 nodeIds 整理全部可整理节点（跳过锁定、容器、批次子节点、已归属背板）；align 对齐/等距，dryRun 仅预演；最多50节点；单节点用 update_node x/y。", map[string]any{
-		"snapshotHash": str("最近一次画布读取的 snapshotHash"),
+		"snapshotHash": str("canvas_get_state.snapshotHash / canvasSnapshotHash"),
 		"nodeIds":      map[string]any{"type": "array", "maxItems": cloudAgentArrangeMaxNodes, "items": str("节点ID；省略=全部可整理")},
 		"mode":         map[string]any{"type": "string", "enum": []any{"auto", "flow", "byType", "row", "column", "grid"}, "description": "auto=有连线按依赖否则按类型；flow=按依赖分层；byType=按类型分区；row/column/grid=线性或网格"},
 		"groups": map[string]any{"type": "array", "maxItems": cloudAgentArrangeMaxGroups, "items": map[string]any{

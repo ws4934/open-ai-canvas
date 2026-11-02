@@ -1,4 +1,4 @@
-import type { PluginManifest, PluginManifestV2 } from "@/lib/plugins/plugin-types";
+import type { AnyPluginManifest } from "@/lib/plugins/plugin-types";
 
 const permissionLabels: Record<string, string> = {
     "canvas.read": "读取画布",
@@ -12,7 +12,7 @@ const permissionLabels: Record<string, string> = {
     "external.open": "打开外部详情",
 };
 
-export function getPluginDocumentation(manifest: PluginManifest | PluginManifestV2) {
+export function getPluginDocumentation(manifest: AnyPluginManifest) {
     if (manifest.documentation?.trim()) return manifest.documentation.trim();
 
     const capabilities = manifest.permissions.map((permission) => permissionLabels[permission] || permission);
@@ -27,8 +27,6 @@ export function getPluginDocumentation(manifest: PluginManifest | PluginManifest
         `- 版本：${manifest.version}`,
         `- 能力：${capabilities.join("、") || "未声明"}`,
         "",
-        manifest.contributes.providers?.length
-            ? "> 此插件没有提供接入文档。请联系插件作者补充 `documentation`，不要仅凭清单字段推测上游接口。"
-            : "> 该插件当前没有单独的使用文档。",
+        manifest.contributes.providers?.length ? "> 此插件没有提供接入文档。请联系插件作者补充 `documentation`，不要仅凭清单字段推测上游接口。" : "> 该插件当前没有单独的使用文档。",
     ].join("\n");
 }

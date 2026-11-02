@@ -3,7 +3,7 @@ import { Button, Modal } from "antd";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { ModelIcon } from "@/components/model-picker";
-import { modelProtocolLabel, type ModelProtocol, type ModelProtocolDefinition, type ProtocolCapability } from "@/lib/model-protocols";
+import { modelProtocolLabel, modelProtocolResponseLabel, type ModelProtocol, type ModelProtocolDefinition, type ProtocolCapability } from "@/lib/model-protocols";
 import { cn } from "@/lib/utils";
 
 export type ModelCapabilityChoice = ProtocolCapability;
@@ -105,7 +105,7 @@ export function ProtocolCardPicker({
                                 <div className="mt-2 line-clamp-2 text-xs leading-5 text-foreground/58">{protocol.media}</div>
                                 <div className="mt-auto flex items-center justify-between gap-2 pt-2 text-[var(--fs-tiny)] text-foreground/42">
                                     <span className="truncate">{protocol.contentType}</span>
-                                    {protocol.poll ? <span className="shrink-0">异步轮询</span> : <span className="shrink-0">同步响应</span>}
+                                    <span className="shrink-0">{modelProtocolResponseLabel(protocol)}</span>
                                 </div>
                             </>
                         ) : null}

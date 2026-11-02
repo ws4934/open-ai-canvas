@@ -9,7 +9,7 @@
 - 鉴权驱动：`bearer`。
 - 创建：`POST /responses`。
 - Agent：`POST /responses`。
-- 生命周期：同步响应。
+- 响应：完整响应 / 流式响应。
 
 ## 配置字段
 
@@ -116,7 +116,7 @@
   "apiVersion": "yingce.plugin/v2",
   "id": "openai-responses",
   "name": "OpenAI Responses",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "author": "OpenAI / 影策",
   "description": "OpenAI Responses 独立请求协议插件。",
   "documentation": "<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>",
@@ -151,6 +151,7 @@
         ],
         "baseUrl": "https://api.openai.com",
         "requiresPublicMediaUrls": false,
+        "streaming": true,
         "auth": {
           "type": "bearer",
           "field": "apiKey"
@@ -167,8 +168,8 @@
             "name": "messages",
             "type": "message[]",
             "required": true,
-            "mapping": "provider message container",
-            "description": "包含历史消息和当前用户输入。"
+            "mapping": "input",
+            "description": "过滤 system 消息；保留消息角色、顺序和字符串 content；内容块 text 转为 input_text，image_url 转为 input_image，并将 image_url.url 映射为字符串 image_url；其他类型内容块保持原值。"
           },
           {
             "name": "instructions",

@@ -23,6 +23,7 @@ type PluginProviderCatalogItem struct {
 	Create            string                      `json:"create,omitempty"`
 	Poll              string                      `json:"poll,omitempty"`
 	ContentType       string                      `json:"contentType,omitempty"`
+	Streaming         bool                        `json:"streaming,omitempty"`
 	BaseURL           string                      `json:"baseUrl,omitempty"`
 	Enabled           bool                        `json:"enabled"`
 	UnavailableReason string                      `json:"unavailableReason,omitempty"`
@@ -48,10 +49,12 @@ func (s *Service) PluginProviderCatalog(scope, capability string, includeUnavail
 			item.ImageParameters = provider.ImageParameters
 			item.InputSchema = provider.InputSchema
 			item.Kind = provider.Kind
+			item.Streaming = provider.Streaming || provider.Create.Stream != nil || (provider.Agent != nil && provider.Agent.Stream != nil)
 			// The registry metadata is the canonical provider projection. This keeps
 			// host-backed dispatch paths out of every user-facing catalog consumer.
 			if adapter, ok := canonicalProviderAdapter(s.protocolRegistry(), provider.ID); ok {
 				metadata := adapter.Metadata()
+				item.Streaming = metadata.Streaming
 				item.Create, item.Poll, item.ContentType = metadata.Create, metadata.Poll, metadata.ContentType
 			}
 			if includeUnavailable || item.Enabled {

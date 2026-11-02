@@ -9,15 +9,7 @@
 - 鉴权驱动：`google-api-key`。
 - 创建：`POST /v1beta/models/{{model}}:generateContent`。
 - Agent：`POST /v1beta/models/{{model}}:generateContent`。
-- 生命周期：同步响应。
-
-## 普通文本与短剧的原生流式
-
-`textOptions.stream=true` 且模型允许流式时，宿主把创建端点切换为 `POST /v1beta/models/{{model}}:streamGenerateContent?alt=sse`，不向 Gemini 请求体添加 OpenAI 的 `stream` 字段。插件原有鉴权、系统指令、生成参数与 `cachedContent` 保留；下方 manifest 的 `create.path` 是未启用流式时的默认模板。Agent 工具回合仍使用原有 Agent 请求模板。
-
-SSE 中 `thought=true` 的文本进入思考摘要，其余文本作为正文增量；只合并第一个候选，不把多个候选拼成一份答案。`usageMetadata` 按累计值更新，后续数据块省略的缓存用量不会清零。收到首个候选的 `finishReason=STOP` 后才接受完整结果；审核拒绝、Token 截断、错误事件和缺少终态的断流均失败，取消会关闭上游连接。非 SSE 响应明确报错，不悄悄当成已实现流式。
-
-通过 sub2api 对接 Vertex 时，织影使用上述统一 Gemini 接口；sub2api 负责 Vertex 服务端点、GCP 凭证、项目和区域。无需在织影新增 GCP 专用配置。
+- 响应：完整响应 / 流式响应。
 
 ## 配置字段
 
@@ -38,7 +30,7 @@ SSE 中 `thought=true` 的文本进入思考摘要，其余文本作为正文增
 | `tools` | array | 否 | `tools/toolConfig` | 工具定义。 |
 | `tool_choice` | object|string | 否 | `tool_choice` | 工具选择策略。 |
 | `response_format` | object | 否 | `response_format/text` | 结构化输出配置。 |
-| `stream` | boolean | 否 | 宿主创建端点与 SSE 解析 | 普通文本/短剧启用原生流式，最终结果仍在流结束后归一。 |
+| `stream` | boolean | 否 | `stream` | 流式开关；后台任务当前以最终响应归一。 |
 
 ## 上游请求模板逐字段清单
 
@@ -56,10 +48,57 @@ SSE 中 `thought=true` 的文本进入思考摘要，其余文本作为正文增
 | `create.body.tools` | `{"$omitEmpty":{"$ref":"request.providerOptions.gemini-generate-content.tools"}}` |
 | `create.body.toolConfig` | `{"$omitEmpty":{"$ref":"request.providerOptions.gemini-generate-content.toolConfig"}}` |
 | `create.body.cachedContent` | `{"$omitEmpty":{"$ref":"request.providerOptions.gemini-generate-content.cachedContent"}}` |
+| `create.stream.request.path` | `"/v1beta/models/{{model}}:streamGenerateContent"` |
+| `create.stream.request.query.alt` | `"sse"` |
+| `create.stream.text` | `{"$map":{"from":{"$filter":{"from":{"$ref":"response.candidates.0.content.parts"},"as":"part","where":{"$ne":[{"$ref":"part.thought"},true]}}},"as":"part","in":{"$ref":"part.text"}}}` |
+| `create.stream.reasoning` | `{"$map":{"from":{"$filter":{"from":{"$ref":"response.candidates.0.content.parts"},"as":"part","where":{"$eq":[{"$ref":"part.thought"},true]}}},"as":"part","in":{"$ref":"part.text"}}}` |
+| `create.stream.append.parts` | `{"$ref":"response.candidates.0.content.parts"}` |
+| `create.stream.merge.usage` | `{"$ref":"response.usageMetadata"}` |
+| `create.stream.complete` | `{"$eq":[{"$ref":"response.candidates.0.finishReason"},"STOP"]}` |
+| `create.stream.error` | `{"$switch":{"cases":[{"when":{"$ref":"response.error"},"then":{"code":{"$coalesce":[{"$ref":"response.error.status"},{"$ref":"response.error.code"}]},"message":{"$ref":"response.error.message"}}},{"when":{"$in":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},["SAFETY","BLOCKLIST","PROHIBITED_CONTENT","SPII","IMAGE_SAFETY","IMAGE_PROHIBITED_CONTENT"]]},"then":{"code":"content_policy_violation","message":"内容未通过上游安全审核，请修改提示词或参考素材后重试"}},{"when":{"$eq":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},"MAX_TOKENS"]},"then":{"code":"output_token_limit","message":"Gemini 输出达到模型 Token 上限，内容未完整生成"}},{"when":{"$and":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},{"$not":{"$in":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},["STOP","FINISH_REASON_UNSPECIFIED","BLOCK_REASON_UNSPECIFIED"]]}}]},"then":{"code":{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},"message":{"$concat":["Gemini 未正常完成生成，结束原因：",{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]}]}}}],"default":null}}` |
+| `create.stream.response.candidates[0].content.role` | `"model"` |
+| `create.stream.response.candidates[0].content.parts` | `{"$ref":"stream.append.parts"}` |
+| `create.stream.response.candidates[0].finishReason` | `"STOP"` |
+| `create.stream.response.usageMetadata` | `{"$ref":"stream.merge.usage"}` |
 | `agent.method` | `"POST"` |
 | `agent.path` | `"/v1beta/models/{{model}}:generateContent"` |
 | `agent.contentType` | `"application/json"` |
-| `agent.body` | `{"$ref":"request.extra.agent.gemini"}` |
+| `agent.body.contents` | `{"$map":{"from":{"$ref":"request.extra.agent.conversation.messages"},"as":"message","in":{"role":{"$if":{"condition":{"$eq":[{"$ref":"message.role"},"assistant"]},"then":"model","else":"user"}},"parts":{"$map":{"from":{"$ref":"message.parts"},"as":"part","in":{"$switch":{"cases":[{"when":{"$eq":[{"$ref":"part.kind"},"text"]},"then":{"text":{"$ref":"part.text"}}},{"when":{"$eq":[{"$ref":"part.kind"},"media"]},"then":{"$if":{"condition":{"$ref":"part.inline"},"then":{"inlineData":{"mimeType":{"$ref":"part.mimeType"},"data":{"$ref":"part.data"}}},"else":{"fileData":{"mimeType":{"$ref":"part.mimeType"},"fileUri":{"$ref":"part.url"}}}}}},{"when":{"$eq":[{"$ref":"part.kind"},"tool_call"]},"then":{"functionCall":{"id":{"$ref":"part.id"},"name":{"$ref":"part.name"},"args":{"$ref":"part.arguments"}},"thoughtSignature":{"$omitEmpty":{"$ref":"part.signature"}}}},{"when":{"$eq":[{"$ref":"part.kind"},"tool_result"]},"then":{"functionResponse":{"id":{"$ref":"part.id"},"name":{"$ref":"part.name"},"response":{"result":{"$ref":"part.result"}}}}}],"default":null}}}}}}}` |
+| `agent.body.systemInstruction` | `{"$if":{"condition":{"$ref":"request.extra.agent.conversation.instructions"},"then":{"parts":[{"text":{"$ref":"request.extra.agent.conversation.instructions"}}]},"else":null}}` |
+| `agent.body.tools` | `{"$if":{"condition":{"$ref":"request.extra.agent.conversation.tools"},"then":[{"functionDeclarations":{"$map":{"from":{"$ref":"request.extra.agent.conversation.tools"},"as":"tool","in":{"name":{"$ref":"tool.name"},"description":{"$omitEmpty":{"$ref":"tool.description"}},"parameters":{"$schemaSubset":{"from":{"$ref":"tool.parameters"},"constToEnum":true,"stringEnumOnly":true,"inferStringEnumType":true,"enumHintPrefix":" 可选值：","omitKeywords":["exclusiveMinimum","exclusiveMaximum","uniqueItems"]}}}}}}],"else":null}}` |
+| `agent.body.toolConfig` | `{"$if":{"condition":{"$ref":"request.extra.agent.conversation.tools"},"then":{"functionCallingConfig":{"$switch":{"cases":[{"when":{"$ref":"request.extra.agent.conversation.toolChoice.name"},"then":{"mode":"ANY","allowedFunctionNames":[{"$ref":"request.extra.agent.conversation.toolChoice.name"}]}},{"when":{"$eq":[{"$ref":"request.extra.agent.conversation.toolChoice"},"required"]},"then":{"mode":"ANY"}}],"default":{"mode":"AUTO"}}}},"else":null}}` |
+| `agent.body.generationConfig.maxOutputTokens` | `{"$omitEmpty":{"$ref":"request.extra.agent.conversation.options.maxOutputTokens"}}` |
+| `agent.body.generationConfig.thinkingConfig` | `{"$if":{"condition":{"$ref":"request.extra.agent.conversation.options.thinking"},"then":{"includeThoughts":true},"else":null}}` |
+| `agent.stream.request.path` | `"/v1beta/models/{{model}}:streamGenerateContent"` |
+| `agent.stream.request.query.alt` | `"sse"` |
+| `agent.stream.text` | `{"$map":{"from":{"$filter":{"from":{"$ref":"response.candidates.0.content.parts"},"as":"part","where":{"$ne":[{"$ref":"part.thought"},true]}}},"as":"part","in":{"$ref":"part.text"}}}` |
+| `agent.stream.reasoning` | `{"$map":{"from":{"$filter":{"from":{"$ref":"response.candidates.0.content.parts"},"as":"part","where":{"$eq":[{"$ref":"part.thought"},true]}}},"as":"part","in":{"$ref":"part.text"}}}` |
+| `agent.stream.append.parts` | `{"$ref":"response.candidates.0.content.parts"}` |
+| `agent.stream.merge.usage` | `{"$ref":"response.usageMetadata"}` |
+| `agent.stream.complete` | `{"$eq":[{"$ref":"response.candidates.0.finishReason"},"STOP"]}` |
+| `agent.stream.error` | `{"$switch":{"cases":[{"when":{"$ref":"response.error"},"then":{"code":{"$coalesce":[{"$ref":"response.error.status"},{"$ref":"response.error.code"}]},"message":{"$ref":"response.error.message"}}},{"when":{"$in":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},["SAFETY","BLOCKLIST","PROHIBITED_CONTENT","SPII","IMAGE_SAFETY","IMAGE_PROHIBITED_CONTENT"]]},"then":{"code":"content_policy_violation","message":"内容未通过上游安全审核，请修改提示词或参考素材后重试"}},{"when":{"$eq":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},"MAX_TOKENS"]},"then":{"code":"output_token_limit","message":"Gemini 输出达到模型 Token 上限，内容未完整生成"}},{"when":{"$and":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},{"$not":{"$in":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},["STOP","FINISH_REASON_UNSPECIFIED","BLOCK_REASON_UNSPECIFIED"]]}}]},"then":{"code":{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},"message":{"$concat":["Gemini 未正常完成生成，结束原因：",{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]}]}}}],"default":null}}` |
+| `agent.stream.response.candidates[0].content.role` | `"model"` |
+| `agent.stream.response.candidates[0].content.parts` | `{"$ref":"stream.append.parts"}` |
+| `agent.stream.response.candidates[0].finishReason` | `"STOP"` |
+| `agent.stream.response.usageMetadata` | `{"$ref":"stream.merge.usage"}` |
+| `agent.stream.allowFullResponse` | `true` |
+| `agent.promptCache.fields[0]` | `"systemInstruction"` |
+| `agent.promptCache.fields[1]` | `"tools"` |
+| `agent.promptCache.fields[2]` | `"toolConfig"` |
+| `agent.promptCache.model` | `{"$trimPrefix":[{"$ref":"request.model"},"models/"]}` |
+| `agent.promptCache.minimumTokens` | `{"$if":{"condition":{"$contains":[{"$ref":"request.model"},"gemini-2.5"]},"then":2048,"else":4096}}` |
+| `agent.promptCache.create.method` | `"POST"` |
+| `agent.promptCache.create.path` | `"/v1beta/cachedContents"` |
+| `agent.promptCache.create.contentType` | `"application/json"` |
+| `agent.promptCache.create.body` | `{"$merge":[{"model":{"$concat":["models/",{"$ref":"cache.model"}]},"ttl":"3600s"},{"$ref":"cache.prefix"}]}` |
+| `agent.promptCache.delete.method` | `"DELETE"` |
+| `agent.promptCache.delete.pathTemplate` | `{"$concat":["/v1beta/",{"$ref":"cache.resourceName"}]}` |
+| `agent.promptCache.delete.contentType` | `"application/json"` |
+| `agent.promptCache.resource` | `{"$ref":"response.name"}` |
+| `agent.promptCache.expireTime` | `{"$ref":"response.expireTime"}` |
+| `agent.promptCache.resourcePattern` | `"^cachedContents/[A-Za-z0-9_-][A-Za-z0-9_.-]*$"` |
+| `agent.promptCache.applyField` | `"cachedContent"` |
+| `agent.promptCache.missing` | `{"$and":[{"$eq":[{"$ref":"error.status"},404]},{"$contains":[{"$ref":"error.body"},{"$ref":"error.resourceName"}]},{"$or":[{"$not":{"$ref":"response.error.code"}},{"$eq":[{"$ref":"response.error.code"},404]}]},{"$or":[{"$not":{"$ref":"response.error.status"}},{"$eq":[{"$ref":"response.error.status"},"NOT_FOUND"]}]}]}` |
 
 ## Provider 扩展键
 
@@ -76,11 +115,15 @@ SSE 中 `thought=true` 的文本进入思考摘要，其余文本作为正文增
 | 映射位置 | 上游路径或转换表达式 |
 | --- | --- |
 | `response.status` | `"succeeded"` |
-| `response.text` | `{"$map":{"from":{"$ref":"response.candidates.0.content.parts"},"as":"part","in":{"$omitEmpty":{"$ref":"part.text"}}}}` |
+| `response.text` | `{"$map":{"from":{"$filter":{"from":{"$ref":"response.candidates.0.content.parts"},"as":"part","where":{"$ne":[{"$ref":"part.thought"},true]}}},"as":"part","in":{"$ref":"part.text"}}}` |
+| `response.reasoning` | `{"$map":{"from":{"$filter":{"from":{"$ref":"response.candidates.0.content.parts"},"as":"part","where":{"$eq":[{"$ref":"part.thought"},true]}}},"as":"part","in":{"$ref":"part.text"}}}` |
+| `response.error` | `{"$switch":{"cases":[{"when":{"$ref":"response.error"},"then":{"code":{"$coalesce":[{"$ref":"response.error.status"},{"$ref":"response.error.code"}]},"message":{"$ref":"response.error.message"}}},{"when":{"$in":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},["SAFETY","BLOCKLIST","PROHIBITED_CONTENT","SPII","IMAGE_SAFETY","IMAGE_PROHIBITED_CONTENT"]]},"then":{"code":"content_policy_violation","message":"内容未通过上游安全审核，请修改提示词或参考素材后重试"}},{"when":{"$eq":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},"MAX_TOKENS"]},"then":{"code":"output_token_limit","message":"Gemini 输出达到模型 Token 上限，内容未完整生成"}},{"when":{"$and":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},{"$not":{"$in":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},["STOP","FINISH_REASON_UNSPECIFIED","BLOCK_REASON_UNSPECIFIED"]]}}]},"then":{"code":{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},"message":{"$concat":["Gemini 未正常完成生成，结束原因：",{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]}]}}}],"default":null}}` |
 | `response.usage` | `{"$ref":"response.usageMetadata"}` |
 | `response.errorPaths[0]` | `"error.code"` |
 | `response.messagePaths[0]` | `"error.message"` |
-| `agentResponse.textPaths[0]` | `"candidates.0.content.parts.0.text"` |
+| `agentResponse.text` | `{"$map":{"from":{"$filter":{"from":{"$ref":"response.candidates.0.content.parts"},"as":"part","where":{"$ne":[{"$ref":"part.thought"},true]}}},"as":"part","in":{"$ref":"part.text"}}}` |
+| `agentResponse.reasoning` | `{"$map":{"from":{"$filter":{"from":{"$ref":"response.candidates.0.content.parts"},"as":"part","where":{"$eq":[{"$ref":"part.thought"},true]}}},"as":"part","in":{"$ref":"part.text"}}}` |
+| `agentResponse.error` | `{"$switch":{"cases":[{"when":{"$ref":"response.error"},"then":{"code":{"$coalesce":[{"$ref":"response.error.status"},{"$ref":"response.error.code"}]},"message":{"$ref":"response.error.message"}}},{"when":{"$in":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},["SAFETY","BLOCKLIST","PROHIBITED_CONTENT","SPII","IMAGE_SAFETY","IMAGE_PROHIBITED_CONTENT"]]},"then":{"code":"content_policy_violation","message":"内容未通过上游安全审核，请修改提示词或参考素材后重试"}},{"when":{"$eq":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},"MAX_TOKENS"]},"then":{"code":"output_token_limit","message":"Gemini 输出达到模型 Token 上限，内容未完整生成"}},{"when":{"$and":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},{"$not":{"$in":[{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},["STOP","FINISH_REASON_UNSPECIFIED","BLOCK_REASON_UNSPECIFIED"]]}}]},"then":{"code":{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]},"message":{"$concat":["Gemini 未正常完成生成，结束原因：",{"$coalesce":[{"$ref":"response.promptFeedback.blockReason"},{"$ref":"response.candidates.0.finishReason"}]}]}}}],"default":null}}` |
 | `agentResponse.toolCallsPath` | `"candidates.0.content.parts"` |
 | `agentResponse.toolCallIdPaths[0]` | `"functionCall.id"` |
 | `agentResponse.toolCallNamePaths[0]` | `"functionCall.name"` |
@@ -94,7 +137,7 @@ SSE 中 `thought=true` 的文本进入思考摘要，其余文本作为正文增
 
 ## 兼容边界
 
-该包只代表上述线协议 profile；同一品牌的其他 endpoint、云区域或网关包装必须使用独立插件，不能根据模型名猜测。
+v3 合同：插件负责 conversation 到 Gemini 回合、工具 JSON Schema 子集、签名、正文/思考、SSE 终态与 Prompt Cache 接口。宿主只执行通用映射、HTTP、会话、审批、幂等和缓存隔离。Agent SSE 可接受完整 JSON；普通文本 SSE 不接受非流式响应。缓存创建失败按无缓存请求继续，不修改 Vertex IAM、已有模型能力或价格。
 
 <!-- YINGCE_MANIFEST_CONTRACT_START -->
 ## Manifest 完整接口定义
@@ -103,10 +146,10 @@ SSE 中 `thought=true` 的文本进入思考摘要，其余文本作为正文增
 
 ```json
 {
-  "apiVersion": "yingce.plugin/v2",
+  "apiVersion": "yingce.plugin/v3",
   "id": "google-gemini-generate-content",
   "name": "Google Gemini generateContent",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": "Google / 影策",
   "description": "Google Gemini generateContent 独立请求协议插件。",
   "documentation": "<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>",
@@ -221,6 +264,236 @@ SSE 中 `thought=true` 的文本进入思考摘要，其余文本作为正文增
           "method": "POST",
           "path": "/v1beta/models/{{model}}:generateContent",
           "contentType": "application/json",
+          "stream": {
+            "request": {
+              "path": "/v1beta/models/{{model}}:streamGenerateContent",
+              "query": {
+                "alt": "sse"
+              }
+            },
+            "text": {
+              "$map": {
+                "from": {
+                  "$filter": {
+                    "from": {
+                      "$ref": "response.candidates.0.content.parts"
+                    },
+                    "as": "part",
+                    "where": {
+                      "$ne": [
+                        {
+                          "$ref": "part.thought"
+                        },
+                        true
+                      ]
+                    }
+                  }
+                },
+                "as": "part",
+                "in": {
+                  "$ref": "part.text"
+                }
+              }
+            },
+            "reasoning": {
+              "$map": {
+                "from": {
+                  "$filter": {
+                    "from": {
+                      "$ref": "response.candidates.0.content.parts"
+                    },
+                    "as": "part",
+                    "where": {
+                      "$eq": [
+                        {
+                          "$ref": "part.thought"
+                        },
+                        true
+                      ]
+                    }
+                  }
+                },
+                "as": "part",
+                "in": {
+                  "$ref": "part.text"
+                }
+              }
+            },
+            "append": {
+              "parts": {
+                "$ref": "response.candidates.0.content.parts"
+              }
+            },
+            "merge": {
+              "usage": {
+                "$ref": "response.usageMetadata"
+              }
+            },
+            "complete": {
+              "$eq": [
+                {
+                  "$ref": "response.candidates.0.finishReason"
+                },
+                "STOP"
+              ]
+            },
+            "error": {
+              "$switch": {
+                "cases": [
+                  {
+                    "when": {
+                      "$ref": "response.error"
+                    },
+                    "then": {
+                      "code": {
+                        "$coalesce": [
+                          {
+                            "$ref": "response.error.status"
+                          },
+                          {
+                            "$ref": "response.error.code"
+                          }
+                        ]
+                      },
+                      "message": {
+                        "$ref": "response.error.message"
+                      }
+                    }
+                  },
+                  {
+                    "when": {
+                      "$in": [
+                        {
+                          "$coalesce": [
+                            {
+                              "$ref": "response.promptFeedback.blockReason"
+                            },
+                            {
+                              "$ref": "response.candidates.0.finishReason"
+                            }
+                          ]
+                        },
+                        [
+                          "SAFETY",
+                          "BLOCKLIST",
+                          "PROHIBITED_CONTENT",
+                          "SPII",
+                          "IMAGE_SAFETY",
+                          "IMAGE_PROHIBITED_CONTENT"
+                        ]
+                      ]
+                    },
+                    "then": {
+                      "code": "content_policy_violation",
+                      "message": "内容未通过上游安全审核，请修改提示词或参考素材后重试"
+                    }
+                  },
+                  {
+                    "when": {
+                      "$eq": [
+                        {
+                          "$coalesce": [
+                            {
+                              "$ref": "response.promptFeedback.blockReason"
+                            },
+                            {
+                              "$ref": "response.candidates.0.finishReason"
+                            }
+                          ]
+                        },
+                        "MAX_TOKENS"
+                      ]
+                    },
+                    "then": {
+                      "code": "output_token_limit",
+                      "message": "Gemini 输出达到模型 Token 上限，内容未完整生成"
+                    }
+                  },
+                  {
+                    "when": {
+                      "$and": [
+                        {
+                          "$coalesce": [
+                            {
+                              "$ref": "response.promptFeedback.blockReason"
+                            },
+                            {
+                              "$ref": "response.candidates.0.finishReason"
+                            }
+                          ]
+                        },
+                        {
+                          "$not": {
+                            "$in": [
+                              {
+                                "$coalesce": [
+                                  {
+                                    "$ref": "response.promptFeedback.blockReason"
+                                  },
+                                  {
+                                    "$ref": "response.candidates.0.finishReason"
+                                  }
+                                ]
+                              },
+                              [
+                                "STOP",
+                                "FINISH_REASON_UNSPECIFIED",
+                                "BLOCK_REASON_UNSPECIFIED"
+                              ]
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "then": {
+                      "code": {
+                        "$coalesce": [
+                          {
+                            "$ref": "response.promptFeedback.blockReason"
+                          },
+                          {
+                            "$ref": "response.candidates.0.finishReason"
+                          }
+                        ]
+                      },
+                      "message": {
+                        "$concat": [
+                          "Gemini 未正常完成生成，结束原因：",
+                          {
+                            "$coalesce": [
+                              {
+                                "$ref": "response.promptFeedback.blockReason"
+                              },
+                              {
+                                "$ref": "response.candidates.0.finishReason"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ],
+                "default": null
+              }
+            },
+            "response": {
+              "candidates": [
+                {
+                  "content": {
+                    "role": "model",
+                    "parts": {
+                      "$ref": "stream.append.parts"
+                    }
+                  },
+                  "finishReason": "STOP"
+                }
+              ],
+              "usageMetadata": {
+                "$ref": "stream.merge.usage"
+              }
+            }
+          },
           "body": {
             "contents": {
               "$map": {
@@ -314,8 +587,637 @@ SSE 中 `thought=true` 的文本进入思考摘要，其余文本作为正文增
           "method": "POST",
           "path": "/v1beta/models/{{model}}:generateContent",
           "contentType": "application/json",
+          "input": "conversation",
           "body": {
-            "$ref": "request.extra.agent.gemini"
+            "contents": {
+              "$map": {
+                "from": {
+                  "$ref": "request.extra.agent.conversation.messages"
+                },
+                "as": "message",
+                "in": {
+                  "role": {
+                    "$if": {
+                      "condition": {
+                        "$eq": [
+                          {
+                            "$ref": "message.role"
+                          },
+                          "assistant"
+                        ]
+                      },
+                      "then": "model",
+                      "else": "user"
+                    }
+                  },
+                  "parts": {
+                    "$map": {
+                      "from": {
+                        "$ref": "message.parts"
+                      },
+                      "as": "part",
+                      "in": {
+                        "$switch": {
+                          "cases": [
+                            {
+                              "when": {
+                                "$eq": [
+                                  {
+                                    "$ref": "part.kind"
+                                  },
+                                  "text"
+                                ]
+                              },
+                              "then": {
+                                "text": {
+                                  "$ref": "part.text"
+                                }
+                              }
+                            },
+                            {
+                              "when": {
+                                "$eq": [
+                                  {
+                                    "$ref": "part.kind"
+                                  },
+                                  "media"
+                                ]
+                              },
+                              "then": {
+                                "$if": {
+                                  "condition": {
+                                    "$ref": "part.inline"
+                                  },
+                                  "then": {
+                                    "inlineData": {
+                                      "mimeType": {
+                                        "$ref": "part.mimeType"
+                                      },
+                                      "data": {
+                                        "$ref": "part.data"
+                                      }
+                                    }
+                                  },
+                                  "else": {
+                                    "fileData": {
+                                      "mimeType": {
+                                        "$ref": "part.mimeType"
+                                      },
+                                      "fileUri": {
+                                        "$ref": "part.url"
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "when": {
+                                "$eq": [
+                                  {
+                                    "$ref": "part.kind"
+                                  },
+                                  "tool_call"
+                                ]
+                              },
+                              "then": {
+                                "functionCall": {
+                                  "id": {
+                                    "$ref": "part.id"
+                                  },
+                                  "name": {
+                                    "$ref": "part.name"
+                                  },
+                                  "args": {
+                                    "$ref": "part.arguments"
+                                  }
+                                },
+                                "thoughtSignature": {
+                                  "$omitEmpty": {
+                                    "$ref": "part.signature"
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "when": {
+                                "$eq": [
+                                  {
+                                    "$ref": "part.kind"
+                                  },
+                                  "tool_result"
+                                ]
+                              },
+                              "then": {
+                                "functionResponse": {
+                                  "id": {
+                                    "$ref": "part.id"
+                                  },
+                                  "name": {
+                                    "$ref": "part.name"
+                                  },
+                                  "response": {
+                                    "result": {
+                                      "$ref": "part.result"
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          ],
+                          "default": null
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "systemInstruction": {
+              "$if": {
+                "condition": {
+                  "$ref": "request.extra.agent.conversation.instructions"
+                },
+                "then": {
+                  "parts": [
+                    {
+                      "text": {
+                        "$ref": "request.extra.agent.conversation.instructions"
+                      }
+                    }
+                  ]
+                },
+                "else": null
+              }
+            },
+            "tools": {
+              "$if": {
+                "condition": {
+                  "$ref": "request.extra.agent.conversation.tools"
+                },
+                "then": [
+                  {
+                    "functionDeclarations": {
+                      "$map": {
+                        "from": {
+                          "$ref": "request.extra.agent.conversation.tools"
+                        },
+                        "as": "tool",
+                        "in": {
+                          "name": {
+                            "$ref": "tool.name"
+                          },
+                          "description": {
+                            "$omitEmpty": {
+                              "$ref": "tool.description"
+                            }
+                          },
+                          "parameters": {
+                            "$schemaSubset": {
+                              "from": {
+                                "$ref": "tool.parameters"
+                              },
+                              "constToEnum": true,
+                              "stringEnumOnly": true,
+                              "inferStringEnumType": true,
+                              "enumHintPrefix": " 可选值：",
+                              "omitKeywords": [
+                                "exclusiveMinimum",
+                                "exclusiveMaximum",
+                                "uniqueItems"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ],
+                "else": null
+              }
+            },
+            "toolConfig": {
+              "$if": {
+                "condition": {
+                  "$ref": "request.extra.agent.conversation.tools"
+                },
+                "then": {
+                  "functionCallingConfig": {
+                    "$switch": {
+                      "cases": [
+                        {
+                          "when": {
+                            "$ref": "request.extra.agent.conversation.toolChoice.name"
+                          },
+                          "then": {
+                            "mode": "ANY",
+                            "allowedFunctionNames": [
+                              {
+                                "$ref": "request.extra.agent.conversation.toolChoice.name"
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "when": {
+                            "$eq": [
+                              {
+                                "$ref": "request.extra.agent.conversation.toolChoice"
+                              },
+                              "required"
+                            ]
+                          },
+                          "then": {
+                            "mode": "ANY"
+                          }
+                        }
+                      ],
+                      "default": {
+                        "mode": "AUTO"
+                      }
+                    }
+                  }
+                },
+                "else": null
+              }
+            },
+            "generationConfig": {
+              "maxOutputTokens": {
+                "$omitEmpty": {
+                  "$ref": "request.extra.agent.conversation.options.maxOutputTokens"
+                }
+              },
+              "thinkingConfig": {
+                "$if": {
+                  "condition": {
+                    "$ref": "request.extra.agent.conversation.options.thinking"
+                  },
+                  "then": {
+                    "includeThoughts": true
+                  },
+                  "else": null
+                }
+              }
+            }
+          },
+          "stream": {
+            "request": {
+              "path": "/v1beta/models/{{model}}:streamGenerateContent",
+              "query": {
+                "alt": "sse"
+              }
+            },
+            "text": {
+              "$map": {
+                "from": {
+                  "$filter": {
+                    "from": {
+                      "$ref": "response.candidates.0.content.parts"
+                    },
+                    "as": "part",
+                    "where": {
+                      "$ne": [
+                        {
+                          "$ref": "part.thought"
+                        },
+                        true
+                      ]
+                    }
+                  }
+                },
+                "as": "part",
+                "in": {
+                  "$ref": "part.text"
+                }
+              }
+            },
+            "reasoning": {
+              "$map": {
+                "from": {
+                  "$filter": {
+                    "from": {
+                      "$ref": "response.candidates.0.content.parts"
+                    },
+                    "as": "part",
+                    "where": {
+                      "$eq": [
+                        {
+                          "$ref": "part.thought"
+                        },
+                        true
+                      ]
+                    }
+                  }
+                },
+                "as": "part",
+                "in": {
+                  "$ref": "part.text"
+                }
+              }
+            },
+            "append": {
+              "parts": {
+                "$ref": "response.candidates.0.content.parts"
+              }
+            },
+            "merge": {
+              "usage": {
+                "$ref": "response.usageMetadata"
+              }
+            },
+            "complete": {
+              "$eq": [
+                {
+                  "$ref": "response.candidates.0.finishReason"
+                },
+                "STOP"
+              ]
+            },
+            "error": {
+              "$switch": {
+                "cases": [
+                  {
+                    "when": {
+                      "$ref": "response.error"
+                    },
+                    "then": {
+                      "code": {
+                        "$coalesce": [
+                          {
+                            "$ref": "response.error.status"
+                          },
+                          {
+                            "$ref": "response.error.code"
+                          }
+                        ]
+                      },
+                      "message": {
+                        "$ref": "response.error.message"
+                      }
+                    }
+                  },
+                  {
+                    "when": {
+                      "$in": [
+                        {
+                          "$coalesce": [
+                            {
+                              "$ref": "response.promptFeedback.blockReason"
+                            },
+                            {
+                              "$ref": "response.candidates.0.finishReason"
+                            }
+                          ]
+                        },
+                        [
+                          "SAFETY",
+                          "BLOCKLIST",
+                          "PROHIBITED_CONTENT",
+                          "SPII",
+                          "IMAGE_SAFETY",
+                          "IMAGE_PROHIBITED_CONTENT"
+                        ]
+                      ]
+                    },
+                    "then": {
+                      "code": "content_policy_violation",
+                      "message": "内容未通过上游安全审核，请修改提示词或参考素材后重试"
+                    }
+                  },
+                  {
+                    "when": {
+                      "$eq": [
+                        {
+                          "$coalesce": [
+                            {
+                              "$ref": "response.promptFeedback.blockReason"
+                            },
+                            {
+                              "$ref": "response.candidates.0.finishReason"
+                            }
+                          ]
+                        },
+                        "MAX_TOKENS"
+                      ]
+                    },
+                    "then": {
+                      "code": "output_token_limit",
+                      "message": "Gemini 输出达到模型 Token 上限，内容未完整生成"
+                    }
+                  },
+                  {
+                    "when": {
+                      "$and": [
+                        {
+                          "$coalesce": [
+                            {
+                              "$ref": "response.promptFeedback.blockReason"
+                            },
+                            {
+                              "$ref": "response.candidates.0.finishReason"
+                            }
+                          ]
+                        },
+                        {
+                          "$not": {
+                            "$in": [
+                              {
+                                "$coalesce": [
+                                  {
+                                    "$ref": "response.promptFeedback.blockReason"
+                                  },
+                                  {
+                                    "$ref": "response.candidates.0.finishReason"
+                                  }
+                                ]
+                              },
+                              [
+                                "STOP",
+                                "FINISH_REASON_UNSPECIFIED",
+                                "BLOCK_REASON_UNSPECIFIED"
+                              ]
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    "then": {
+                      "code": {
+                        "$coalesce": [
+                          {
+                            "$ref": "response.promptFeedback.blockReason"
+                          },
+                          {
+                            "$ref": "response.candidates.0.finishReason"
+                          }
+                        ]
+                      },
+                      "message": {
+                        "$concat": [
+                          "Gemini 未正常完成生成，结束原因：",
+                          {
+                            "$coalesce": [
+                              {
+                                "$ref": "response.promptFeedback.blockReason"
+                              },
+                              {
+                                "$ref": "response.candidates.0.finishReason"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ],
+                "default": null
+              }
+            },
+            "response": {
+              "candidates": [
+                {
+                  "content": {
+                    "role": "model",
+                    "parts": {
+                      "$ref": "stream.append.parts"
+                    }
+                  },
+                  "finishReason": "STOP"
+                }
+              ],
+              "usageMetadata": {
+                "$ref": "stream.merge.usage"
+              }
+            },
+            "allowFullResponse": true
+          },
+          "promptCache": {
+            "fields": [
+              "systemInstruction",
+              "tools",
+              "toolConfig"
+            ],
+            "model": {
+              "$trimPrefix": [
+                {
+                  "$ref": "request.model"
+                },
+                "models/"
+              ]
+            },
+            "minimumTokens": {
+              "$if": {
+                "condition": {
+                  "$contains": [
+                    {
+                      "$ref": "request.model"
+                    },
+                    "gemini-2.5"
+                  ]
+                },
+                "then": 2048,
+                "else": 4096
+              }
+            },
+            "create": {
+              "method": "POST",
+              "path": "/v1beta/cachedContents",
+              "contentType": "application/json",
+              "body": {
+                "$merge": [
+                  {
+                    "model": {
+                      "$concat": [
+                        "models/",
+                        {
+                          "$ref": "cache.model"
+                        }
+                      ]
+                    },
+                    "ttl": "3600s"
+                  },
+                  {
+                    "$ref": "cache.prefix"
+                  }
+                ]
+              }
+            },
+            "delete": {
+              "method": "DELETE",
+              "pathTemplate": {
+                "$concat": [
+                  "/v1beta/",
+                  {
+                    "$ref": "cache.resourceName"
+                  }
+                ]
+              },
+              "contentType": "application/json"
+            },
+            "resource": {
+              "$ref": "response.name"
+            },
+            "expireTime": {
+              "$ref": "response.expireTime"
+            },
+            "resourcePattern": "^cachedContents/[A-Za-z0-9_-][A-Za-z0-9_.-]*$",
+            "applyField": "cachedContent",
+            "missing": {
+              "$and": [
+                {
+                  "$eq": [
+                    {
+                      "$ref": "error.status"
+                    },
+                    404
+                  ]
+                },
+                {
+                  "$contains": [
+                    {
+                      "$ref": "error.body"
+                    },
+                    {
+                      "$ref": "error.resourceName"
+                    }
+                  ]
+                },
+                {
+                  "$or": [
+                    {
+                      "$not": {
+                        "$ref": "response.error.code"
+                      }
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$ref": "response.error.code"
+                        },
+                        404
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "$or": [
+                    {
+                      "$not": {
+                        "$ref": "response.error.status"
+                      }
+                    },
+                    {
+                      "$eq": [
+                        {
+                          "$ref": "response.error.status"
+                        },
+                        "NOT_FOUND"
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
           }
         },
         "response": {
@@ -323,14 +1225,189 @@ SSE 中 `thought=true` 的文本进入思考摘要，其余文本作为正文增
           "text": {
             "$map": {
               "from": {
-                "$ref": "response.candidates.0.content.parts"
+                "$filter": {
+                  "from": {
+                    "$ref": "response.candidates.0.content.parts"
+                  },
+                  "as": "part",
+                  "where": {
+                    "$ne": [
+                      {
+                        "$ref": "part.thought"
+                      },
+                      true
+                    ]
+                  }
+                }
               },
               "as": "part",
               "in": {
-                "$omitEmpty": {
-                  "$ref": "part.text"
-                }
+                "$ref": "part.text"
               }
+            }
+          },
+          "reasoning": {
+            "$map": {
+              "from": {
+                "$filter": {
+                  "from": {
+                    "$ref": "response.candidates.0.content.parts"
+                  },
+                  "as": "part",
+                  "where": {
+                    "$eq": [
+                      {
+                        "$ref": "part.thought"
+                      },
+                      true
+                    ]
+                  }
+                }
+              },
+              "as": "part",
+              "in": {
+                "$ref": "part.text"
+              }
+            }
+          },
+          "error": {
+            "$switch": {
+              "cases": [
+                {
+                  "when": {
+                    "$ref": "response.error"
+                  },
+                  "then": {
+                    "code": {
+                      "$coalesce": [
+                        {
+                          "$ref": "response.error.status"
+                        },
+                        {
+                          "$ref": "response.error.code"
+                        }
+                      ]
+                    },
+                    "message": {
+                      "$ref": "response.error.message"
+                    }
+                  }
+                },
+                {
+                  "when": {
+                    "$in": [
+                      {
+                        "$coalesce": [
+                          {
+                            "$ref": "response.promptFeedback.blockReason"
+                          },
+                          {
+                            "$ref": "response.candidates.0.finishReason"
+                          }
+                        ]
+                      },
+                      [
+                        "SAFETY",
+                        "BLOCKLIST",
+                        "PROHIBITED_CONTENT",
+                        "SPII",
+                        "IMAGE_SAFETY",
+                        "IMAGE_PROHIBITED_CONTENT"
+                      ]
+                    ]
+                  },
+                  "then": {
+                    "code": "content_policy_violation",
+                    "message": "内容未通过上游安全审核，请修改提示词或参考素材后重试"
+                  }
+                },
+                {
+                  "when": {
+                    "$eq": [
+                      {
+                        "$coalesce": [
+                          {
+                            "$ref": "response.promptFeedback.blockReason"
+                          },
+                          {
+                            "$ref": "response.candidates.0.finishReason"
+                          }
+                        ]
+                      },
+                      "MAX_TOKENS"
+                    ]
+                  },
+                  "then": {
+                    "code": "output_token_limit",
+                    "message": "Gemini 输出达到模型 Token 上限，内容未完整生成"
+                  }
+                },
+                {
+                  "when": {
+                    "$and": [
+                      {
+                        "$coalesce": [
+                          {
+                            "$ref": "response.promptFeedback.blockReason"
+                          },
+                          {
+                            "$ref": "response.candidates.0.finishReason"
+                          }
+                        ]
+                      },
+                      {
+                        "$not": {
+                          "$in": [
+                            {
+                              "$coalesce": [
+                                {
+                                  "$ref": "response.promptFeedback.blockReason"
+                                },
+                                {
+                                  "$ref": "response.candidates.0.finishReason"
+                                }
+                              ]
+                            },
+                            [
+                              "STOP",
+                              "FINISH_REASON_UNSPECIFIED",
+                              "BLOCK_REASON_UNSPECIFIED"
+                            ]
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  "then": {
+                    "code": {
+                      "$coalesce": [
+                        {
+                          "$ref": "response.promptFeedback.blockReason"
+                        },
+                        {
+                          "$ref": "response.candidates.0.finishReason"
+                        }
+                      ]
+                    },
+                    "message": {
+                      "$concat": [
+                        "Gemini 未正常完成生成，结束原因：",
+                        {
+                          "$coalesce": [
+                            {
+                              "$ref": "response.promptFeedback.blockReason"
+                            },
+                            {
+                              "$ref": "response.candidates.0.finishReason"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "default": null
             }
           },
           "usage": {
@@ -344,9 +1421,194 @@ SSE 中 `thought=true` 的文本进入思考摘要，其余文本作为正文增
           ]
         },
         "agentResponse": {
-          "textPaths": [
-            "candidates.0.content.parts.0.text"
-          ],
+          "text": {
+            "$map": {
+              "from": {
+                "$filter": {
+                  "from": {
+                    "$ref": "response.candidates.0.content.parts"
+                  },
+                  "as": "part",
+                  "where": {
+                    "$ne": [
+                      {
+                        "$ref": "part.thought"
+                      },
+                      true
+                    ]
+                  }
+                }
+              },
+              "as": "part",
+              "in": {
+                "$ref": "part.text"
+              }
+            }
+          },
+          "reasoning": {
+            "$map": {
+              "from": {
+                "$filter": {
+                  "from": {
+                    "$ref": "response.candidates.0.content.parts"
+                  },
+                  "as": "part",
+                  "where": {
+                    "$eq": [
+                      {
+                        "$ref": "part.thought"
+                      },
+                      true
+                    ]
+                  }
+                }
+              },
+              "as": "part",
+              "in": {
+                "$ref": "part.text"
+              }
+            }
+          },
+          "error": {
+            "$switch": {
+              "cases": [
+                {
+                  "when": {
+                    "$ref": "response.error"
+                  },
+                  "then": {
+                    "code": {
+                      "$coalesce": [
+                        {
+                          "$ref": "response.error.status"
+                        },
+                        {
+                          "$ref": "response.error.code"
+                        }
+                      ]
+                    },
+                    "message": {
+                      "$ref": "response.error.message"
+                    }
+                  }
+                },
+                {
+                  "when": {
+                    "$in": [
+                      {
+                        "$coalesce": [
+                          {
+                            "$ref": "response.promptFeedback.blockReason"
+                          },
+                          {
+                            "$ref": "response.candidates.0.finishReason"
+                          }
+                        ]
+                      },
+                      [
+                        "SAFETY",
+                        "BLOCKLIST",
+                        "PROHIBITED_CONTENT",
+                        "SPII",
+                        "IMAGE_SAFETY",
+                        "IMAGE_PROHIBITED_CONTENT"
+                      ]
+                    ]
+                  },
+                  "then": {
+                    "code": "content_policy_violation",
+                    "message": "内容未通过上游安全审核，请修改提示词或参考素材后重试"
+                  }
+                },
+                {
+                  "when": {
+                    "$eq": [
+                      {
+                        "$coalesce": [
+                          {
+                            "$ref": "response.promptFeedback.blockReason"
+                          },
+                          {
+                            "$ref": "response.candidates.0.finishReason"
+                          }
+                        ]
+                      },
+                      "MAX_TOKENS"
+                    ]
+                  },
+                  "then": {
+                    "code": "output_token_limit",
+                    "message": "Gemini 输出达到模型 Token 上限，内容未完整生成"
+                  }
+                },
+                {
+                  "when": {
+                    "$and": [
+                      {
+                        "$coalesce": [
+                          {
+                            "$ref": "response.promptFeedback.blockReason"
+                          },
+                          {
+                            "$ref": "response.candidates.0.finishReason"
+                          }
+                        ]
+                      },
+                      {
+                        "$not": {
+                          "$in": [
+                            {
+                              "$coalesce": [
+                                {
+                                  "$ref": "response.promptFeedback.blockReason"
+                                },
+                                {
+                                  "$ref": "response.candidates.0.finishReason"
+                                }
+                              ]
+                            },
+                            [
+                              "STOP",
+                              "FINISH_REASON_UNSPECIFIED",
+                              "BLOCK_REASON_UNSPECIFIED"
+                            ]
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  "then": {
+                    "code": {
+                      "$coalesce": [
+                        {
+                          "$ref": "response.promptFeedback.blockReason"
+                        },
+                        {
+                          "$ref": "response.candidates.0.finishReason"
+                        }
+                      ]
+                    },
+                    "message": {
+                      "$concat": [
+                        "Gemini 未正常完成生成，结束原因：",
+                        {
+                          "$coalesce": [
+                            {
+                              "$ref": "response.promptFeedback.blockReason"
+                            },
+                            {
+                              "$ref": "response.candidates.0.finishReason"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "default": null
+            }
+          },
           "toolCallsPath": "candidates.0.content.parts",
           "toolCallIdPaths": [
             "functionCall.id"

@@ -10,20 +10,27 @@ import type { AgentEvent, CreateAgentRunInput } from "../src/services/api/agent"
 const dir = mkdtempSync(join(tmpdir(), "agent-reliability-"));
 const root = new URL("../src/", import.meta.url);
 const requestPath = join(dir, "request.ts");
-writeFileSync(requestPath, 'export const apiBaseURL = "https://agent.invalid/api"; export const http = { post: async () => { throw new Error("unexpected POST"); } };');
-writeFileSync(join(dir, "agent.ts"), readFileSync(new URL("services/api/agent.ts", root), "utf8")
-    .replace('"@/services/api/request"', JSON.stringify(requestPath))
-    .replace('"@/lib/user-scope"', JSON.stringify(fileURLToPath(new URL("lib/user-scope.ts", root))))
-    .replace('"@/services/api/task-text-stream"', JSON.stringify(fileURLToPath(new URL("services/api/task-text-stream.ts", root)))));
+writeFileSync(requestPath, 'export const apiBaseURL = "https://agent.invalid/api"; export const http = { get: async () => { throw new Error("unexpected GET"); }, post: async () => { throw new Error("unexpected POST"); } };');
+writeFileSync(
+    join(dir, "agent.ts"),
+    readFileSync(new URL("services/api/agent.ts", root), "utf8")
+        .replace('"@/services/api/request"', JSON.stringify(requestPath))
+        .replace('"@/lib/user-scope"', JSON.stringify(fileURLToPath(new URL("lib/user-scope.ts", root))))
+        .replace('"@/services/api/task-text-stream"', JSON.stringify(fileURLToPath(new URL("services/api/task-text-stream.ts", root)))),
+);
+const storagePath = join(dir, "storage.ts");
+writeFileSync(storagePath, "export const data = new Map(); export const localForageStorageForScope = () => ({ getItem: async (k) => data.get(k) ?? null, setItem: async (k,v) => {data.set(k,v);}, removeItem: async (k) => {data.delete(k);} });");
+writeFileSync(join(dir, "scope.ts"), 'export const getActiveUserScope = () => "test-user";');
+writeFileSync(
+    join(dir, "conversations.ts"),
+    readFileSync(new URL("services/cloud-agent-conversations.ts", root), "utf8")
+        .replace('"@/lib/localforage-storage"', JSON.stringify(storagePath))
+        .replace('"@/lib/user-scope"', JSON.stringify(join(dir, "scope.ts")))
+        .replace('"@/lib/markdown-plain-text"', JSON.stringify(fileURLToPath(new URL("lib/markdown-plain-text.ts", root)))),
+);
+// Bun 缓存首次 import 时的目录项，先写齐临时模块，避免后写文件被误报为不存在。
 const api: typeof import("../src/services/api/agent") = await import(join(dir, "agent.ts"));
 const transport = await import(requestPath);
-const storagePath = join(dir, "storage.ts");
-writeFileSync(storagePath, 'export const data = new Map(); export const localForageStorageForScope = () => ({ getItem: async (k) => data.get(k) ?? null, setItem: async (k,v) => {data.set(k,v);}, removeItem: async (k) => {data.delete(k);} });');
-writeFileSync(join(dir, "scope.ts"), 'export const getActiveUserScope = () => "test-user";');
-writeFileSync(join(dir, "conversations.ts"), readFileSync(new URL("services/cloud-agent-conversations.ts", root), "utf8")
-    .replace('"@/lib/localforage-storage"', JSON.stringify(storagePath))
-    .replace('"@/lib/user-scope"', JSON.stringify(join(dir, "scope.ts")))
-    .replace('"@/lib/markdown-plain-text"', JSON.stringify(fileURLToPath(new URL("lib/markdown-plain-text.ts", root)))));
 const conversations: typeof import("../src/services/cloud-agent-conversations") = await import(join(dir, "conversations.ts"));
 const storage = await import(storagePath);
 const nativeFetch = globalThis.fetch;
@@ -33,6 +40,9 @@ let stops: Array<() => void> = [];
 beforeEach(() => {
     delays = [];
     storage.data.clear();
+    transport.http.get = async () => {
+        throw new Error("snapshot unavailable");
+    };
     // Retain watchdog semantics; accelerate only retry waits, recording real delays.
     globalThis.setTimeout = ((fn: TimerHandler, ms?: number, ...args: unknown[]) => {
         delays.push(ms ?? 0);
@@ -56,12 +66,19 @@ function observe(options: { timeoutMs?: number; after?: number } = {}) {
     let finish!: (error?: unknown) => void;
     const done = new Promise<unknown>((resolve, reject) => {
         const deadline = nativeTimer(() => reject(new Error("subscription did not settle")), 3000);
-        finish = (error) => { clearTimeout(deadline); resolve(error); };
+        finish = (error) => {
+            clearTimeout(deadline);
+            resolve(error);
+        };
     });
-    const stop = api.subscribeAgentEvents("run", (e) => {
-        events.push(e);
-        if (e.type === "run_status" && !e.payload.cleanupPending && ["completed", "failed", "cancelled"].includes(String(e.payload.status))) finish();
-    }, { ...options, onError: finish, onConnectionChange: (s) => statuses.push(s) });
+    const stop = api.subscribeAgentEvents(
+        "run",
+        (e) => {
+            events.push(e);
+            if (e.type === "run_status" && !e.payload.cleanupPending && ["completed", "failed", "cancelled"].includes(String(e.payload.status))) finish();
+        },
+        { ...options, onError: finish, onConnectionChange: (s) => statuses.push(s) },
+    );
     stops.push(stop);
     return { events, statuses, done, stop, finish };
 }
@@ -69,7 +86,10 @@ function observe(options: { timeoutMs?: number; after?: number } = {}) {
 describe("Agent SSE recovery", () => {
     it("sends the user's final image settings with the approval and keeps cancellation", async () => {
         const requests: unknown[][] = [];
-        transport.http.post = async (...args: unknown[]) => { requests.push(args); return { accepted: true }; };
+        transport.http.post = async (...args: unknown[]) => {
+            requests.push(args);
+            return { accepted: true };
+        };
         const signal = new AbortController().signal;
         const mediaSettings = { logicalModelId: "chosen-image", size: "1536x1024", quality: "high" };
         await api.decideAgentApproval("run/id", "approval/id", "approve", "", signal, mediaSettings);
@@ -77,7 +97,10 @@ describe("Agent SSE recovery", () => {
     });
     it.each([401, 403, 404, 422])("stops immediately on definitive %s", async (status) => {
         let requests = 0;
-        globalThis.fetch = (async () => { requests++; return new Response("", { status }); }) as typeof fetch;
+        globalThis.fetch = (async () => {
+            requests++;
+            return new Response("", { status });
+        }) as typeof fetch;
         const result = observe();
         expect(await result.done).toMatchObject({ status });
         expect(requests).toBe(1);
@@ -86,7 +109,10 @@ describe("Agent SSE recovery", () => {
 
     it.each(["", snapshot("running")])("bounds clean EOF retries even with repeated snapshots", async (body) => {
         let requests = 0;
-        globalThis.fetch = (async () => { requests++; return stream(body); }) as typeof fetch;
+        globalThis.fetch = (async () => {
+            requests++;
+            return stream(body);
+        }) as typeof fetch;
         const result = observe();
         expect(await result.done).toBeInstanceOf(Error);
         expect(requests).toBe(5);
@@ -117,9 +143,58 @@ describe("Agent SSE recovery", () => {
         expect(result.events.filter((e) => e.type === "run_status").map((e) => e.payload.cleanupPending)).toEqual([true, false]);
     });
 
+    it("reconciles a missed terminal snapshot before reporting another connection error", async () => {
+        globalThis.fetch = (async () => {
+            throw new TypeError("network error");
+        }) as typeof fetch;
+        let reads = 0;
+        transport.http.get = async (path: string, options: { signal: AbortSignal; params: unknown }) => {
+            reads++;
+            expect(path).toBe("/agent/runs/run");
+            expect(options.signal.aborted).toBe(false);
+            expect(options.params).toEqual({ sinceSeq: 0, eventLimit: 500, fromStart: true });
+            return { run: { id: "run", status: "failed", cleanupPending: false, failureMessage: "上游返回空内容", events: [{ runId: "run", eventId: "run:1", seq: 1, type: "run_failed", payload: { text: "上游返回空内容" } }] } };
+        };
+        const result = observe();
+        expect(await result.done).toBeUndefined();
+        expect(reads).toBe(1);
+        expect(result.events.map((e) => e.type)).toEqual(["run_failed", "run_status"]);
+        expect(result.events.at(-1)?.payload).toMatchObject({ status: "failed", failureMessage: "上游返回空内容" });
+        expect(result.statuses).not.toContain("disconnected");
+    });
+
+    it("keeps an active run and approval after the bounded snapshot reconciliation", async () => {
+        globalThis.fetch = (async () => {
+            throw new TypeError("network error");
+        }) as typeof fetch;
+        transport.http.get = async () => ({ run: { id: "run", status: "waiting_approval", approval: { id: "approval-kept" } } });
+        const result = observe();
+        expect(await result.done).toBeInstanceOf(Error);
+        expect(result.events.at(-1)?.payload).toMatchObject({ status: "waiting_approval", approval: { id: "approval-kept" } });
+    });
+
+    it("replays every missing event page before accepting a recovered terminal state", async () => {
+        globalThis.fetch = (async () => {
+            throw new TypeError("network error");
+        }) as typeof fetch;
+        const cursors: number[] = [];
+        transport.http.get = async (_: string, options: { params: { sinceSeq: number; fromStart: boolean } }) => {
+            const after = options.params.sinceSeq;
+            cursors.push(after);
+            expect(options.params.fromStart).toBe(after === 0);
+            const events = Array.from({ length: after === 0 ? 500 : 1 }, (_, i) => ({ runId: "run", eventId: `run:${after + i + 1}`, seq: after + i + 1, type: "tool_completed", payload: {} }));
+            return { run: { id: "run", status: "completed", latestSeq: 501, events } };
+        };
+        const result = observe();
+        expect(await result.done).toBeUndefined();
+        expect(cursors).toEqual([0, 500]);
+        expect(result.events.filter((e) => e.seq > 0)).toHaveLength(501);
+        expect(result.events.at(-1)?.type).toBe("run_status");
+    });
+
     it("honors Retry-After rather than immediately retrying 429", async () => {
         let requests = 0;
-        globalThis.fetch = (async () => ++requests === 1 ? new Response("", { status: 429, headers: { "retry-after": "60" } }) : stream(snapshot("completed"))) as typeof fetch;
+        globalThis.fetch = (async () => (++requests === 1 ? new Response("", { status: 429, headers: { "retry-after": "60" } }) : stream(snapshot("completed")))) as typeof fetch;
         const result = observe();
         await result.done;
         expect(requests).toBe(2);
@@ -128,7 +203,10 @@ describe("Agent SSE recovery", () => {
 
     it("returns long Retry-After waits to the user without retrying early", async () => {
         let requests = 0;
-        globalThis.fetch = (async () => { requests++; return new Response("", { status: 429, headers: { "retry-after": "600" } }); }) as typeof fetch;
+        globalThis.fetch = (async () => {
+            requests++;
+            return new Response("", { status: 429, headers: { "retry-after": "600" } });
+        }) as typeof fetch;
         const result = observe();
         expect(await result.done).toMatchObject({ status: 429 });
         expect(requests).toBe(1);
@@ -146,7 +224,15 @@ describe("Agent SSE recovery", () => {
 
     it("unsubscribe aborts the live reader without reporting a run failure", async () => {
         let cancelled = false;
-        globalThis.fetch = (async () => new Response(new ReadableStream({ cancel() { cancelled = true; } }), { headers: { "content-type": "text/event-stream" } })) as typeof fetch;
+        globalThis.fetch = (async () =>
+            new Response(
+                new ReadableStream({
+                    cancel() {
+                        cancelled = true;
+                    },
+                }),
+                { headers: { "content-type": "text/event-stream" } },
+            )) as typeof fetch;
         const result = observe();
         await new Promise((resolve) => nativeTimer(resolve, 5));
         result.stop();
@@ -176,11 +262,17 @@ describe("Agent admission replay and durable pending records", () => {
 
     it("limits transport failures to three attempts, but never retries admission rejection", async () => {
         let attempts = 0;
-        transport.http.post = async () => { attempts++; throw { retryable: true }; };
+        transport.http.post = async () => {
+            attempts++;
+            throw { retryable: true };
+        };
         await expect(api.sendAgentMessage("parent", input)).rejects.toMatchObject({ retryable: true });
         expect(attempts).toBe(3);
         attempts = 0;
-        transport.http.post = async () => { attempts++; throw { status: 400, retryable: false }; };
+        transport.http.post = async () => {
+            attempts++;
+            throw { status: 400, retryable: false };
+        };
         await expect(api.createAgentRun(input)).rejects.toMatchObject({ status: 400 });
         expect(attempts).toBe(1);
     });

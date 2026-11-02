@@ -2,16 +2,9 @@ import type { Asset } from "@/stores/use-asset-store";
 
 export const PLUGIN_API_VERSION = "yingce.plugin/v1" as const;
 export const PLUGIN_API_VERSION_V2 = "yingce.plugin/v2" as const;
+export const PLUGIN_API_VERSION_V3 = "yingce.plugin/v3" as const;
 
-export type EditorSlotKind =
-    | "timeline-panel"
-    | "preview-renderer"
-    | "inspector"
-    | "asset-ingest"
-    | "subtitle-tool"
-    | "transcription-provider"
-    | "export-renderer"
-    | "ai-assistant";
+export type EditorSlotKind = "timeline-panel" | "preview-renderer" | "inspector" | "asset-ingest" | "subtitle-tool" | "transcription-provider" | "export-renderer" | "ai-assistant";
 
 export type EditorSlotContribution = {
     slot: EditorSlotKind;
@@ -30,6 +23,12 @@ export type PluginManifestV2 = Omit<PluginManifest, "apiVersion" | "contributes"
     permissions: Array<PluginPermission | EditorPluginPermission>;
     contributes: PluginContributionsV2;
 };
+
+// v3 adds server-executed conversation, SSE and prompt-cache contracts.
+export type PluginManifestV3 = Omit<PluginManifestV2, "apiVersion"> & {
+    apiVersion: typeof PLUGIN_API_VERSION_V3;
+};
+export type AnyPluginManifest = PluginManifest | PluginManifestV2 | PluginManifestV3;
 
 export type PluginContributionKind = "provider" | "payment-provider" | "workflow" | "canvas-node" | "transform" | "command" | "asset-source" | "usage-observer" | "ai-capability" | "agent" | "import-export";
 export type PluginSurface = "node" | "fullscreen" | "hybrid" | "asset-source" | "settings" | "wallet";
@@ -226,7 +225,7 @@ export type PluginHostServices = {
 };
 
 export type PluginHostContext = {
-    manifest: PluginManifest | PluginManifestV2;
+    manifest: AnyPluginManifest;
     permissions: ReadonlySet<PluginPermission | EditorPluginPermission>;
     storage: PluginStorage;
     config: Readonly<PluginInstallation["config"]>;
@@ -329,8 +328,8 @@ export type RegisteredPlugin = {
     agentActions?: PluginAgentAction[];
     /** Pure, bounded projection: never return embedded media or provider credentials. */
     readAgentNode?: (node: import("@/types/canvas").CanvasNodeData, snapshot: import("@/lib/canvas/canvas-operation-contract").CanvasSnapshot) => Record<string, unknown>;
-    /** v1 或 v2 插件清单；v2 清单结构为 v1 超集（含 editorSlots 声明）。 */
-    manifest: PluginManifest | PluginManifestV2;
+    /** v1/v2/v3 统一清单；v2 起包含 editorSlots，v3 增加服务端协议合同。 */
+    manifest: AnyPluginManifest;
     source?: "bundled" | "uploaded" | string;
     activate?: (context: PluginHostContext) => Promise<void> | void;
     deactivate?: (context: PluginHostContext) => Promise<void> | void;
@@ -342,7 +341,7 @@ export type RegisteredPlugin = {
 };
 
 export type PluginInstallation = {
-    manifest: PluginManifest | PluginManifestV2;
+    manifest: AnyPluginManifest;
     enabled: boolean;
     config: Record<string, string | number | boolean>;
     installedAt: string;

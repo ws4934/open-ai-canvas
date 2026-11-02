@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,129 @@ import (
 	agentruntime "yingce/backend/internal/agent/runtime"
 	"yingce/backend/internal/model"
 )
+
+func TestCloudAgentRuntimeCompletesGeminiStreamingToolRoundTrip(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node is not installed")
+	}
+	if _, err := agentRuntimeDirForTest(); err != nil {
+		t.Skip(err.Error())
+	}
+	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
+	t.Setenv("REDIS_URL", "")
+	var mu sync.Mutex
+	requests := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1beta/cachedContents" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			fmt.Fprint(w, `{"error":{"code":403,"message":"aiplatform.cachedContents.create denied"}}`)
+			return
+		}
+		if !strings.HasSuffix(r.URL.Path, ":streamGenerateContent") || r.URL.Query().Get("alt") != "sse" {
+			t.Errorf("Gemini 助手未使用原生 SSE：%s", r.URL)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		mu.Lock()
+		requests++
+		index := requests
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		foundCall, foundResult := false, false
+		for _, value := range interfaceSlice(body["contents"]) {
+			content := value.(map[string]any)
+			for _, value := range interfaceSlice(content["parts"]) {
+				part := value.(map[string]any)
+				if call, ok := part["functionCall"].(map[string]any); ok {
+					foundCall = call["name"] == "canvas_get_state" && part["thoughtSignature"] == "round-trip-signature"
+				}
+				if response, ok := part["functionResponse"].(map[string]any); ok {
+					foundResult = response["name"] == "canvas_get_state"
+				}
+			}
+		}
+		if index > 1 && (!foundCall || !foundResult) {
+			t.Errorf("真实 Node 续轮丢失调用、结果名称或签名：%#v", body["contents"])
+		}
+		if index <= 2 {
+			fmt.Fprint(w, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"functionCall\":{\"name\":\"canvas_get_state\",\"args\":{}},\"thoughtSignature\":\"round-trip-signature\"}]},\"finishReason\":\"STOP\"}]}\n\n")
+			return
+		}
+		fmt.Fprint(w, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"thought\":true,\"text\":\"已核对工具结果\"},{\"text\":\"画布已\"},{\"text\":\"检查完毕\"}]},\"finishReason\":\"STOP\"}]}\n\n")
+	}))
+	defer upstream.Close()
+	s, db, _, _ := creationTestService(t)
+	s = New(s.repo, s.dataDir)
+	t.Cleanup(func() { _ = s.Close() })
+	if err := db.Model(&model.ModelChannel{}).Where("id = ?", "channel").Updates(map[string]any{"base_url": upstream.URL, "api_key": "test-only"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	config := mustEncodeModelCapabilityConfig(t, DefaultModelCapabilityConfigForModel(officialGeminiAgentInterface, "text-test"))
+	if err := db.Model(&model.ChannelModel{}).Where("id = ?", "cm").Updates(map[string]any{"protocol": officialGeminiAgentInterface, "capability_config_json": config}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.CanvasProject{ID: "agent-canvas", UserID: "user", PayloadJSON: `{"nodes":[]}`}).Error; err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			_ = s.ProcessNextTask()
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+	run, err := s.CreateCloudAgentRun("user", agentTestRequest(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		stored, err := s.repo.CloudAgent("user", run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cloudAgentRunTerminal(stored.Status) {
+			if stored.Status != "completed" {
+				t.Fatalf("Gemini 助手没有完成工具续轮：%s / %s", stored.Status, stored.FailureMessage)
+			}
+			state, err := cloudAgentDecode(stored)
+			if err != nil {
+				t.Fatal(err)
+			}
+			events, _ := json.Marshal(state.Events)
+			if !strings.Contains(string(events), "画布已检查完毕") {
+				t.Fatal("最终正文没有回传运行事件")
+			}
+			mu.Lock()
+			count := requests
+			mu.Unlock()
+			if count != 3 {
+				t.Fatalf("Gemini 工具往返意外重发了模型步骤：%d", count)
+			}
+			callIDs := map[string]bool{}
+			for _, event := range state.Events {
+				if event.Type == "tool_completed" && event.Payload["toolName"] == "canvas_get_state" {
+					callIDs[stringValue(event.Payload["callId"])] = true
+				}
+			}
+			if len(callIDs) != 2 {
+				t.Fatalf("相同读取在续轮被误判为旧请求回放：%v", callIDs)
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("Gemini 助手工具往返没有结束")
+}
 
 // 端到端：生产入口 CreateCloudAgentRun → 真实 Node 运行时 → /model 桥接 → 任务 worker →
 // 模拟上游（第一步返回工具调用，第二步返回正文）→ /tool 桥接 → 运行完成。

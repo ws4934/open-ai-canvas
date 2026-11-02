@@ -38,6 +38,7 @@ function createMessage(model, result) {
       type: "toolCall",
       id: call.id,
       ...(call.item_id ? { itemId: call.item_id } : {}),
+      ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}),
       name: call.name,
       arguments: call.arguments ?? {},
     });

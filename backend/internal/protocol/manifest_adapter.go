@@ -26,6 +26,10 @@ func (a manifestAdapter) AgentAvailable() bool {
 	return a.manifest.Agent != nil && a.manifest.AgentResponse != nil
 }
 
+func (a manifestAdapter) AgentUsesConversation() bool {
+	return a.manifest.Agent != nil && a.manifest.Agent.Input == "conversation"
+}
+
 func (a manifestAdapter) ResultAvailable() bool { return a.manifest.ResultOperation != nil }
 
 func (a manifestAdapter) UploadKinds() []string {
@@ -126,7 +130,25 @@ func (a manifestAdapter) ParseAgent(_ context.Context, body []byte) (AgentResult
 		return AgentResult{}, err
 	}
 	response := a.manifest.AgentResponse
+	env := map[string]any{"response": payload}
+	if err := evaluateResponseError(response.Error, env); err != nil {
+		return AgentResult{}, err
+	}
 	result := AgentResult{Text: firstPathValue(payload, response.TextPaths...), Reasoning: firstPathValue(payload, response.ReasoningPaths...)}
+	if response.Text != nil {
+		value, err := evaluateManifestValue(response.Text, env)
+		if err != nil {
+			return AgentResult{}, err
+		}
+		result.Text = manifestJoinedText(value)
+	}
+	if response.Reasoning != nil {
+		value, err := evaluateManifestValue(response.Reasoning, env)
+		if err != nil {
+			return AgentResult{}, err
+		}
+		result.Reasoning = manifestJoinedText(value)
+	}
 	if response.ToolCallsPath == "" {
 		return result, nil
 	}
@@ -144,6 +166,7 @@ func (a manifestAdapter) ParseAgent(_ context.Context, body []byte) (AgentResult
 		if strings.TrimSpace(call.Name) != "" {
 			if strings.TrimSpace(call.ID) == "" {
 				call.ID = syntheticAgentToolCallID(body, index)
+				call.GeneratedID = true
 			}
 			result.ToolCalls = append(result.ToolCalls, call)
 		}
@@ -173,6 +196,9 @@ func (a manifestAdapter) ParseCreateWithRequest(_ context.Context, request Gener
 	}
 	payload, err := decodeObject(body)
 	if err != nil {
+		return CreateResult{}, err
+	}
+	if err := evaluateResponseError(a.manifest.Response.Error, map[string]any{"response": payload}); err != nil {
 		return CreateResult{}, err
 	}
 	// 响应映射可读取 request.*（如以宿主幂等键作为上游任务 ID 的协议）。
@@ -389,8 +415,8 @@ func (a manifestAdapter) parse(payload map[string]any, c PollContext) CreateResu
 		}
 	}
 	result := &Result{
-		Text:      manifestResponseString(response.Text, env),
-		Reasoning: manifestResponseString(response.Reasoning, env),
+		Text:      manifestResponseText(response.Text, env),
+		Reasoning: manifestResponseText(response.Reasoning, env),
 	}
 	if result.Text == "" {
 		result.Text = firstPathValue(payload, response.TextPaths...)
@@ -463,6 +489,17 @@ func manifestResponseString(template any, env map[string]any) string {
 		}
 	}
 	return strings.Join(parts, "")
+}
+
+func manifestResponseText(template any, env map[string]any) string {
+	if template == nil {
+		return ""
+	}
+	value, err := evaluateManifestValue(template, env)
+	if err != nil {
+		return ""
+	}
+	return manifestJoinedText(value)
 }
 
 func manifestResponseMedia(template any, env map[string]any, kind string, ephemeral bool) []MediaReference {

@@ -5,6 +5,14 @@ description: 从产品功能快速定位主要代码入口
 
 # 代码功能地图
 
+## 画布助手的 Gemini 续轮与快照恢复
+
+- 请求与工具历史：`app/provider_agent_conversation.go` 投影协议中立的角色、文本、媒体及成组工具事实；`cloud_agent_pi_bridge.go`、`cloud_agent_runtime.go` 与 `agent-runtime/pi/agent-runtime.mjs` 保留调用签名。
+- Gemini 插件：`plugin-packages/schemas/gemini-text.mjs` 声明请求、工具 schema 子集、响应、SSE 和 Prompt Cache；`generate-catalog.mjs` 生成源码清单与文档，打包后的 `google-gemini-generate-content.yingce-plugin` 才是运行来源。没有 Gemini 文本协议 ID 的 Go 分发分支。
+- 通用宿主：`protocol/stream.go` 按插件规则累计事件并校验终态，`app/provider_declarative_stream.go` 负责 HTTP 增量传输，`provider_agent_cache.go` 管理缓存生命周期、隔离及一次失效重建；`cloud_agent_empty_output.go` 与 `cloud_agent_pi_model.go` 共用有界空响应纠正。
+- 画布版本：`app/cloud_agent_canvas_state.go` 排除时间戳和分镜输入框显示高度；分镜/批量表回执区分节点与画布版本，`cloud_agent_runtime_tools.go` 返回重读对象。
+- 连接恢复：`web/src/services/api/agent.ts` 在 SSE 重连耗尽时读取一次运行详情，补齐最终状态和缺失事件。
+
 ## 插件参数与模型能力
 
 - 插件合同：`backend/internal/protocol/model_inputs.go` 定义 `inputSchema` / `inputConfig`、类型与绑定解析、模型约束与条件规则；`manifest_adapter.go` 在请求组装前应用合同。xAI 模板源为 `plugin-packages/schemas/xai-video.mjs`，生成器同步独立包与内置清单。

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"strings"
 
 	"yingce/backend/internal/model"
@@ -11,6 +12,35 @@ const cloudAgentMaxEmptyOutputNudges = 2
 
 // cloudAgentMaxEmptyOutputEscalations 是"空输出升级重试"次数：催办没用时改为关思考 + 放大预算。
 const cloudAgentMaxEmptyOutputEscalations = 1
+
+// Pi 与原调度器共用两次纠正、一次关思考/提预算；仍受 Pi 单步总重试上限约束。
+func (s *Service) correctCloudAgentPiEmptyOutput(userID, runID, taskID string) error {
+	for attempt := 0; attempt < 8; attempt++ {
+		run, err := s.repo.CloudAgent(userID, runID)
+		if err != nil {
+			return err
+		}
+		state, err := cloudAgentDecode(run)
+		if err != nil {
+			return err
+		}
+		if state.ActiveTaskID != taskID || cloudAgentRunTerminal(run.Status) {
+			return nil
+		}
+		switch {
+		case state.EmptyOutputNudged < cloudAgentMaxEmptyOutputNudges:
+			err = s.correctCloudAgentEmptyOutput(run, &state)
+		case state.EmptyOutputEscalated < cloudAgentMaxEmptyOutputEscalations:
+			err = s.correctCloudAgentEmptyOutputEscalation(run, &state)
+		default:
+			return s.finishCloudAgentPiModelStep(userID, runID, taskID, "", "")
+		}
+		if !errors.Is(err, repository.ErrCreationConflict) {
+			return err
+		}
+	}
+	return repository.ErrCreationConflict
+}
 
 // cloudAgentEmptyModelOutput 判断模型任务是不是「上游成功、但正文与工具调用都为空」。
 // 开思考时偶发只流 reasoning、可见正文和工具调用都空，解析层会归为「没有返回内容」。

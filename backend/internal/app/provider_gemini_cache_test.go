@@ -35,7 +35,7 @@ func TestGeminiCacheUsableRejectsInvalidResourceName(t *testing.T) {
 		{name: "empty", resource: "", want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := geminiCacheUsable(&model.CloudAgentGeminiCache{ResourceName: tc.resource, ExpireTime: future})
+			got := agentPromptCacheUsable(&model.CloudAgentGeminiCache{ResourceName: tc.resource, ExpireTime: future}, geminiCacheSpecForTest(t))
 			if got != tc.want {
 				t.Fatalf("geminiCacheUsable(%q) = %v, want %v", tc.resource, got, tc.want)
 			}
@@ -158,12 +158,12 @@ func TestPrepareOfficialGeminiAgentCacheCreatesAndReusesStablePrefix(t *testing.
 	if !ok {
 		t.Fatal("official Gemini plugin does not support Agent requests")
 	}
-	spec, err = agentAdapter.BuildAgent(ctx, protocol.AgentRequestContext{BaseURL: server.URL, Model: input.Config.Model, Request: map[string]any{"gemini": spec.Body}})
+	spec, err = agentAdapter.BuildAgent(ctx, protocol.AgentRequestContext{BaseURL: server.URL, Model: input.Config.Model, Request: map[string]any{"conversation": map[string]any{"instructions": stableInstruction, "messages": []any{map[string]any{"role": "user", "parts": []any{map[string]any{"kind": "text", "text": "hello"}}}}, "tools": []any{map[string]any{"name": "canvas_get_state"}}, "toolChoice": "auto"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	prepared, used, err := prepareOfficialGeminiAgentCache(ctx, input, spec)
+	prepared, used, err := prepareAgentPromptCache(ctx, input, spec, false)
 	if err != nil {
 		t.Fatalf("prepareOfficialGeminiAgentCache() error = %v", err)
 	}
@@ -181,7 +181,7 @@ func TestPrepareOfficialGeminiAgentCacheCreatesAndReusesStablePrefix(t *testing.
 		t.Fatalf("executeProtocolRequest() error = %v", err)
 	}
 
-	reused, used, err := prepareOfficialGeminiAgentCache(ctx, input, spec)
+	reused, used, err := prepareAgentPromptCache(ctx, input, spec, false)
 	if err != nil {
 		t.Fatalf("reuse prepare error = %v", err)
 	}

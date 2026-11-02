@@ -1959,7 +1959,7 @@
             "type": "array"
           },
           "snapshotHash": {
-            "description": "最近一次画布读取的 snapshotHash",
+            "description": "canvas_get_state.snapshotHash / canvasSnapshotHash",
             "type": "string"
           }
         },

@@ -92,17 +92,9 @@ func resolveAgentResourcePlaceholders(input canvasGenerationInput, hydrate bool)
 						return nil, BadAuthRequest("规划图片不在获准资源清单")
 					}
 				}
-				if raw, ok := typed["fileData"].(map[string]any); ok {
-					ref, _ := raw["fileUri"].(string)
-					if references[ref] == "" {
-						return nil, BadAuthRequest("规划图片不在获准资源清单")
-					}
-				}
-				if typed["inlineData"] != nil {
-					return nil, BadAuthRequest("规划图片不能持久化内嵌数据")
-				}
 			}
-			// Claude URL source and Gemini fileData need protocol-specific base64 envelopes.
+			// Existing Claude requests use a source envelope; conversation plugins
+			// receive hydrated canonical media and own their wire encoding.
 			if hydrate && typed["type"] == "url" {
 				if ref, ok := typed["url"].(string); ok && strings.HasPrefix(ref, "resource:") {
 					data, ok := references[ref]
@@ -114,22 +106,6 @@ func resolveAgentResourcePlaceholders(input canvasGenerationInput, hydrate bool)
 						return nil, BadAuthRequest("模型图片需要可读取的图片数据")
 					}
 					return map[string]any{"type": "base64", "media_type": mime, "data": payload}, nil
-				}
-			}
-			if hydrate {
-				if raw, ok := typed["fileData"].(map[string]any); ok {
-					if ref, ok := raw["fileUri"].(string); ok && strings.HasPrefix(ref, "resource:") {
-						data, ok := references[ref]
-						if !ok {
-							return nil, BadAuthRequest("模型图片未获准")
-						}
-						mime, payload, ok := splitCreationDataURL(data)
-						if !ok {
-							return nil, BadAuthRequest("模型图片需要可读取的图片数据")
-						}
-						delete(typed, "fileData")
-						typed["inlineData"] = map[string]any{"mimeType": mime, "data": payload}
-					}
 				}
 			}
 			for key, child := range typed {

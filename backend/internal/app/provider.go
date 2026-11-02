@@ -52,7 +52,7 @@ type agentToolRequests struct {
 	Responses      map[string]interface{} `json:"responses"`
 	ChatCompletion map[string]interface{} `json:"chatCompletion"`
 	Claude         map[string]interface{} `json:"claude"`
-	Gemini         map[string]interface{} `json:"gemini"`
+	Conversation   map[string]interface{} `json:"-"`
 }
 
 type providerTextMessage struct {

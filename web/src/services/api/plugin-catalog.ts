@@ -13,6 +13,7 @@ type PluginProviderCatalogItem = {
     create?: string;
     poll?: string;
     contentType?: string;
+    streaming?: boolean;
     enabled: boolean;
     unavailableReason?: string;
     baseUrl?: string;
@@ -48,6 +49,7 @@ function toProviderDefinition(item: PluginProviderCatalogItem): ModelProtocolDef
         create: item.create || "",
         poll: item.poll,
         contentType: item.contentType || "application/json",
+        streaming: item.streaming,
         media: `${item.vendor} · ${item.version}`,
         enabled: item.enabled && !item.unavailableReason,
         baseUrl: item.baseUrl,

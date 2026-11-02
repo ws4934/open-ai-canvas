@@ -9,7 +9,7 @@
 - 鉴权驱动：`bearer`。
 - 创建：`POST /chat/completions`。
 - Agent：`POST /chat/completions`。
-- 生命周期：同步响应。
+- 响应：完整响应 / 流式响应。
 
 ## 配置字段
 
@@ -118,7 +118,7 @@
   "apiVersion": "yingce.plugin/v2",
   "id": "openai-chat-completions",
   "name": "OpenAI Chat Completions",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "author": "OpenAI / 影策",
   "description": "OpenAI Chat Completions 独立请求协议插件。",
   "documentation": "<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>",
@@ -153,6 +153,7 @@
         ],
         "baseUrl": "https://api.openai.com",
         "requiresPublicMediaUrls": false,
+        "streaming": true,
         "auth": {
           "type": "bearer",
           "field": "apiKey"

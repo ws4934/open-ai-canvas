@@ -105,3 +105,81 @@ func TestCloudAgentArrangeNodesStillRejectsContentChange(t *testing.T) {
 		t.Fatalf("节点内容变化仍应按过期快照拒绝：%v", err)
 	}
 }
+
+func TestCloudAgentSnapshotsIgnoreStoryboardComposerAutosave(t *testing.T) {
+	node := layoutNode("story", "script", 0, 0, map[string]any{"storyboard": map[string]any{"rows": []any{}}})
+	doc := map[string]any{"nodes": []any{node}, "connections": []any{}}
+	canvasHash, nodeHash := cloudAgentCanvasHash(doc), cloudAgentNodeHash(doc, "story")
+	node["metadata"].(map[string]any)["storyboardComposerHeight"] = float64(104)
+	node["createdAt"], node["updatedAt"] = "created", "updated"
+	if cloudAgentCanvasHash(doc) != canvasHash || cloudAgentNodeHash(doc, "story") != nodeHash {
+		t.Fatal("分镜输入框首次测量或时间戳自动保存使 Agent 快照失效")
+	}
+	if node["metadata"].(map[string]any)["storyboardComposerHeight"] != float64(104) || node["updatedAt"] != "updated" {
+		t.Fatal("快照投影修改了原画布")
+	}
+	for _, change := range []func(map[string]any){
+		func(n map[string]any) { n["height"] = float64(260) },
+		func(n map[string]any) { n["position"].(map[string]any)["x"] = float64(10) },
+		func(n map[string]any) {
+			n["metadata"].(map[string]any)["storyboard"] = map[string]any{"rows": []any{map[string]any{"dialogue": "用户编辑"}}}
+		},
+		func(n map[string]any) { n["metadata"].(map[string]any)["unknownBusinessField"] = true },
+	} {
+		changed := cloneCreationDocument(doc)
+		change(creationMaps(changed["nodes"])[0])
+		if cloudAgentCanvasHash(changed) == canvasHash || cloudAgentNodeHash(changed, "story") == nodeHash {
+			t.Fatal("真实几何、业务或未知字段变化必须使快照失效")
+		}
+	}
+}
+
+func TestCloudAgentArrangeAfterStoryboardBrowserAutosave(t *testing.T) {
+	nodes := []map[string]any{layoutNode("note", "markdown", 0, 0), layoutNode("story", "script", 5, 5)}
+	s, doc := layoutFixture(t, nodes)
+	snapshot := cloudAgentCanvasHash(doc)
+	nodes[1]["metadata"].(map[string]any)["storyboardComposerHeight"] = float64(104)
+	raw, _ := json.Marshal(doc)
+	stored, err := s.repo.CanvasProjectForUser("user", "layout-canvas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.PayloadJSON = string(raw)
+	if err := s.repo.UpsertCanvasProject(stored); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyCloudAgentArrangeNodes(s.repo, "user", "layout-canvas", arrangeCall(t, map[string]any{"snapshotHash": snapshot, "mode": "row"}), mustRuntimePolicy(t, s)); err != nil {
+		t.Fatalf("浏览器初始化分镜输入框后整理不应陷入快照重试：%v", err)
+	}
+}
+
+func TestCloudAgentStoryboardReceiptProvidesSeparateCanvasSnapshot(t *testing.T) {
+	s, doc := layoutFixture(t, []map[string]any{layoutNode("note", "markdown", 0, 0)})
+	policy := mustRuntimePolicy(t, s)
+	result, err := applyCloudAgentStoryboardMutation(s.repo, "user", "layout-canvas", cloudAgentStoryboardCall(t, "canvas_create_storyboard", "create-story", map[string]any{
+		"snapshotHash": cloudAgentCanvasHash(doc), "nodeId": "story", "title": "新分镜", "rows": []map[string]any{{"durationSeconds": 5, "plotDescription": "测试镜头"}},
+	}), policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt := result.(map[string]any)
+	nodeHash, canvasHash := stringValue(receipt["snapshotHash"]), stringValue(receipt["canvasSnapshotHash"])
+	if nodeHash == "" || canvasHash == "" || canvasHash == nodeHash {
+		t.Fatalf("分镜回执混淆了节点和画布版本：%#v", receipt)
+	}
+	state := &cloudAgentRuntime{Request: CloudAgentRequest{CanvasID: "layout-canvas"}}
+	read := cloudAgentStoryboardCall(t, "canvas_read_storyboard", "read-story", map[string]any{"nodeId": "story"})
+	view, err := cloudAgentReadTool(s.repo, "user", state, read)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fields := view.(map[string]any); fields["snapshotHash"] != nodeHash || fields["canvasSnapshotHash"] != canvasHash {
+		t.Fatalf("分镜读取没有保留两种版本：%#v", fields)
+	}
+	if _, err := applyCloudAgentArrangeNodes(s.repo, "user", "layout-canvas", arrangeCall(t, map[string]any{"snapshotHash": nodeHash, "mode": "row"}), policy); err == nil {
+		t.Fatal("不能用节点版本跳过整张画布并发校验")
+	}
+	if _, err := applyCloudAgentArrangeNodes(s.repo, "user", "layout-canvas", arrangeCall(t, map[string]any{"snapshotHash": canvasHash, "mode": "row"}), policy); err != nil {
+		t.Fatalf("新建分镜后不能直接使用回执的画布版本整理：%v", err)
+	}
+}

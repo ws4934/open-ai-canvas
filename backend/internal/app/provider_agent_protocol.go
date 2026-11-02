@@ -98,7 +98,7 @@ func expandCanonicalAgentRequest(source *canonicalAgentRequest, config providerC
 	request.Messages = messages
 	// 同名工具会被多数供应商直接拒绝（400）。按名称去重，保留第一次出现的定义。
 	request.Tools = dedupeCanonicalAgentTools(source.Tools)
-	result := &agentToolRequests{}
+	result := &agentToolRequests{Canonical: &request}
 	if declarative {
 		result.ChatCompletion = canonicalAgentChatBody(&request, false)
 		responses, err := canonicalAgentResponsesBody(&request)
@@ -108,7 +108,6 @@ func expandCanonicalAgentRequest(source *canonicalAgentRequest, config providerC
 		result.Responses = responses
 		result.Claude = claudeAgentBody(canonicalAgentChatBody(&request, true))
 		result.Claude["model"] = config.Model
-		result.Gemini = canonicalAgentGeminiBody(&request)
 		return result, nil
 	}
 	switch config.InterfaceType {
@@ -157,6 +156,7 @@ func canonicalAgentChatBody(source *canonicalAgentRequest, claude bool) map[stri
 			wireCalls := make([]interface{}, 0, len(calls))
 			for _, call := range calls {
 				call["type"] = "function"
+				delete(call, "thoughtSignature")
 				wireCalls = append(wireCalls, call)
 			}
 			converted["tool_calls"] = wireCalls
@@ -392,144 +392,11 @@ func firstPendingCanonicalAgentCall(pending map[string]string) string {
 	return ""
 }
 
-func canonicalAgentGeminiBody(source *canonicalAgentRequest) map[string]interface{} {
-	contents := make([]interface{}, 0, len(source.Messages))
-	var system []string
-	callNames := map[string]string{}
-	for _, message := range source.Messages {
-		role := "user"
-		var parts interface{}
-		switch {
-		case stringField(message, "type") == "function_call":
-			id, name := stringField(message, "call_id"), stringField(message, "name")
-			callNames[id] = name
-			part := map[string]interface{}{"functionCall": map[string]interface{}{"id": id, "name": name, "args": canonicalAgentJSONObject(message["arguments"])}}
-			if signature := stringField(message, "thoughtSignature"); signature != "" {
-				part["thoughtSignature"] = signature
-			}
-			role, parts = "model", []interface{}{part}
-		case stringField(message, "role") == "system":
-			if text := canonicalAgentText(message["content"]); text != "" {
-				system = append(system, text)
-			}
-			continue
-		case stringField(message, "role") == "tool":
-			id := stringField(message, "tool_call_id")
-			name := callNames[id]
-			if name == "" {
-				name = "tool_result"
-			}
-			parts = []interface{}{map[string]interface{}{"functionResponse": map[string]interface{}{
-				"id": id, "name": name, "response": map[string]interface{}{"result": canonicalAgentJSONValue(message["content"])},
-			}}}
-		default:
-			if stringField(message, "role") == "assistant" {
-				role = "model"
-			}
-			parts = canonicalAgentContent(message["content"], "gemini")
-		}
-		contents = append(contents, map[string]interface{}{"role": role, "parts": parts})
-	}
-	body := map[string]interface{}{"contents": contents}
-	if len(system) > 0 {
-		body["systemInstruction"] = map[string]interface{}{"parts": []interface{}{map[string]interface{}{"text": strings.Join(system, "\n\n")}}}
-	}
-	if len(source.Tools) > 0 {
-		declarations := make([]interface{}, 0, len(source.Tools))
-		for _, tool := range source.Tools {
-			function, _ := tool["function"].(map[string]interface{})
-			declaration := cloneStringAnyMap(function)
-			delete(declaration, "strict")
-			if parameters, ok := declaration["parameters"]; ok {
-				declaration["parameters"] = geminiToolSchema(parameters)
-			}
-			declarations = append(declarations, declaration)
-		}
-		choice := map[string]interface{}{"mode": "AUTO"}
-		if named, ok := source.ToolChoice.(map[string]interface{}); ok {
-			choice["mode"], choice["allowedFunctionNames"] = "ANY", []interface{}{named["name"]}
-		} else if source.ToolChoice == "required" {
-			choice["mode"] = "ANY"
-		}
-		body["tools"] = []interface{}{map[string]interface{}{"functionDeclarations": declarations}}
-		body["toolConfig"] = map[string]interface{}{"functionCallingConfig": choice}
-	}
-	return body
-}
-
-// Gemini / Vertex 的 parameters 只接受 OpenAPI 子集：不认 const、exclusiveMinimum/Maximum、
-// uniqueItems，enum 只能是字符串。JSON 往返得到深拷贝，不改动其他协议共用的工具定义。
-func geminiToolSchema(value interface{}) interface{} {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return value
-	}
-	var schema interface{}
-	if err := json.Unmarshal(raw, &schema); err != nil {
-		return value
-	}
-	geminiCleanSchema(schema)
-	return schema
-}
-
-func geminiCleanSchema(value interface{}) {
-	if list, ok := value.([]interface{}); ok {
-		for _, item := range list {
-			geminiCleanSchema(item)
-		}
-		return
-	}
-	schema, ok := value.(map[string]interface{})
-	if !ok {
-		return
-	}
-	for _, key := range []string{"exclusiveMinimum", "exclusiveMaximum", "uniqueItems"} {
-		delete(schema, key)
-	}
-	if constant, ok := schema["const"]; ok {
-		delete(schema, "const")
-		schema["enum"] = []interface{}{constant}
-	}
-	if values, ok := schema["enum"].([]interface{}); ok {
-		allStrings := true
-		for _, item := range values {
-			if _, ok := item.(string); !ok {
-				allStrings = false
-				break
-			}
-		}
-		if !allStrings {
-			// 非字符串枚举改写进描述，类型约束保留。
-			delete(schema, "enum")
-			hint, _ := json.Marshal(values)
-			description, _ := schema["description"].(string)
-			schema["description"] = strings.TrimSpace(description + " 可选值：" + string(hint))
-		} else if schema["type"] == nil {
-			schema["type"] = "string"
-		}
-	}
-	for key, child := range schema {
-		switch key {
-		case "properties", "$defs", "definitions":
-			if children, ok := child.(map[string]interface{}); ok {
-				for _, item := range children {
-					geminiCleanSchema(item)
-				}
-			}
-		case "items", "anyOf", "oneOf", "allOf", "additionalProperties":
-			geminiCleanSchema(child)
-		}
-	}
-}
-
 func canonicalAgentContent(content interface{}, format string) interface{} {
 	items, array := content.([]interface{})
 	if !array {
 		if content == nil {
 			content = ""
-		}
-		if format == "gemini" {
-			return []interface{}{map[string]interface{}{"text": content}}
 		}
 		return content
 	}
@@ -538,22 +405,15 @@ func canonicalAgentContent(content interface{}, format string) interface{} {
 		item, _ := value.(map[string]interface{})
 		kind := stringField(item, "type")
 		if kind == "text" {
-			part := map[string]interface{}{"text": item["text"]}
-			if format != "gemini" {
-				part["type"] = "text"
-				if format == "responses" {
-					part["type"] = "input_text"
-				}
+			part := map[string]interface{}{"type": "text", "text": item["text"]}
+			if format == "responses" {
+				part["type"] = "input_text"
 			}
 			result = append(result, part)
 			continue
 		}
 		file, _ := item[kind].(map[string]interface{})
 		url := stringField(file, "url")
-		mimeType := stringField(file, "mimeType")
-		if kind == "image_url" {
-			mimeType = "image/png"
-		}
 		inlineMIME, inlineData, inline := canonicalAgentDataURL(url)
 		var part map[string]interface{}
 		switch format {
@@ -578,12 +438,6 @@ func canonicalAgentContent(content interface{}, format string) interface{} {
 				part = map[string]interface{}{"type": "image", "source": map[string]interface{}{"type": "url", "url": url}}
 			} else {
 				part = map[string]interface{}{"type": "text", "text": stringField(file, "name") + ": " + url}
-			}
-		case "gemini":
-			if inline {
-				part = map[string]interface{}{"inlineData": map[string]interface{}{"mimeType": inlineMIME, "data": inlineData}}
-			} else {
-				part = map[string]interface{}{"fileData": map[string]interface{}{"fileUri": url, "mimeType": mimeType}}
 			}
 		default:
 			part = item

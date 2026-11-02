@@ -83,7 +83,62 @@ func buildManifestOperationWithEnv(operation ManifestOperation, auth ManifestAut
 		return RequestSpec{}, fmt.Errorf("evaluate request content type: %w", err)
 	}
 	contentType := defaultValue(manifestString(evaluatedContentType), "application/json")
-	return RequestSpec{Method: strings.ToUpper(operation.Method), Path: path, OriginPath: operation.OriginPath, ContentType: contentType, Headers: headers, Query: query, Body: body, Files: files, Auth: auth}, nil
+	spec := RequestSpec{Method: strings.ToUpper(operation.Method), Path: path, OriginPath: operation.OriginPath, ContentType: contentType, Headers: headers, Query: query, Body: body, Files: files, Auth: auth}
+	if operation.PromptCache != nil {
+		model, err := evaluateManifestValue(operation.PromptCache.Model, env)
+		if err != nil {
+			return RequestSpec{}, err
+		}
+		minimum, err := evaluateManifestValue(operation.PromptCache.MinimumTokens, env)
+		if err != nil {
+			return RequestSpec{}, err
+		}
+		spec.PromptCache = &PromptCacheSpec{Definition: *operation.PromptCache, Model: manifestString(model), MinimumTokens: manifestInt(minimum), Auth: auth}
+	}
+	if operation.Stream != nil {
+		base := operation
+		base.Stream = nil
+		base.PromptCache = nil
+		streamRequest, err := buildManifestOperationWithEnv(mergeStreamOperation(base, *operation.Stream.Request), auth, request, taskID, extra)
+		if err != nil {
+			return RequestSpec{}, err
+		}
+		spec.Stream = &StreamSpec{Request: streamRequest, Rules: *operation.Stream}
+	}
+	return spec, nil
+}
+
+func mergeStreamOperation(base, override ManifestOperation) ManifestOperation {
+	if override.Method != "" {
+		base.Method = override.Method
+	}
+	if override.Path != "" {
+		base.Path = override.Path
+		base.PathTemplate = nil
+	}
+	if override.PathTemplate != nil {
+		base.PathTemplate = override.PathTemplate
+	}
+	if override.ContentType != "" {
+		base.ContentType = override.ContentType
+	}
+	if override.Body != nil {
+		base.Body = override.Body
+	}
+	base.Headers = mergeManifestFields(base.Headers, override.Headers)
+	base.Query = mergeManifestFields(base.Query, override.Query)
+	return base
+}
+
+func mergeManifestFields(base, override map[string]any) map[string]any {
+	merged := make(map[string]any, len(base)+len(override))
+	for key, value := range base {
+		merged[key] = value
+	}
+	for key, value := range override {
+		merged[key] = value
+	}
+	return merged
 }
 
 func evaluateManifestStringMap(values map[string]any, env map[string]any) (map[string]string, error) {

@@ -121,6 +121,43 @@ func evaluateManifestOperator(operator string, operand any, env map[string]any) 
 			result = append(result, manifestArray(value)...)
 		}
 		return result, nil
+	case "$contains", "$trimPrefix":
+		values, ok := operand.([]any)
+		if !ok || len(values) != 2 {
+			return nil, fmt.Errorf("%s requires two values", operator)
+		}
+		left, err := evaluateManifestValue(values[0], env)
+		if err != nil {
+			return nil, err
+		}
+		right, err := evaluateManifestValue(values[1], env)
+		if err != nil {
+			return nil, err
+		}
+		if operator == "$contains" {
+			return strings.Contains(manifestString(left), manifestString(right)), nil
+		}
+		return strings.TrimPrefix(manifestString(left), manifestString(right)), nil
+	case "$schemaSubset":
+		spec, ok := operand.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("$schemaSubset requires an object")
+		}
+		value, err := evaluateManifestValue(spec["from"], env)
+		if err != nil {
+			return nil, err
+		}
+		// Canonical Go tool definitions may contain typed slices; expressions
+		// operate on JSON values, including schema-valued arrays and enums.
+		raw, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		var schema any
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			return nil, err
+		}
+		return manifestSchemaSubset(schema, spec), nil
 	case "$map", "$filter":
 		spec, ok := operand.(map[string]any)
 		if !ok {

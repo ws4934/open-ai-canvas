@@ -23,37 +23,30 @@ const geminiStreamStart = `{"candidates":[{"index":0,"finishReason":"FINISH_REAS
 const geminiStreamEnd = `{"candidates":[{"index":0,"content":{"parts":[{"text":"1]} "}]},"finishReason":"STOP"}],"usageMetadata":{"candidatesTokenCount":9,"thoughtsTokenCount":4}}`
 
 func TestGeminiStreamingRequestPreservesPluginContract(t *testing.T) {
-	spec := protocol.RequestSpec{
-		Method: "POST", Path: "/v1beta/models/vendor%2Fmodel:generateContent?trace=kept&alt=json", ContentType: "application/json",
-		Headers: map[string]string{"X-Trace": "kept"}, Query: map[string][]string{"alt": {"json"}, "other": {"kept"}},
-		Auth: protocol.ManifestAuth{Type: "header", Field: "apiKey", Header: "x-goog-api-key"},
-		Body: map[string]any{"stream": true, "cachedContent": "cachedContents/kept", "systemInstruction": map[string]any{"parts": []any{map[string]any{"text": "kept"}}}},
-	}
-	before, err := json.Marshal(spec)
+	manifest := geminiManifestForTest(t)
+	provider := &manifest.Contributes.Providers[0]
+	provider.ID = "unrecognized-text-provider"
+	provider.Create.Query = map[string]any{"other": "kept"}
+	provider.Create.Headers = map[string]any{"X-Trace": "kept"}
+	raw, _ := json.Marshal(manifest)
+	adapter, err := protocol.LoadManifest(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := geminiStreamingRequest(spec)
+	request := protocol.GenerationRequest{Model: "vendor/model", Messages: []protocol.Message{{Role: "user", Content: "hello"}}}
+	spec, err := adapter.BuildCreate(context.Background(), protocol.RequestContext{Request: request})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Path != "/v1beta/models/vendor%2Fmodel:streamGenerateContent?trace=kept" || !reflect.DeepEqual(got.Query["alt"], []string{"sse"}) || got.Query["other"][0] != "kept" {
-		t.Fatalf("request path/query changed incorrectly: %#v", got)
+	got := spec.Stream.Request
+	if got.Path != "/v1beta/models/vendor/model:streamGenerateContent" || !reflect.DeepEqual(got.Query["alt"], []string{"sse"}) || got.Query["other"][0] != "kept" {
+		t.Fatalf("plugin stream path/query lost: %#v", got)
 	}
-	body := protocolBodyObject(got.Body)
-	if _, exists := body["stream"]; exists || body["cachedContent"] != "cachedContents/kept" || body["systemInstruction"] == nil || got.Auth != spec.Auth || got.Headers["X-Trace"] != "kept" {
-		t.Fatalf("native Gemini request lost its contract: %#v", got)
+	if !reflect.DeepEqual(got.Body, spec.Body) || got.Auth != spec.Auth || got.Headers["X-Trace"] != "kept" {
+		t.Fatalf("stream request inheritance lost: %#v", got)
 	}
-	after, _ := json.Marshal(spec)
-	if string(before) != string(after) {
-		t.Fatal("stream adaptation mutated the original plugin request")
-	}
-	if _, err := geminiStreamingRequest(got); err != nil {
-		t.Fatalf("already-streaming endpoint rejected: %v", err)
-	}
-	spec.Path = "/v1beta/cachedContents"
-	if _, err := geminiStreamingRequest(spec); err == nil {
-		t.Fatal("unrelated Gemini endpoint was rewritten")
+	if spec.Path != "/v1beta/models/vendor/model:generateContent" || spec.Query["alt"] != nil {
+		t.Fatalf("stream adaptation mutated primary request: %#v", spec)
 	}
 }
 
@@ -114,17 +107,28 @@ func TestGeminiNativeTextStreamingIsIncremental(t *testing.T) {
 }
 
 func TestGeminiTextStreamParserChunkBoundaries(t *testing.T) {
-	parser := newStreamingAgentParser("gemini-generate-content", nil)
+	manifest := geminiManifestForTest(t)
+	parser := newStreamingAgentParser("", nil)
+	parser.declarative = protocol.NewStreamDecoder(*manifest.Contributes.Providers[0].Create.Stream)
 	stream := "data: " + geminiStreamStart + "\r\n\r\n: heartbeat\r\n\r\ndata: " + geminiStreamEnd
 	for _, value := range []byte(stream) {
 		parser.consume("text/event-stream", []byte{value})
 	}
-	if err := parser.completeGeminiStream("text/event-stream"); err != nil {
+	parser.flush()
+	if parser.err != nil {
+		t.Fatal(parser.err)
+	}
+	data, err := parser.declarative.Finish()
+	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := parser.result()
-	if err != nil || result["text"] != `{"scenes":[1]} ` || parser.geminiUsage["promptTokenCount"] != float64(120) || parser.geminiUsage["cachedContentTokenCount"] != float64(60) || parser.geminiUsage["candidatesTokenCount"] != float64(9) {
-		t.Fatalf("result=%#v usage=%#v err=%v", result, parser.geminiUsage, err)
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	usage := protocolBodyObject(result["usageMetadata"])
+	if parser.text.String() != `{"scenes":[1]} ` || usage["promptTokenCount"] != float64(120) || usage["cachedContentTokenCount"] != float64(60) || usage["candidatesTokenCount"] != float64(9) {
+		t.Fatalf("result=%s text=%q usage=%#v", data, parser.text.String(), usage)
 	}
 }
 
@@ -157,7 +161,7 @@ func TestGeminiNativeTextStreamingFailures(t *testing.T) {
 			}
 			if tc.name == "upstream_error" {
 				var payloadError providerPayloadError
-				if !errors.As(err, &payloadError) || payloadError.raw != "upstream unavailable" {
+				if !errors.As(err, &payloadError) || !strings.Contains(payloadError.raw, "upstream unavailable") {
 					t.Fatalf("upstream error was lost: %v", err)
 				}
 			}
@@ -224,7 +228,17 @@ func TestGeminiStreamUsageAndFailureAreRecordedBeforeSuccess(t *testing.T) {
 			}))
 			defer server.Close()
 			ctx := context.WithValue(context.Background(), providerAnalyticsKey{}, providerAnalyticsContext{Service: svc, UserID: "usr", Capability: "text", Model: "gemini-test"})
-			_, _, err := executeProtocolCreateRequest(ctx, canvasGenerationInput{Mode: "text", StreamText: true, Config: providerConfig{BaseURL: server.URL, Model: "gemini-test", InterfaceType: "gemini-generate-content"}}, protocol.RequestSpec{Method: "POST", Path: "/v1beta/models/gemini-test:generateContent", ContentType: "application/json", Body: map[string]any{"contents": []any{}}})
+			manifest := geminiManifestForTest(t)
+			raw, _ := json.Marshal(manifest)
+			adapter, err := protocol.LoadManifest(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			spec, err := adapter.BuildCreate(ctx, protocol.RequestContext{Request: protocol.GenerationRequest{Model: "gemini-test"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, err = executeProtocolCreateRequest(ctx, canvasGenerationInput{Mode: "text", StreamText: true, Config: providerConfig{BaseURL: server.URL, Model: "gemini-test", InterfaceType: "gemini-generate-content"}}, spec)
 			if (err == nil) != complete {
 				t.Fatalf("complete=%v err=%v", complete, err)
 			}

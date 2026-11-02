@@ -33,6 +33,8 @@ type AgentCapability interface {
 	AgentAvailable() bool
 }
 
+type AgentConversationCapability interface{ AgentUsesConversation() bool }
+
 // ResultAdapter optionally resolves an authenticated binary result after an
 // asynchronous task succeeds without returning a public media URL.
 type ResultAdapter interface {
@@ -58,7 +60,9 @@ type AgentRequestContext struct {
 }
 
 type AgentToolCall struct {
-	ID               string
+	ID string
+	// GeneratedID 标记缺省 ID；宿主将它限定到具体模型步骤，避免续轮误回放旧结果。
+	GeneratedID      bool
 	Name             string
 	Arguments        string
 	ThoughtSignature string
