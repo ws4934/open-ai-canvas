@@ -74,10 +74,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** 启动 Vite DEV，等待 ready 行或 TCP 可连接；超时即抛。 */
 async function launchVite(port) {
-    // 直接启动本地入口，Bun/Node 都不经过 bunx 包装进程。
+    // 直接用 Vite CLI 的 Node 运行时启动本地入口，不经过 bunx 包装进程。
     // 收尾终止的 PID 必须就是 Vite，否则包装进程退出后服务仍持有输出管道，E2E 无法退出。
     const viteEntry = join(process.cwd(), "node_modules", "vite", "bin", "vite.js");
-    const child = spawn(process.execPath, [viteEntry, "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
+    const command = process.versions.bun ? "node" : process.execPath;
+    const child = spawn(command, [viteEntry, "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
         cwd: process.cwd(),
         stdio: ["ignore", "pipe", "pipe"],
     });
@@ -90,17 +91,23 @@ async function launchVite(port) {
     });
 
     const deadline = Date.now() + 120000;
-    while (Date.now() < deadline) {
-        if (child.exitCode !== null) throw new Error(`Vite exited early (code ${child.exitCode}):\n${log}`);
-        try {
-            const res = await fetch(`http://127.0.0.1:${port}/dev/previs-repro`);
-            if (res.ok) return child;
-        } catch {
-            // not up yet
+    try {
+        while (Date.now() < deadline) {
+            if (child.exitCode !== null) throw new Error(`Vite exited early (code ${child.exitCode}):\n${log}`);
+            try {
+                const res = await fetch(`http://127.0.0.1:${port}/dev/previs-repro`, { signal: AbortSignal.timeout(1500) });
+                if (res.ok) return child;
+            } catch {
+                // not up yet
+            }
+            await sleep(500);
         }
-        await sleep(500);
+        throw new Error(`Vite did not become ready within 120s:\n${log}`);
+    } catch (error) {
+        // main 尚未拿到子进程，启动失败也由此处收尾。
+        await stopExact(child, "vite");
+        throw error;
     }
-    throw new Error(`Vite did not become ready within 120s:\n${log}`);
 }
 
 /** 启动 headless Chrome 并等待 CDP /json/version；超时即抛。 */
