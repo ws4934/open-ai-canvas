@@ -323,7 +323,21 @@ async function connectCdp(cdpPort) {
             await sleep(100);
         }
         if (!box) {
-            console.log(`      (click target not interactable: ${label})`);
+            const details = await evaluate(`(() => {
+                const el = ${locatorExpression};
+                if (!(el instanceof HTMLElement)) return { missing: true };
+                const rect = el.getBoundingClientRect();
+                const style = getComputedStyle(el);
+                const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+                const animations = [];
+                for (let ancestor = el; ancestor; ancestor = ancestor.parentElement) {
+                    for (const animation of ancestor.getAnimations()) {
+                        if (animation.pending || animation.playState === "running") animations.push({ element: ancestor.className, name: animation.animationName, state: animation.playState });
+                    }
+                }
+                return { rect: rect.toJSON(), style: { display: style.display, visibility: style.visibility, opacity: style.opacity, pointerEvents: style.pointerEvents }, hit: hit?.outerHTML.slice(0, 500), animations };
+            })()`);
+            console.log(`      (click target not interactable: ${label}, details=${JSON.stringify(details)})`);
             return false;
         }
         const point = { x: box.x, y: box.y, button: "left", pointerType: "mouse" };
@@ -400,7 +414,7 @@ async function openUnifiedWorkbench(cdp, label) {
 async function addProp(cdp, name, label) {
     if (!(await cdp.click('[aria-label="添加到场景"]'))) throw new Error(`${label}: 添加到场景 button not clickable`);
     if (!(await cdp.poll(`!!document.querySelector('.previs-add-dialog [role="tab"]')`, `${label} add dialog`, 10000))) throw new Error(`${label}: add dialog did not open`);
-    if (!(await cdp.clickText("道具", '[role="tab"]'))) throw new Error(`${label}: 道具 tab not clickable`);
+    if (!(await cdp.clickText("道具", '.previs-add-dialog [role="tab"]'))) throw new Error(`${label}: 道具 tab not clickable`);
 
     const card = `[...document.querySelectorAll('.previs-add-dialog__card')].find((button) => (button.textContent || '').includes(${JSON.stringify(name)}) && button.getClientRects().length > 0)`;
     if (!(await cdp.poll(`!!(${card})`, `${label} prop card`, 10000))) throw new Error(`${label}: ${name} prop card not visible`);
