@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Clapperboard } from "lucide-react";
 
 import { BrandLogoFrame } from "@/components/brand/brand-logo";
 import { translate } from "@/i18n";
@@ -12,24 +13,41 @@ type FullScreenLoaderProps = {
 
 export function FullScreenLoader({ label = translate("account.ui.loader.label"), detail = translate("account.ui.loader.detail"), className }: FullScreenLoaderProps) {
     return (
-        <div
-            data-full-screen-loader
-            role="status"
-            aria-live="polite"
-            aria-label={translate("account.ui.loader.aria", { label, detail })}
-            className={cn("full-screen-loader", className)}
-        >
+        <div data-full-screen-loader role="status" aria-live="polite" aria-label={translate("account.ui.loader.aria", { label, detail })} className={cn("full-screen-loader", className)}>
             <div className="full-screen-loader-scene" aria-hidden="true">
                 <span className="full-screen-loader-guide is-horizontal" />
                 <span className="full-screen-loader-guide is-vertical" />
-                <span className="full-screen-loader-frame is-left"><i /><i /><i /></span>
-                <span className="full-screen-loader-frame is-right"><i /><i /><i /></span>
-                <span className="full-screen-loader-script"><i /><i /><i /><b /></span>
-                <span className="full-screen-loader-timeline"><i /><i /><i /><i /><b /></span>
+                <span className="full-screen-loader-frame is-left">
+                    <i />
+                    <i />
+                    <i />
+                </span>
+                <span className="full-screen-loader-frame is-right">
+                    <i />
+                    <i />
+                    <i />
+                </span>
+                <span className="full-screen-loader-script">
+                    <i />
+                    <i />
+                    <i />
+                    <b />
+                </span>
+                <span className="full-screen-loader-timeline">
+                    <i />
+                    <i />
+                    <i />
+                    <i />
+                    <b />
+                </span>
                 <span className="full-screen-loader-orbit" />
-                <BrandLogoFrame className="full-screen-loader-logo" logoClassName="full-screen-loader-logo-image" alt="" fallback={<span className="full-screen-loader-logo-fallback" />} />
+                <BrandLogoFrame className="full-screen-loader-logo" logoClassName="full-screen-loader-logo-image" alt="" fallback={<Clapperboard className="full-screen-loader-logo-fallback" aria-hidden="true" />} />
             </div>
-            <div className="full-screen-loader-copy"><strong>{label}</strong><span>{detail}</span><LoadingSignal /></div>
+            <div className="full-screen-loader-copy">
+                <strong>{label}</strong>
+                <span>{detail}</span>
+                <LoadingSignal />
+            </div>
         </div>
     );
 }
@@ -45,7 +63,9 @@ export function WorkspaceRouteLoader({ label = translate("account.ui.loader.rout
     return (
         <section data-workspace-route-loader className={cn("workspace-route-loader", visible && "is-visible")} role="status" aria-live="polite" aria-label={label}>
             <div className="workspace-route-loader-content">
-                <span className="workspace-route-loader-mark"><BrandLogoFrame className="workspace-route-loader-logo" logoClassName="size-4" alt="" fallback={<span className="full-screen-loader-logo-fallback" />} /></span>
+                <span className="workspace-route-loader-mark">
+                    <BrandLogoFrame className="workspace-route-loader-logo" logoClassName="size-4" alt="" fallback={<Clapperboard className="full-screen-loader-logo-fallback" aria-hidden="true" />} />
+                </span>
                 <LoadingSignal />
                 <span>{label}</span>
             </div>
@@ -54,5 +74,11 @@ export function WorkspaceRouteLoader({ label = translate("account.ui.loader.rout
 }
 
 function LoadingSignal() {
-    return <span className="loading-signal" aria-hidden="true"><i /><i /><i /></span>;
+    return (
+        <span className="loading-signal" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+        </span>
+    );
 }

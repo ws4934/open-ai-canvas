@@ -1,7 +1,7 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
-import { appearanceLogoURL, useAppearanceStore } from "@/stores/use-appearance-store";
+import { appearanceLogoURL, isBuiltinBrand, useAppearanceStore } from "@/stores/use-appearance-store";
 import type { ThemeName } from "@/stores/use-theme-store";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 
@@ -10,14 +10,19 @@ type BrandLogoProps = {
     fallback: ReactNode;
     alt?: string;
     theme?: ThemeName | "auto";
+    inverted?: boolean;
 };
 
-export function BrandLogo({ className, fallback, alt = "", theme = "auto" }: BrandLogoProps) {
+export function BrandLogo({ className, fallback, alt = "", theme = "auto", inverted = false }: BrandLogoProps) {
     const appearance = useAppearanceStore((state) => state.appearance);
+    const resolved = useAppearanceStore((state) => state.resolved);
     const currentTheme = useActiveTheme();
-    const source = appearanceLogoURL(appearance, theme === "auto" ? currentTheme : theme);
+    const resolvedTheme = theme === "auto" ? currentTheme : theme;
+    // Inverse surfaces swap only the built-in monochrome mark, never uploaded artwork.
+    const logoTheme = inverted && !appearance.logoConfigured && isBuiltinBrand(appearance) ? (resolvedTheme === "dark" ? "light" : "dark") : resolvedTheme;
+    const source = appearanceLogoURL(appearance, logoTheme);
     const [failedSource, setFailedSource] = useState<string | null>(null);
-    if (!appearance.logoConfigured) return <>{fallback}</>;
+    if (!appearance.logoConfigured && (!resolved || !isBuiltinBrand(appearance))) return <>{fallback}</>;
     // A configured custom logo must never fall through to the built-in brand
     // when its file becomes unavailable. Keep its footprint neutral instead.
     if (failedSource === source) return <span className={cn("block", className)} aria-hidden="true" />;
@@ -35,7 +40,7 @@ export function BrandLogo({ className, fallback, alt = "", theme = "auto" }: Bra
     );
 }
 
-export function BrandLogoFrame({ className, logoClassName, fallback, alt = "", theme = "auto" }: BrandLogoProps & { logoClassName?: string }) {
+export function BrandLogoFrame({ className, logoClassName, fallback, alt = "", theme = "auto", inverted = false }: BrandLogoProps & { logoClassName?: string }) {
     const frameEnabled = useAppearanceStore((state) => state.appearance.logoFrameEnabled);
     const unframedStyle: CSSProperties | undefined = frameEnabled
         ? undefined
@@ -48,7 +53,7 @@ export function BrandLogoFrame({ className, logoClassName, fallback, alt = "", t
           };
     return (
         <span className={cn("brand-logo-frame", className)} data-logo-frame-enabled={frameEnabled} style={unframedStyle}>
-            <BrandLogo className={logoClassName} fallback={fallback} alt={alt} theme={theme} />
+            <BrandLogo className={logoClassName} fallback={fallback} alt={alt} theme={theme} inverted={frameEnabled && inverted} />
         </span>
     );
 }

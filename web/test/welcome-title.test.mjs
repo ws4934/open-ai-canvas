@@ -16,8 +16,12 @@ test("welcome entry loads configured appearance", async () => {
         window: { location: { pathname: "/welcome" } },
         installChunkRecovery() {},
         isIsolatedDirectorRepro: () => false,
-        bootstrapAppearance: async () => { calls++; },
-        loadModule: async (name) => { imports.push(name); },
+        bootstrapAppearance: async () => {
+            calls++;
+        },
+        loadModule: async (name) => {
+            imports.push(name);
+        },
     });
     await Promise.resolve();
     assert.equal(calls, 1, "welcome entry must bootstrap appearance");
@@ -26,7 +30,7 @@ test("welcome entry loads configured appearance", async () => {
 
 test("welcome effects preserve configured SEO title", () => {
     const page = source("../src/pages/welcome/index.tsx");
-    // Run the actual mount effects with inert motion/scroll listeners.
+    // Run the actual mount effects with inert motion/scroll/dialog APIs.
     const effects = [...page.matchAll(/useEffect\(\(\) => \{([\s\S]*?)\n    \}, \[([^\]]*)\]\);/g)].filter((match) => match[2] === "");
     assert.ok(effects.length > 0);
     for (const title of ["Custom SEO Title", "Custom Site Name"]) {
@@ -35,8 +39,12 @@ test("welcome effects preserve configured SEO title", () => {
             vm.runInNewContext(`(() => {${body}\n})()`, {
                 document,
                 window: { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {} },
-                storyRef: { current: null }, restorePickerFocus: { current: false },
-                setReduced() {}, setLook() {}, getWelcomeLook() {},
+                storyRef: { current: null },
+                restorePickerFocus: { current: false },
+                dialogRef: { current: { showModal() {}, close() {} } },
+                setReduced() {},
+                setLook() {},
+                getWelcomeLook() {},
             });
         }
         assert.equal(document.title, title, "welcome must preserve appearance metadata title");

@@ -56,6 +56,18 @@ describe("i18n catalogs", () => {
         for (const area of Object.keys(AREA_CATALOGS)) expect(Object.keys(zhCN)).not.toContain(area);
     });
 
+    test("every locale uses the configured brand instead of the upstream name", () => {
+        for (const { code } of SUPPORTED_LOCALES) {
+            for (const brand of ["织影", "Custom Studio"]) {
+                for (const key of ["account.welcome.storyLabel", "canvasA.skillLibrary.defaultAuthor"]) {
+                    const text = i18n.t(key, { lng: code, brand });
+                    expect(text).toContain(brand);
+                    expect(text).not.toMatch(/影策|Yingce|영책|\{\{/);
+                }
+            }
+        }
+    });
+
     test("browser languages map to supported locales", () => {
         expect(matchAppLocale("en")).toBe("en-US");
         expect(matchAppLocale("ja-jp")).toBe("ja-JP");

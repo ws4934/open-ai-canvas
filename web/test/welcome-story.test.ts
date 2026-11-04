@@ -6,8 +6,10 @@ import { chapters, getWelcomeLook, showcases, welcomeLooks } from "../src/pages/
 const publicFile = (url: string) => resolve(import.meta.dir, "../public", url.replace(/^\//, ""));
 
 describe("welcome story", () => {
-    test("uses Yingce and only the three approved looks", () => {
-        expect(chapters[0].title).toBe("影策");
+    test("uses Zhiying and only the three approved looks", () => {
+        expect(chapters[0].title).toBe("织影");
+        const page = readFileSync(resolve(import.meta.dir, "../src/pages/welcome/index.tsx"), "utf8");
+        expect(page).toContain("<h1>{brandName}</h1>");
         expect(welcomeLooks.map((look) => look.id)).toEqual(["spring", "charge", "wing-it"]);
         expect(getWelcomeLook("").id).toBe("spring");
         expect(getWelcomeLook("?look=unknown").id).toBe("spring");
