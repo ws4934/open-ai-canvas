@@ -1,4 +1,11 @@
-ARG GO_IMAGE=golang:1.25-alpine
+ARG GO_IMAGE=golang:1.25-alpine3.22
+FROM node:22.19-alpine3.22 AS agent-runtime-deps
+
+WORKDIR /opt/canvas-agent
+COPY backend/agent-runtime/pi/package.json backend/agent-runtime/pi/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+COPY backend/agent-runtime/pi/agent-runtime.mjs ./
+
 FROM ${GO_IMAGE}
 
 ARG GOPROXY=https://proxy.golang.org,direct
@@ -6,8 +13,12 @@ ARG ALPINE_MIRROR
 ENV GOPROXY=$GOPROXY
 
 RUN if [ -n "$ALPINE_MIRROR" ]; then sed -i "s#https://dl-cdn.alpinelinux.org#${ALPINE_MIRROR}#g" /etc/apk/repositories; fi \
-    && apk add --no-cache build-base git \
+    && apk add --no-cache build-base git libstdc++ \
     && go install github.com/air-verse/air@v1.63.0
+
+COPY --from=agent-runtime-deps /usr/local/bin/node /usr/local/bin/node
+COPY --from=agent-runtime-deps /opt/canvas-agent /opt/canvas-agent
+ENV CANVAS_PI_RUNTIME_DIR=/opt/canvas-agent
 
 WORKDIR /workspace/backend
 

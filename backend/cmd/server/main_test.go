@@ -63,6 +63,7 @@ func TestAllowedOriginUsesForwardedHost(t *testing.T) {
 	context, _ := gin.CreateTestContext(httptest.NewRecorder())
 	context.Request = httptest.NewRequest("GET", "http://backend/api/health", nil)
 	context.Request.Header.Set("X-Forwarded-Host", " canvas.example.com, proxy.internal")
+	context.Request.Header.Set("X-Forwarded-Proto", "https")
 	if !allowedOrigin(context, "https://canvas.example.com") {
 		t.Fatal("forwarded public host should be treated as same-origin")
 	}
@@ -100,6 +101,9 @@ func TestAllowedOriginConfiguredListDoesNotFallbackToArbitraryLocalhost(t *testi
 }
 
 func TestRedactCanvasSharePath(t *testing.T) {
+	if got := redactCanvasSharePath("/share/canvas/private-token"); got != "/share/canvas/:token" {
+		t.Fatalf("share page token was not redacted: %s", got)
+	}
 	got := redactCanvasSharePath("/api/public/canvas-shares/private-token/resources/resource-1/file")
 	if got != "/api/public/canvas-shares/:token/resources/resource-1/file" {
 		t.Fatalf("unexpected redacted path: %s", got)

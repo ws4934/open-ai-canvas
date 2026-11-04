@@ -695,6 +695,9 @@ func (r *dramaRun) dispatch() error {
 		r.production.SpentMicrocredits = totals.PipelineChargedMicrocredits
 	}
 	for i := range queued {
+		if r.s.ProgramUpdateDraining() {
+			return nil
+		}
 		job := &queued[i]
 		pool := dramaDispatchPool(job.Kind)
 		if r.running[pool] >= r.settings.Concurrency {
@@ -710,8 +713,11 @@ func (r *dramaRun) dispatch() error {
 			continue
 		}
 		if err != nil {
+			var appErr *AppError
 			message := err.Error()
 			switch {
+			case errors.As(err, &appErr) && appErr.Status == 503 && appErr.Retryable:
+				return nil
 			case strings.Contains(message, "同时排队或运行的任务最多"):
 				return nil
 			case strings.Contains(message, "积分不足"):
@@ -1725,6 +1731,11 @@ func (r *dramaRun) submitRender(job *model.DramaJob) (*model.Task, bool, error) 
 }
 
 func (s *Service) submitDramaTask(userID string, req CreateTaskRequest, job *model.DramaJob) (*model.Task, error) {
+	release, intakeErr := s.AcquireProgramUpdateIntake()
+	if intakeErr != nil {
+		return nil, intakeErr
+	}
+	defer release()
 	if s.dramaTaskHook != nil {
 		return s.dramaTaskHook(userID, req, nil)
 	}
@@ -1750,6 +1761,11 @@ func (s *Service) submitDramaTask(userID string, req CreateTaskRequest, job *mod
 }
 
 func (s *Service) createDramaRenderTask(project *model.Project, timeline renderProject, job *model.DramaJob) (*model.Task, bool, error) {
+	release, intakeErr := s.AcquireProgramUpdateIntake()
+	if intakeErr != nil {
+		return nil, false, intakeErr
+	}
+	defer release()
 	if s.dramaTaskHook != nil {
 		task, err := s.dramaTaskHook(project.UserID, CreateTaskRequest{Type: model.TaskTypeTimelineRender}, &timeline)
 		return task, false, err

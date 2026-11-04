@@ -57,7 +57,12 @@ type CreationDetail struct {
 	Run         CreationRunOutput          `json:"run"`
 	Submissions []CreationSubmissionOutput `json:"submissions"`
 }
-type creationTaskPreparation struct{ Order *model.BillingOrder }
+type creationTaskPreparation struct {
+	Order *model.BillingOrder
+	// agentRunID identifies a registered Agent's dry admission, not a new task.
+	// It is server-only and never bypasses model, resource or billing validation.
+	agentRunID string
+}
 
 func creationConflict(message string) error {
 	return &AppError{Status: 409, Code: 409, Message: message}

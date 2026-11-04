@@ -93,6 +93,7 @@ const changed = [...new Set([...lines(git(["diff", "--name-only", base])), ...li
 const workflowChanged = changed.some((file) => file.startsWith(".github/workflows/") || file.startsWith("scripts/verify-before-push"));
 const wantWeb = options.only ? options.only === "web" : options.all || workflowChanged || changed.some((file) => file.startsWith("web/"));
 const wantBackend = options.only ? options.only === "backend" : options.all || workflowChanged || changed.some((file) => file.startsWith("backend/") || file.startsWith(".github/scripts/"));
+const wantDeployment = !options.only && (options.all || workflowChanged || changed.some((file) => file.startsWith(".github/scripts/") || file.startsWith("docker-compose") || file.startsWith("docker/") || file.startsWith("scripts/install-server") || ["Dockerfile", ".env.example", ".dockerignore"].includes(file)));
 const formatHead = dirty.length ? snapshotCommit() : git(["rev-parse", "HEAD"]);
 
 console.log(`基准 ${options.base} @ ${base.slice(0, 8)}，相对基准改动 ${changed.length} 个文件${dirty.length ? `（含 ${dirty.length} 个未提交改动）` : ""}`);
@@ -103,6 +104,10 @@ if (dirty.length) console.log("⚠ 工作区有未提交改动：本次结果包
 const tasks = [];
 const skipped = [];
 const notCovered = ["Payment plugin artifacts（需要 Docker 双架构构建，由 CI 检查）"];
+
+if (wantDeployment) {
+    tasks.push({ name: "deploy:contracts", cwd: ROOT, cmd: "node", args: ["--test", ".github/scripts/compose-config.test.mjs", ".github/scripts/install-server.test.mjs"], weight: 20 });
+}
 
 if (wantWeb) {
     const leftovers = ["pnpm-lock.yaml", "package-lock.json", "yarn.lock"].filter((file) => existsSync(path.join(WEB, file)));

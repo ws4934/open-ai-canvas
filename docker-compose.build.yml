@@ -1,30 +1,9 @@
 services:
-  migrate:
-    image: open-ai-canvas-backend:server
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-      args:
-        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
-
-  yingce-agent:
-    image: open-ai-canvas-yingce-agent:server
-    build:
-      context: .
-      dockerfile: yingce-agent/Dockerfile
-
   backend:
-    image: open-ai-canvas-backend:server
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-      args:
-        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
-
-  web:
-    image: open-ai-canvas-web:server
+    image: open-ai-canvas:source
     build:
       context: .
       dockerfile: Dockerfile
       args:
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
         VITE_TLDRAW_LICENSE_KEY: ${VITE_TLDRAW_LICENSE_KEY:-}

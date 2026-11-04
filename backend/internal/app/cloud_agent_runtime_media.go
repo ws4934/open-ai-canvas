@@ -56,10 +56,10 @@ func (s *Service) enqueueCloudAgentTask(run *model.CloudAgentExecution, state *c
 	approvalID, generationID := "", ""
 	if media != nil {
 		prepared = media.Prepared
-		if prepared == nil && state.Approval != nil {
-			prepared = state.Approval.Prepared
-			if state.Approval != nil {
-				approvalID = state.Approval.ID
+		if state.Approval != nil {
+			approvalID = state.Approval.ID
+			if prepared == nil {
+				prepared = state.Approval.Prepared
 			}
 		}
 		if prepared == nil {

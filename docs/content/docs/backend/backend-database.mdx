@@ -1,9 +1,15 @@
 ---
 title: 后端数据库
-description: 影策后端核心持久化表与状态边界
+description: 织影后端核心持久化表与状态边界
 ---
 
 # 后端数据库
+
+## 上游基线与旧 fork 数据
+
+当前迁移定义完全采用上游：78 为 `drama_cast_voice_looks`，79 为 `ecommerce_agent_and_knowledge`，80 为 `payment_order_charge_method`，81 为 `ark_portrait_assets`。旧 fork 的 78 为 `task_history_visibility`、79 为 `drama_cast_voice_looks`，其名称与校验值不兼容，不能直接复用这套旧库。
+
+本次重整不转换或覆盖已有迁移记录。旧 fork 部署使用[覆盖安装](/docs/overview/docker)重新初始化数据、配置和管理员；全新部署及此后的普通网页更新遵循上游迁移链路。程序回退必须通过数据库兼容检查，不能靠替换二进制跨越不兼容账本。
 
 ## Agent 记忆文件列补齐（Schema 77）
 

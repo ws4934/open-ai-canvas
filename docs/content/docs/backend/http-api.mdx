@@ -5,6 +5,14 @@ description: 信封、错误码与 OpenAPI
 
 # HTTP API 合同
 
+## 程序更新
+
+管理员通过 `GET /api/admin/system-update` 读取运行版本、操作日志及程序回退状态；`POST /api/admin/system-update/check` 接受可选 `{force}`（默认 `true`），`false` 使用 20 分钟检查缓存；`POST /api/admin/system-update/start` 接受 `{targetVersion}`；`POST /api/admin/system-update/rollback` 接受必填 `{reason}`。更新和回退立即返回操作 ID，关闭浏览器不会取消操作。
+
+更新阶段为 `downloading → validating → draining → switching → restarting → succeeded`；回退成功为 `rolled_back`。失败和需要人工恢复分别为 `failed`、`manual_intervention`。`supported` 表示程序能否在受管路径安全替换，不支持时由 `unsupportedReason` 解释。程序更新不清空数据库；覆盖安装只通过安装脚本显式执行。详情见[网页更新与程序回退](/docs/backend/system-update)。
+
+业务 API 的 CORS 校验与公开静态页面分离；外部反代通过 `CANVAS_TRUSTED_PROXIES` 配置实际可信来源，不能依赖任意请求提供的转发头。
+
 ## 注册与签到积分策略
 
 `GET /api/admin/settings/credits` 和 `PATCH /api/admin/settings/credits` 均要求管理员，返回 `data={policy}`。PATCH 提交完整策略：`signupBonusMicrocredits`、`checkinBonusMicrocredits`、`defaultMultiplierBasisPoints`、`modelMultiplierBasisPoints`；停止赠送只将前两项设为 0，保留倍率。金额为微积分（1000000 = 1 积分），倍率为万分比（10000 = 1 倍）。

@@ -1,16 +1,18 @@
-# 影策 · AI 文档索引
+# 织影 · AI 文档索引
 
 面向 AI 的短索引。详细文档维护规则见 [AGENTS.md](../AGENTS.md) 第 9 节「文档与交付」。
 
 ## 部署与更新入口
 
-用户要求部署服务器时，默认使用官方 Release 镜像、`docker-compose.deploy.yml` 和 Host Updater。本地 SQLite 构建与自定义 Compose 不属于后台在线更新管理范围。
+服务器使用本仓库的统一应用 Release 镜像与 `docker-compose.deploy.yml`，运行 backend、PostgreSQL 和 Redis。网页替换持久化 Go 程序，Agent 使用本地 Node 子进程，不安装 Host Updater。除品牌和部署更新链路外，业务实现跟随上游。
 
-- [Docker 部署](content/docs/overview/docker.mdx)：默认服务器方案、Compose 选择与已有部署核对。
-- [在线更新与安全回退](content/docs/backend/system-update.mdx)：受管部署条件、安装、备份、迁移和回退。
+- [Docker 部署](content/docs/overview/docker.mdx)：服务器安装、覆盖安装、单端口反代与持久化程序。
+- [网页更新与程序回退](content/docs/backend/system-update.mdx)：发布、程序替换、重启和回退边界。
 - [本地开发](content/docs/backend/local-development.mdx)：宿主机与热更新开发环境。
 
 ## 设计沉淀
+
+- [织影品牌与 Logo](design/zhiying-brand.md)：默认名称、黑白标志、主题适配与用户品牌配置。
 
 - [资源访问与 OSS/CDN 分发架构重构](design/resource-delivery-architecture.md)：资源身份、场景授权与分发策略分离，统一访问合同、全入口迁移、旧实现退场及流量/安全验收门槛（核心代码已实施，待真实 OSS/CDN 链路验收）。
 

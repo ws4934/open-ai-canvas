@@ -8,7 +8,6 @@
     {"id":"internal/agent/runtime/runtime.go:signature:ProcessRequest.Permissions","max":1,"reason":"Existing Node process JSON DTO; migrate permission facts to a typed DTO in the bridge refactor."},
     {"id":"internal/agent/runtime/runtime.go:signature:ProcessRequest.Profile","max":1,"reason":"Existing Node process JSON DTO; migrate profile layers to a typed DTO in the bridge refactor."},
     {"id":"internal/agent/runtime/runtime.go:signature:ProcessRequest.Tools","max":1,"reason":"Existing Node process JSON DTO; migrate tool definitions to typed schema DTOs or RawMessage."},
-    {"id":"internal/agent/runtime/runtime.go:signature:Run","max":1,"reason":"Existing entry point transitively exposes ProcessRequest until its fields are typed."},
-    {"id":"internal/agent/yingceagent/client.go:signature:Run","max":1,"reason":"Existing remote entry point transitively exposes runtime.ProcessRequest until its fields are typed."}
+    {"id":"internal/agent/runtime/runtime.go:signature:Run","max":1,"reason":"Existing entry point transitively exposes ProcessRequest until its fields are typed."}
   ]
 }

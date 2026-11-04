@@ -70,6 +70,9 @@ type Service struct {
 	routeHealthBlocked       map[string]time.Time
 	workers                  *platform.Worker
 	updateManager            UpdateManager
+	updateIntakeMu           sync.Mutex
+	updateIntakeFenced       bool
+	updateIntakeActive       int64
 	readCachesOnce           sync.Once
 	concurrencyReadCache     *platform.BoundedReadCache[string, platform.RuntimeTaskPolicy]
 	textReplayReadCache      *platform.BoundedReadCache[textReplayCacheKey, *TextReplayResult]

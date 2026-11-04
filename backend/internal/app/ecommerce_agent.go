@@ -410,6 +410,11 @@ func (s *Service) ecommerceAgentGeneratedURL(userID string, data []byte, rawURL,
 }
 
 func (s *Service) GenerateEcommerceAgent(ctx context.Context, userID string, req ecommerceagent.Request, emit func(ecommerceagent.Event) error) (view *EcommerceAgentTaskView, err error) {
+	release, intakeErr := s.AcquireProgramUpdateIntake()
+	if intakeErr != nil {
+		return nil, intakeErr
+	}
+	defer release()
 	key := strings.TrimSpace(req.IdempotencyKey)
 	if key != "" {
 		if prior, e := s.repo.EcommerceAgentRunByKey(userID, key); e == nil {

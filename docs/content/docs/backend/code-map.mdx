@@ -5,6 +5,12 @@ description: 从产品功能快速定位主要代码入口
 
 # 代码功能地图
 
+## 织影部署与更新
+
+- 统一入口：`backend/cmd/server/`；内嵌前端：`internal/webui/`；Agent 与插件资源释放：`internal/bundled/`；本地 Node 进程：`internal/agent/runtime/`。
+- 程序升级：`internal/programupdate/`；任务排空：`app/program_update_drain.go`；管理员 API：`handler/admin_update.go` 与 `app/admin_update.go`；前端：`pages/admin/settings/system-update-page.tsx`。
+- 镜像与发布：根 `Dockerfile`、`.github/workflows/publish-images.yml`、`.github/scripts/`；安装：`scripts/install-server-image.sh`；持久化程序入口：`docker/canvas-entrypoint.sh`。
+
 ## 电商 Agent 与后台知识库
 
 - 页面：`web/src/pages/ecommerce/`；后台：`web/src/pages/admin/ecommerce-agent-config-page.tsx`（开放状态、阶段模型 `ecommerce-stage-models.tsx`、创作助手 `ecommerce-assistant-settings.tsx`）；`ecommerce-management-page.tsx`（知识与技能标签页：`ecommerce-knowledge-page.tsx`、`ecommerce-skills-page.tsx`、`ecommerce-categories-page.tsx`，内容头 `ecommerce-library-panel.tsx`）；`knowledge-domain-coverage.ts`。
@@ -35,7 +41,7 @@ description: 从产品功能快速定位主要代码入口
 - 传输入口：`backend/internal/handler/canvas_realtime.go` 校验登录与 Origin、管理 WebSocket；`app/canvas_realtime.go` 校验画布归属，`internal/canvas/realtime.go` 负责临时 Presence、房间隔离与 Redis 分发，`realtime_devices.go` 管理跨实例统一窗口编号及临时租期。
 - 提交通知：`repository/canvas_change_notifications.go` 与 `repository.go` 在外层事务提交后合并通知，回滚丢弃；operations、历史保存、租约、Agent 任务创建及任务结果回写沿用该边界。
 - 前端连接：`web/src/services/canvas-realtime-client.ts` 管理合并发送和重连，`canvas-realtime.ts` 按账号与画布共享窗口内连接；`pages/canvas/use-canvas-project-lifecycle.ts` 联动状态校验和独立租约维护。
-- 光标与拖拽：`components/canvas/canvas-collaboration-layer.tsx` 管理设备列表和多人事件采集，单窗口停止采集；`canvas-presence-renderer.ts` 负责按帧复用 DOM 投影远端图形，高频坐标不经过 React。`nginx.conf`、`web/vite.config.ts` 转发 WebSocket Upgrade。
+- 光标与拖拽：`components/canvas/canvas-collaboration-layer.tsx` 管理设备列表和多人事件采集，单窗口停止采集；`canvas-presence-renderer.ts` 负责按帧复用 DOM 投影远端图形，高频坐标不经过 React。开发入口 `web/vite.config.ts` 转发 WebSocket Upgrade；生产由外部反代转发至统一应用端口。
 
 ## 用户登录日志
 
@@ -240,7 +246,7 @@ HTTP 请求 -> handler -> service（稳定导入面 / 别名）-> app（组合�
 
 - 旧版 `canvas-agent/` 和 Codex App/MCP 插件已删除；Agent 运行统一由后端云端控制面承载。
 - `docs/content/docs/`：产品、操作、开发和进度文档。
-- `docker-compose.local.yml`：本地前后端编排；`nginx.conf`：生产静态资源和 API 代理。
+- `docker-compose.local.yml`：本地统一应用、PostgreSQL 与 Redis；生产使用 `docker-compose.deploy.yml`，不部署内置 Nginx。
 
 ## 修改原则
 
