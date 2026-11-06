@@ -150,6 +150,14 @@ test("normal installation never overwrites an existing directory", t => {
     assert.ok(!f.commands().some(entry => entry.command === "curl"));
 });
 
+test("installation persists explicit private upstream hosts for Compose", t => {
+    const f = fixture(t);
+    success(f.run([], { CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS: "grok2api,sub2api" }));
+    const env = readFileSync(path.join(f.install, ".env"), "utf8");
+    assert.match(env, /^CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS=grok2api,sub2api$/m);
+    assert.doesNotMatch(env, /^CANVAS_ALLOW_PRIVATE_UPSTREAMS=/m);
+});
+
 test("overwrite requires exact confirmation, or explicit --yes", async t => {
     for (const input of ["", "/wrong/directory\n"]) await t.test(JSON.stringify(input), t => {
         const f = fixture(t, { installed: true });
