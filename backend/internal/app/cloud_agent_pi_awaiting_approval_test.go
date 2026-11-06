@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -82,9 +84,20 @@ func TestCloudAgentPiSessionModelApprovalPause(t *testing.T) {
 				_, _ = fmt.Fprintln(w, `{"event":"settled"}`)
 			}))
 			defer server.Close()
-			t.Setenv("YINGCE_AGENT_URL", server.URL)
-			t.Setenv("YINGCE_AGENT_TOKEN", strings.Repeat("t", 32))
-			t.Setenv("YINGCE_AGENT_BRIDGE_HOST", "127.0.0.1")
+			// Exercise the embedded subprocess and its real loopback bridge. The
+			// fixture server above drives the callback without invoking a model.
+			directory := t.TempDir()
+			script := fmt.Sprintf(`
+let request = "";
+for await (const chunk of process.stdin) request += chunk;
+const response = await fetch(%q, { method: "POST", body: request });
+if (!response.ok) throw new Error("fixture request failed: " + response.status);
+process.stdout.write(await response.text());
+`, server.URL)
+			if err := os.WriteFile(filepath.Join(directory, "agent-runtime.mjs"), []byte(script), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("CANVAS_PI_RUNTIME_DIR", directory)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			err := s.runCloudAgentPiSession(ctx, "user", root.ID)
