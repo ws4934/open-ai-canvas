@@ -1,12 +1,13 @@
 import { Popover } from "antd";
 import { ShoppingBag } from "lucide-react";
-import { ChevronDown, ChevronRight, CircleUserRound, History as HistoryIcon, Image as ImageIcon, Infinity as InfinityIcon, PanelLeftClose, PanelLeftOpen, Plus, Video } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleUserRound, History as HistoryIcon, Image as ImageIcon, PanelLeftClose, PanelLeftOpen, Plus, Video } from "lucide-react";
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 
+import { AuthLoginLink } from "@/components/auth/auth-login-link";
 import { BrandLogoFrame } from "@/components/brand/brand-logo";
 import { UserAvatar } from "@/components/layout/user-avatar";
 import { UserGroupAvatarRing, UserGroupBadge } from "@/components/layout/user-group-badge";
@@ -93,12 +94,12 @@ function WorkspaceSidebarProfile({ collapsed, user, onExpand, onCollapse }: { co
 
     if (!user) {
         return (
-            <Link to="/login" className={cn("app-workspace-sidebar-profile", collapsed && "is-collapsed")} aria-label={t("shell.login")} title={t("shell.login")}>
+            <AuthLoginLink className={cn("app-workspace-sidebar-profile", collapsed && "is-collapsed")} aria-label={t("shell.login")} title={t("shell.login")}>
                 <span className="app-workspace-sidebar-profile-avatar">
                     <CircleUserRound aria-hidden />
                 </span>
                 {!collapsed ? <span>{t("shell.guest")}</span> : null}
-            </Link>
+            </AuthLoginLink>
         );
     }
 
@@ -148,38 +149,16 @@ function WorkspaceSidebarProfile({ collapsed, user, onExpand, onCollapse }: { co
 function WorkspaceSwitcher({ collapsed, onNavigate }: { collapsed: boolean; onNavigate: () => void; onExpand: () => void; onCollapse: () => void }) {
     const appearance = useAppearanceStore((state) => state.appearance);
     const { t } = useTranslation();
-    if (collapsed) {
-        return (
-            <div className="app-workspace-sidebar-brand-row relative shrink-0 flex items-center justify-center px-3 pt-3">
-                <Link to="/" onClick={onNavigate} className="app-workspace-sidebar-brand-button group" aria-label={t("shell.brandHome", { brand: appearance.brandName })}>
-                    <BrandLogoFrame
-                        inverted
-                        className="app-workspace-brand-mark grid size-8 shrink-0 place-items-center rounded-[var(--r-sm)] shadow-sm"
-                        logoClassName="size-5 object-contain"
-                        alt=""
-                        fallback={<InfinityIcon className="size-4" strokeWidth={2.2} />}
-                    />
-                </Link>
-            </div>
-        );
-    }
-
+    // 内置织影标志使用反色版本适配实底方块；
+    // 自定义 Logo 的配色不可预知，改用中性浅底方块承托。
+    const mark = (
+        <BrandLogoFrame inverted className={cn("app-workspace-brand-mark grid shrink-0 place-items-center", !appearance.logoConfigured && "is-builtin")} logoClassName="size-5 object-contain" alt="" fallback={<span className="size-5" aria-hidden />} />
+    );
     return (
-        <div className="app-workspace-sidebar-brand-row relative shrink-0 px-3 pt-3">
+        <div className={cn("app-workspace-sidebar-brand-row relative shrink-0", collapsed && "is-collapsed")}>
             <Link to="/" onClick={onNavigate} className="app-workspace-sidebar-brand-button group" aria-label={t("shell.brandHome", { brand: appearance.brandName })}>
-                <span className="flex min-w-0 items-center gap-2">
-                    <BrandLogoFrame
-                        inverted
-                        className="app-workspace-brand-mark grid size-8 shrink-0 place-items-center rounded-[var(--r-sm)] shadow-sm"
-                        logoClassName="size-5 object-contain"
-                        alt=""
-                        fallback={<InfinityIcon className="size-4" strokeWidth={2.2} />}
-                    />
-                    <span className="flex min-w-0 flex-col">
-                        <span className="app-workspace-brand-wordmark truncate text-[var(--fs-body)] leading-none font-semibold">{appearance.brandName}</span>
-                        <span className="mt-1 truncate text-[var(--fs-label)] leading-none text-foreground/60">{t("shell.workbench")}</span>
-                    </span>
-                </span>
+                {mark}
+                {!collapsed ? <span className="app-workspace-brand-wordmark truncate">{appearance.brandName}</span> : null}
             </Link>
         </div>
     );
