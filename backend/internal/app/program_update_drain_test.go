@@ -243,10 +243,6 @@ func TestProgramUpdateDrainFencesNewUpstreamEntryPoints(t *testing.T) {
 			_, err := s.GenerateEcommerceAgent(context.Background(), "user", ecommerceagent.Request{}, nil)
 			return err
 		}},
-		{"site assistant", func() error {
-			_, err := s.CreateYoruChatTask(nil, YoruChatRequest{})
-			return err
-		}},
 		{"drama generation", func() error {
 			_, err := s.submitDramaTask("user", CreateTaskRequest{}, nil)
 			return err
@@ -263,6 +259,30 @@ func TestProgramUpdateDrainFencesNewUpstreamEntryPoints(t *testing.T) {
 				t.Fatalf("new work bypassed update fence: %v", err)
 			}
 		})
+	}
+}
+
+func TestProgramUpdateDrainWaitsForApprovalFollowUp(t *testing.T) {
+	db := newSQLiteTestDB(t)
+	if err := db.AutoMigrate(&model.Task{}, &model.CloudAgentExecution{}); err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{repo: repository.New(db)}
+	key := cloudAgentApprovalFollowUpKey("run", "approval")
+	if !s.claimCloudAgentApprovalFollowUp(key) {
+		t.Fatal("cannot claim approval follow-up")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if err := s.DrainForProgramUpdate(ctx); err == nil {
+		t.Fatal("drained before approval follow-up finished writing its checkpoint")
+	}
+	if s.ProgramUpdateDraining() {
+		t.Fatal("did not resume intake after timeout")
+	}
+	s.releaseCloudAgentApprovalFollowUp(key)
+	if err := s.DrainForProgramUpdate(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }
 

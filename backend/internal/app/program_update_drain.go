@@ -84,7 +84,10 @@ func (s *Service) DrainForProgramUpdate(ctx context.Context) (returnErr error) {
 		s.approvedMediaMu.Lock()
 		mediaWaiters := len(s.approvedMediaWaiters)
 		s.approvedMediaMu.Unlock()
-		if !activity.Active() && requests == 0 && runners == 0 && mediaWaiters == 0 && s.ActiveWorkerTasks() == 0 {
+		s.approvalFollowUpMu.Lock()
+		approvalFollowUps := len(s.approvalFollowUps)
+		s.approvalFollowUpMu.Unlock()
+		if !activity.Active() && requests == 0 && runners == 0 && mediaWaiters == 0 && approvalFollowUps == 0 && s.ActiveWorkerTasks() == 0 {
 			return nil
 		}
 		select {
