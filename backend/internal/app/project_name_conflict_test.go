@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -79,6 +80,8 @@ func testStructuredProjectNameConflict(t *testing.T, service *Service, db *gorm.
 	}
 }
 
+var projectConflictSchemaSequence atomic.Uint64
+
 // newProjectNameConflictPostgresService 只在独立测试 schema 中创建项目与工作流表，测试结束后删除该 schema。
 func newProjectNameConflictPostgresService(t *testing.T) (*Service, *gorm.DB) {
 	t.Helper()
@@ -96,7 +99,8 @@ func newProjectNameConflictPostgresService(t *testing.T) (*Service, *gorm.DB) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = adminSQL.Close() })
-	schema := fmt.Sprintf("project_name_conflict_app_%d", time.Now().UnixNano())
+	// Parallel fixtures can observe the same clock tick; time alone is not unique.
+	schema := fmt.Sprintf("project_conflict_%d_%d", time.Now().UnixNano(), projectConflictSchemaSequence.Add(1))
 	if err := admin.Exec("CREATE SCHEMA " + schema).Error; err != nil {
 		t.Fatal(err)
 	}
