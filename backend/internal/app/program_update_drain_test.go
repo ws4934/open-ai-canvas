@@ -193,6 +193,36 @@ func TestProgramUpdateDrainAllowsExistingAgentTaskAdmission(t *testing.T) {
 	}
 }
 
+func TestProgramUpdateDrainAllowsBatchPreparationAndApprovalEdits(t *testing.T) {
+	s, db := agentMediaBatchFixture(t)
+	run, state := agentMediaBatchRun(t, s, agentMediaBatchArgs("v1", "v2"), 4)
+	s.updateIntakeFenced = true
+	if err := s.advanceCloudAgentTool(run, &state); err != nil {
+		t.Fatal(err)
+	}
+	waiting, err := s.CloudAgentRun("user", run.ID)
+	if err != nil || waiting.Approval == nil || waiting.Status != "waiting_approval" {
+		t.Fatalf("batch preparation blocked during drain: %+v %v", waiting, err)
+	}
+	seconds := 8
+	settings := &CloudAgentMediaSettings{ChannelID: "channel", ChannelModelKey: "seedance-test", Size: "9:16", DurationSeconds: &seconds}
+	if err := s.DecideCloudAgentApproval("user", run.ID, waiting.Approval.ID, "approve", "", settings); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, err := s.stepCloudAgentMediaBatch(context.Background(), "user", run.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var tasks int64
+	if err := db.Model(&model.Task{}).Where("type = ? AND agent_run_id = ?", "canvas_video", run.ID).Count(&tasks).Error; err != nil || tasks != 2 {
+		t.Fatalf("approved batch submissions: %d, %v", tasks, err)
+	}
+	if _, err := s.CreateTask("user", creationTextRequest()); !isAppErrorStatus(err, 503) {
+		t.Fatalf("new intake bypassed fence: %v", err)
+	}
+}
+
 func TestProgramUpdateDrainRejectsUnregisteredAndTerminalAgentPreparations(t *testing.T) {
 	s, db, _, _ := creationTestService(t)
 	for _, run := range []model.CloudAgentExecution{

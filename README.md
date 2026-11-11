@@ -473,13 +473,6 @@ cd docs && bun run types:check
   <sub><a href="mailto:309151651@qq.com">309151651@qq.com</a></sub><br>
   <sub><em>没什么大不了</em></sub>
 </td>
-<td align="center" valign="top" width="33%">
-  <img src="assets/user-bensharp.jpg" alt="nancy" width="72" height="72"><br>
-  <strong>nancy</strong><br>
-  <sub>VV：jiahezuiai</sub><br>
-  <sub><a href="mailto:275008147@qq.com">275008147@qq.com</a></sub><br>
-  <sub><em>在哪跌倒，就在哪睡一觉</em></sub>
-</td>
 </tr>
 <tr>
 <td align="center" valign="top" width="33%">
@@ -521,6 +514,13 @@ cd docs && bun run types:check
   <img src="assets/user-Wyatt_K.png" alt="Wyatt_K" width="72" height="72"><br>
   <strong>Wyatt_K</strong><br>
   <sub><em>千里之行，始于足下。</em></sub>
+</td>
+</tr>
+<tr>
+<td align="center" valign="top" width="33%">
+  <img src="assets/user-aleyn.jpg" alt="Aleyn" width="72" height="72"><br>
+  <strong>Aleyn<br>微信：Aleyn_X</strong><br>
+  <sub><a href="mailto:cslin5277@163.com">cslin5277@163.com</a></sub>
 </td>
 </tr>
 </table>

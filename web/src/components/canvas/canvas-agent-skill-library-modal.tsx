@@ -28,6 +28,7 @@ type CanvasAgentSkillLibraryModalProps = {
     search: string;
     loading: boolean;
     hasMore: boolean;
+    presets?: ReactNode;
     onClose: () => void;
     onCategoryChange: (value: string) => void;
     onSearch: (value: string) => void;
@@ -51,6 +52,7 @@ export function CanvasAgentSkillLibraryModal({
     search,
     loading,
     hasMore,
+    presets,
     onClose,
     onCategoryChange,
     onSearch,
@@ -246,6 +248,8 @@ export function CanvasAgentSkillLibraryModal({
                             <span> / {AGENT_PINNED_SKILL_LIMIT}</span>
                         </button>
                     </header>
+
+                    {presets}
 
                     <div ref={listRef} className="canvas-agent-skill-library-list thin-scrollbar" aria-label={t("canvasA.skillLibrary.list")} aria-busy={loading}>
                         {visibleSkills.map((skill) => (

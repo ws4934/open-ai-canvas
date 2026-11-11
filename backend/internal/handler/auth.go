@@ -157,6 +157,7 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 		c.Redirect(http.StatusFound, target)
 	})
 	r.GET("/auth/linuxdo/callback", rejectedLoginAudit(svc, "linuxdo"), linuxDOCallbackHandler(svc))
+	registerOIDCRoutes(r, svc)
 	r.POST("/auth/logout", func(c *gin.Context) {
 		if err := svc.Logout(sessionCookie(c), loginRequestContext(c)); err != nil {
 			failService(c, err)
@@ -259,6 +260,7 @@ func RegisterAdminRoutes(r *gin.RouterGroup, svc *service.Service) {
 	registerAdminSettingRoutes(r, svc)
 	registerAdminAPILogRoutes(r, svc)
 	registerAdminLoginLogRoutes(r, svc)
+	registerEmailRoutes(r, svc)
 }
 
 func RegisterSystemProxyRoutes(r *gin.RouterGroup, svc *service.Service) {

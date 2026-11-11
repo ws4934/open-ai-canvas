@@ -16,6 +16,7 @@ const AdminPage = lazy(() => import("@/pages/admin"));
 const EcommerceManagementPage = lazyAdminPage(() => import("@/pages/admin/ecommerce-management-page"));
 const EcommerceAgentConfigPage = lazyAdminPage(() => import("@/pages/admin/ecommerce-agent-config-page"));
 const AnalyticsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AnalyticsPage })));
+const TrafficPage = lazyAdminPage(() => import("@/pages/admin/traffic/traffic-page"));
 const AnnouncementsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AnnouncementsPage })));
 const BannerAnnouncementsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.BannerAnnouncementsPage })));
 const StorageResourcesPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.StorageResourcesPage })));
@@ -33,6 +34,7 @@ const AdminSkillWorkbenchPage = lazyAdminPage(() => import("@/pages/admin/skills
 const AdminPaymentsPage = lazyAdminPage(() => import("@/pages/admin/payments/payments-page"));
 const LogsPage = lazyAdminPage(() => import("@/pages/admin/logs/logs-page"));
 const LoginLogsPage = lazyAdminPage(() => import("@/pages/admin/login-logs/login-logs-page"));
+const EmailLogsPage = lazyAdminPage(() => import("@/pages/admin/email-logs/email-logs-page"));
 const RedemptionCodesPage = lazyAdminPage(() => import("@/pages/admin/redemption-codes/redemption-codes-page"));
 const RuntimePolicySettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/runtime-policy-settings-page"));
 const AppearanceSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/appearance-settings-page"));
@@ -73,7 +75,6 @@ const ProjectCreatePage = workspaceRoutePages.projectCreate;
 const SettingsPage = workspaceRoutePages.settings;
 const ReferralPage = workspaceRoutePages.referral;
 const AdminReferralPage = lazyAdminPage(() => import("@/pages/admin/referral/referral-admin-page"));
-const TestVoiceRecording = lazy(() => import("@/pages/test-voice-recording"));
 const UserLayout = lazy(() => import("@/layouts/user-layout"));
 
 function deferred(element: ReactNode) {
@@ -110,9 +111,11 @@ function AuthenticatedWorkspaceLayout() {
 function devRoutes() {
     const FolderPreviewLab = lazy(() => import("@/pages/dev/folder-preview-lab"));
     const PrevisReproLab = lazy(() => import("@/pages/dev/previs-repro-lab"));
+    const TestVoiceRecording = lazy(() => import("@/pages/test-voice-recording"));
     return [
         { path: "/dev/folders", element: fullScreenDeferred(<FolderPreviewLab />), errorElement: <RouteErrorPage /> },
         { path: "/dev/previs-repro", element: fullScreenDeferred(<PrevisReproLab />), errorElement: <RouteErrorPage /> },
+        { path: "/test-voice-recording", element: <RequireAuth>{fullScreenDeferred(<TestVoiceRecording />)}</RequireAuth>, errorElement: <RouteErrorPage /> },
     ];
 }
 
@@ -186,7 +189,6 @@ export const router = createBrowserRouter([
             },
             { path: "/settings", element: <RequireAuth>{deferred(<SettingsPage />)}</RequireAuth> },
             { path: "/referral", element: <RequireAuth>{deferred(<ReferralPage />)}</RequireAuth> },
-            { path: "/test-voice-recording", element: <RequireAuth>{deferred(<TestVoiceRecording />)}</RequireAuth> },
             {
                 path: "/projects",
                 element: (
@@ -234,9 +236,11 @@ export const router = createBrowserRouter([
                 element: <RequireAuth>{deferred(<AdminPage />)}</RequireAuth>,
                 children: [
                     { index: true, element: <AnalyticsPage /> },
+                    { path: "traffic", element: <TrafficPage /> },
                     { path: "users", element: <UsersPage /> },
                     { path: "user-groups", element: <UserGroupsPage /> },
                     { path: "login-logs", element: <LoginLogsPage /> },
+                    { path: "email-logs", element: <EmailLogsPage /> },
                     { path: "feedbacks", element: <AdminFeedbacksPage /> },
                     { path: "channels", element: <ChannelsPage /> },
                     // 关闭前台模型只影响用户端模型来源；后台仍可进入，便于开启前先配置。

@@ -35,6 +35,7 @@ const (
 
 	// 媒体槽位状态：空串表示尚未开始。
 	DramaMediaQueued  = "queued"
+	DramaMediaDraft   = "draft"
 	DramaMediaRunning = "running"
 	DramaMediaReady   = "ready"
 	DramaMediaFailed  = "failed"
@@ -72,25 +73,35 @@ type DramaProduction struct {
 	PlanDone           bool   `json:"planDone"`
 	SampleApproved     bool   `json:"sampleApproved"`
 	// AssetsReleased 为 true 后才自动生成角色/场景参考图；手动生图模式下由用户确认资产后打开。
-	AssetsReleased bool       `json:"assetsReleased"`
-	PauseReason    string     `json:"pauseReason" gorm:"size:500"`
-	Revision       int64      `json:"revision"`
-	LastTickAt     *time.Time `json:"lastTickAt,omitempty"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
+	AssetsReleased bool   `json:"assetsReleased"`
+	PauseReason    string `json:"pauseReason" gorm:"size:500"`
+	// DraftJSON 是草稿的创建页表单（原始正文、画风 ID），只在 status=draft 时有值，开工时清空。
+	DraftJSON  string     `json:"-" gorm:"type:text"`
+	Revision   int64      `json:"revision"`
+	LastTickAt *time.Time `json:"lastTickAt,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
 }
 
 // DramaCast 是全剧设定（角色 / 场景），镜头引用它的参考图保持一致性。
 type DramaCast struct {
 	Revision    int64  `json:"revision"`
 	ID          string `json:"id" gorm:"primaryKey;size:36"`
-	ProjectID   string `json:"projectId" gorm:"index;size:36;index:idx_drama_casts_project_kind,priority:1"`
+	ProjectID   string `json:"projectId" gorm:"index;size:36;index:idx_drama_casts_project_kind,priority:1;index:idx_drama_cast_source,unique,priority:1,where:source_cast_id <> ''"`
 	Kind        string `json:"kind" gorm:"size:16;index:idx_drama_casts_project_kind,priority:2"`
 	Name        string `json:"name" gorm:"size:120"`
 	AliasesJSON string `json:"aliasesJson" gorm:"type:text"`
 	Role        string `json:"role" gorm:"size:120"`
 	Description string `json:"description" gorm:"type:text"`
 	Appearance  string `json:"appearance" gorm:"type:text"`
+	ImagePrompt string `json:"imagePrompt" gorm:"type:text"`
+	// 三个画风字段全空时继承作品画风；造型与基础设定分别选择。
+	ImageStyleID     string `json:"imageStyleId" gorm:"size:64"`
+	ImageStyleName   string `json:"imageStyleName" gorm:"size:120"`
+	ImageStylePrompt string `json:"imageStylePrompt" gorm:"type:text"`
+	// 导入只保留来源关联，编辑目标记录不会回写来源作品。
+	SourceProjectID string `json:"sourceProjectId,omitempty" gorm:"size:36"`
+	SourceCastID    string `json:"sourceCastId,omitempty" gorm:"size:36;index:idx_drama_cast_source,unique,priority:2,where:source_cast_id <> ''"`
 	// VoiceInstructions 是声线描述（音色、语速、情绪），写进视频提示词，由视频模型同步生成对白。
 	VoiceInstructions string `json:"voiceInstructions" gorm:"type:text"`
 	// VoiceProfileID 是用户为角色指定的声音（声音库条目）；VoiceSampleResourceID 是它的样本音频，
@@ -198,6 +209,10 @@ type DramaSegment struct {
 	VideoModelJSON string `json:"videoModelJson" gorm:"type:text"`
 	// ReferenceCastIDsJSON 为空表示按镜头自动取参考图；非空是用户为本段指定的设定 ID 列表（顺序即参考图编号，可为 []）。
 	ReferenceCastIDsJSON string `json:"referenceCastIdsJson" gorm:"type:text"`
+	// ReferenceImagesJSON 保存用户上传或从素材库选择的附加参考图，排在设定图之后。
+	ReferenceImagesJSON string `json:"referenceImagesJson" gorm:"type:text"`
+	// AudioCastIDsJSON 为空时按对白自动选择；[] 表示手动关闭全部角色音色。
+	AudioCastIDsJSON string `json:"audioCastIdsJson" gorm:"type:text"`
 	// VideoStatus 为空表示待生成；TailFrameResourceID 是本段视频最后一帧，作为下一段的参考图，保证段与段衔接。
 	VideoStatus         string    `json:"videoStatus" gorm:"size:16"`
 	VideoResourceID     string    `json:"videoResourceId,omitempty" gorm:"size:36"`
@@ -206,6 +221,11 @@ type DramaSegment struct {
 	VideoError          string    `json:"videoError" gorm:"type:text"`
 	CreatedAt           time.Time `json:"createdAt"`
 	UpdatedAt           time.Time `json:"updatedAt"`
+}
+
+type DramaReferenceImage struct {
+	ResourceID string `json:"resourceId"`
+	Name       string `json:"name"`
 }
 
 // DramaTake 保存每个产物的全部版本：角色/场景参考图（cast）、剧情段视频（video）与成片（final）。

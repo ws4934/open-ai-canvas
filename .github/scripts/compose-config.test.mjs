@@ -52,6 +52,24 @@ function configuration(files, overrides = {}) {
 }
 
 for (const [name, files] of variants) {
+    test(name + " forwards explicit OIDC settings without enabling all private upstreams", () => {
+        const values = {
+            CANVAS_OIDC_ISSUER: "https://identity.example",
+            CANVAS_OIDC_CLIENT_ID: "canvas-fixture",
+            CANVAS_OIDC_CLIENT_SECRET: "fixture-only-secret",
+            CANVAS_OIDC_REDIRECT_URL: "https://canvas.example/api/auth/oidc/callback",
+            CANVAS_OIDC_ALLOWED_GROUP: "creators",
+            CANVAS_ALLOW_PRIVATE_UPSTREAMS: "true",
+        };
+        const result = configuration(files, values);
+        assert.equal(result.status, 0, result.stderr || String(result.error));
+        const env = JSON.parse(result.stdout).services.backend.environment;
+        for (const [key, value] of Object.entries(values)) {
+            if (key.startsWith("CANVAS_OIDC_")) assert.equal(env[key], value);
+        }
+        assert.equal(env.CANVAS_ALLOW_PRIVATE_UPSTREAMS, undefined);
+    });
+
     test(name + " uses one PostgreSQL credential set and private persistent infrastructure", () => {
         const result = configuration(files);
         assert.equal(result.status, 0, result.stderr || String(result.error));

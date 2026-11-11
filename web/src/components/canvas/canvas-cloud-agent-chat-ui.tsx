@@ -560,9 +560,9 @@ export const AgentChatMessage = memo(function AgentChatMessage({
     }
     const copyable = !isStreaming && !formAnswer && Boolean(item.text.trim()) && (isUser || item.role === "assistant");
     return (
-        <div className={`agent-message-row flex items-start gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
+        <div className={`agent-message-row flex items-start gap-3 ${isUser ? "justify-end" : "justify-start"}`} data-agent-role={item.role} data-agent-interjection={item.interjection || undefined}>
             <div className={`flex min-w-0 flex-col ${isUser ? "max-w-[82%] items-end" : "max-w-full flex-1 items-stretch"}`}>
-                <div className={`agent-message-body min-w-0 text-sm leading-6 ${isUser ? "agent-message-user px-4 py-3 text-right" : "max-w-full text-left"}`} style={{ color }}>
+                <div className={`agent-message-body min-w-0 text-sm leading-6 ${isUser ? "agent-message-user px-3 py-2 text-left" : "max-w-full text-left"}`} style={{ color }}>
                     {item.interjection ? (
                         <span className="mb-1 inline-flex flex-wrap items-center justify-end gap-2">
                             <span
@@ -722,8 +722,8 @@ function agentReasoningPreview(items: readonly CloudAgentChatMessage[]) {
  * 推理是辅助信息，不应与正文和工具输出争夺主视觉。一个事件流里的连续摘要
  * 合并成一个入口，默认收起；需要排查时再展开查看完整内容。
  */
-export const AgentReasoningFeed = memo(function AgentReasoningFeed({ items, theme }: { items: CloudAgentChatMessage[]; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
-    const streaming = items.some((item) => item.streaming);
+export const AgentReasoningFeed = memo(function AgentReasoningFeed({ items, theme, live = true }: { items: CloudAgentChatMessage[]; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; live?: boolean }) {
+    const streaming = live && items.some((item) => item.streaming);
     const text = items
         .map((item) => item.text.trim())
         .filter(Boolean)
@@ -1146,19 +1146,7 @@ export const AgentOperationFeed = memo(function AgentOperationFeed({
                     {categoryIcon}
                 </span>
                 <span className="agent-activity-title">{categoryLabel}</span>
-                {/* 换步时旧文案高模糊淡出、新文案从下方上浮（先快后慢的非线性曲线）。 */}
-                <AnimatePresence mode="wait" initial={false}>
-                    <motion.span
-                        key={visibleLabel}
-                        className="agent-activity-detail agent-operation-latest"
-                        initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 6, filter: "blur(4px)" }}
-                        animate={reducedMotion ? { opacity: 1 } : { opacity: 1, y: 0, filter: "blur(0px)" }}
-                        exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -4, filter: "blur(4px)" }}
-                        transition={reducedMotion ? { duration: 0 } : { duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-                    >
-                        {visibleLabel}
-                    </motion.span>
-                </AnimatePresence>
+                <span className="agent-activity-detail agent-operation-latest">{visibleLabel}</span>
                 {items.length > 1 ? <span className="agent-activity-meta">{items.length} 步</span> : null}
                 <AgentChevronGlyph className="agent-activity-chevron" />
             </button>
@@ -1191,7 +1179,6 @@ export function AgentWorkingMessage({ theme, label = WORKING_TEXT }: { theme: (t
                 <span />
             </span>
             <span>{label}</span>
-            <span className="agent-working-caption">实时处理中</span>
         </div>
     );
 }
@@ -1307,6 +1294,27 @@ export function AgentQuestionBar({
     const [customFields, setCustomFields] = useState<Record<string, boolean>>({});
     const [additionalNotes, setAdditionalNotes] = useState("");
     const [validation, setValidation] = useState("");
+    const fieldsScrollRef = useRef<HTMLDivElement>(null);
+    const fieldsContentRef = useRef<HTMLDivElement>(null);
+    const [scrollEdges, setScrollEdges] = useState({ above: false, below: false });
+    const updateScrollEdges = useCallback(() => {
+        const el = fieldsScrollRef.current;
+        if (!el) return;
+        const above = el.scrollTop > 1;
+        const below = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+        setScrollEdges((previous) => (previous.above === above && previous.below === below ? previous : { above, below }));
+    }, []);
+    useEffect(() => {
+        const el = fieldsScrollRef.current;
+        if (!el) return;
+        el.scrollTop = 0;
+        updateScrollEdges();
+        if (typeof ResizeObserver === "undefined") return;
+        const observer = new ResizeObserver(updateScrollEdges);
+        observer.observe(el);
+        if (fieldsContentRef.current) observer.observe(fieldsContentRef.current);
+        return () => observer.disconnect();
+    }, [question.questionId, isForm, updateScrollEdges]);
 
     useEffect(() => {
         setValues(Object.fromEntries(fields.map((field) => [field.id, fieldDefaultValue(field)])));
@@ -1324,6 +1332,9 @@ export function AgentQuestionBar({
         });
         if (missing) {
             setValidation(`请填写“${missing.title}”`);
+            const field = Array.from(fieldsScrollRef.current?.querySelectorAll<HTMLElement>("[data-agent-field-id]") || []).find((element) => element.dataset.agentFieldId === missing.id);
+            field?.scrollIntoView({ block: "nearest" });
+            field?.querySelector<HTMLElement>("input, textarea, button")?.focus({ preventScroll: true });
             return;
         }
         setValidation("");
@@ -1373,7 +1384,7 @@ export function AgentQuestionBar({
 
     if (isForm) {
         return (
-            <div className="agent-question-bar agent-question-form mx-3 mb-2 overflow-hidden rounded-xl" style={{ color: theme.node.text }}>
+            <div className="agent-question-bar agent-question-form mx-3 mb-2 overflow-hidden rounded-xl" style={{ color: theme.node.text }} data-canvas-no-zoom data-canvas-wheel-scroll>
                 <div className="flex items-start gap-2 px-3 pt-2">
                     <HelpCircle className="mt-[1px] size-3.5 shrink-0" style={{ color: theme.accent.primary }} />
                     <div className="min-w-0 flex-1">
@@ -1382,105 +1393,122 @@ export function AgentQuestionBar({
                         <div className="mt-0.5 text-[var(--fs-label)] opacity-50">已填入推荐值，可按需修改；不重要的字段可以留空。</div>
                     </div>
                 </div>
-                <div className="agent-question-fields px-3 py-2">
-                    {orderedFields.map((field, index) => {
-                        const options = field.options || [];
-                        const custom = customFields[field.id] || values[field.id] === "other";
-                        const sectionTitle = field.section && field.section !== orderedFields[index - 1]?.section ? field.section : "";
-                        return (
-                            <Fragment key={field.id}>
-                                {sectionTitle ? <div className="agent-question-section">{sectionTitle}</div> : null}
-                                <div className="agent-question-field">
-                                    <label className="agent-question-field-label" htmlFor={`agent-field-${field.id}`}>
-                                        {field.title}
-                                        {field.required ? <span className="ml-0.5 opacity-70">*</span> : null}
-                                    </label>
-                                    <div className="min-w-0 flex-1">
-                                        {field.type === "textarea" ? (
-                                            <textarea
-                                                id={`agent-field-${field.id}`}
-                                                rows={2}
-                                                value={values[field.id] || ""}
-                                                placeholder={field.placeholder}
-                                                disabled={disabled}
-                                                className="agent-question-input agent-question-textarea"
-                                                onChange={(event) => updateValue(field, event.target.value)}
-                                                onMouseDown={stop}
-                                                onPointerDown={stop}
-                                            />
-                                        ) : field.type === "text" ? (
-                                            <input
-                                                id={`agent-field-${field.id}`}
-                                                value={values[field.id] || ""}
-                                                placeholder={field.placeholder}
-                                                disabled={disabled}
-                                                className="agent-question-input"
-                                                onChange={(event) => updateValue(field, event.target.value)}
-                                                onMouseDown={stop}
-                                                onPointerDown={stop}
-                                            />
-                                        ) : (
-                                            <div className="agent-question-options" role={field.type === "multi_select" ? "group" : "radiogroup"} aria-label={field.title}>
-                                                {options.map((option) => {
-                                                    const optionId = option.id || option.label;
-                                                    const selectedValues = values[field.id];
-                                                    const selected = field.type === "multi_select" ? Array.isArray(selectedValues) && selectedValues.includes(optionId) : selectedValues === optionId;
-                                                    return (
-                                                        <button
-                                                            key={optionId}
-                                                            type="button"
-                                                            disabled={disabled}
-                                                            aria-pressed={selected}
-                                                            className={`agent-question-chip${selected ? " is-selected" : ""}`}
-                                                            style={selected ? { background: theme.accent.primary, color: theme.accent.onPrimary } : { background: theme.toolbar.itemHover }}
-                                                            title={option.detail || option.label}
-                                                            onMouseDown={stop}
-                                                            onPointerDown={stop}
-                                                            onClick={(event) => {
-                                                                stop(event);
-                                                                updateValue(field, optionId);
-                                                            }}
-                                                        >
-                                                            {option.label}
-                                                        </button>
-                                                    );
-                                                })}
+                <div className="agent-question-scroll-controls" aria-label="表单滚动">
+                    <span>{scrollEdges.below ? "下方还有更多选项" : scrollEdges.above ? "已到表单底部" : "确认后可直接继续"}</span>
+                    <button type="button" aria-label="向上查看表单" disabled={!scrollEdges.above} onClick={() => fieldsScrollRef.current?.scrollBy({ top: -Math.max(80, fieldsScrollRef.current.clientHeight * 0.8) })}>
+                        <ChevronUp className="size-3.5" />
+                    </button>
+                    <button type="button" aria-label="向下查看更多选项" disabled={!scrollEdges.below} onClick={() => fieldsScrollRef.current?.scrollBy({ top: Math.max(80, fieldsScrollRef.current.clientHeight * 0.8) })}>
+                        <ChevronDown className="size-3.5" />
+                    </button>
+                </div>
+                <div ref={fieldsScrollRef} className="agent-question-scroll" tabIndex={0} role="region" aria-label="需求确认表单内容" onScroll={updateScrollEdges} data-canvas-wheel-scroll>
+                    <div ref={fieldsContentRef}>
+                        <div className="agent-question-fields px-3 py-2">
+                            {orderedFields.map((field, index) => {
+                                const options = field.options || [];
+                                const custom = customFields[field.id] || values[field.id] === "other";
+                                const sectionTitle = field.section && field.section !== orderedFields[index - 1]?.section ? field.section : "";
+                                return (
+                                    <Fragment key={field.id}>
+                                        {sectionTitle ? <div className="agent-question-section">{sectionTitle}</div> : null}
+                                        <div className="agent-question-field" data-agent-field-id={field.id}>
+                                            <label className="agent-question-field-label" htmlFor={`agent-field-${field.id}`}>
+                                                {field.title}
+                                                {field.required ? <span className="ml-0.5 opacity-70">*</span> : null}
+                                            </label>
+                                            <div className="min-w-0 flex-1">
+                                                {field.type === "textarea" ? (
+                                                    <textarea
+                                                        id={`agent-field-${field.id}`}
+                                                        rows={2}
+                                                        value={values[field.id] || ""}
+                                                        placeholder={field.placeholder}
+                                                        disabled={disabled}
+                                                        className="agent-question-input agent-question-textarea"
+                                                        onChange={(event) => updateValue(field, event.target.value)}
+                                                        onMouseDown={stop}
+                                                        onPointerDown={stop}
+                                                    />
+                                                ) : field.type === "text" ? (
+                                                    <input
+                                                        id={`agent-field-${field.id}`}
+                                                        value={values[field.id] || ""}
+                                                        placeholder={field.placeholder}
+                                                        disabled={disabled}
+                                                        className="agent-question-input"
+                                                        onChange={(event) => updateValue(field, event.target.value)}
+                                                        onMouseDown={stop}
+                                                        onPointerDown={stop}
+                                                    />
+                                                ) : (
+                                                    <div className="agent-question-options" role={field.type === "multi_select" ? "group" : "radiogroup"} aria-label={field.title}>
+                                                        {options.map((option) => {
+                                                            const optionId = option.id || option.label;
+                                                            const selectedValues = values[field.id];
+                                                            const selected = field.type === "multi_select" ? Array.isArray(selectedValues) && selectedValues.includes(optionId) : selectedValues === optionId;
+                                                            return (
+                                                                <button
+                                                                    key={optionId}
+                                                                    type="button"
+                                                                    disabled={disabled}
+                                                                    aria-pressed={selected}
+                                                                    className={`agent-question-chip${selected ? " is-selected" : ""}`}
+                                                                    style={selected ? { background: theme.accent.primary, color: theme.accent.onPrimary } : { background: theme.toolbar.itemHover }}
+                                                                    title={option.detail || option.label}
+                                                                    onMouseDown={stop}
+                                                                    onPointerDown={stop}
+                                                                    onClick={(event) => {
+                                                                        stop(event);
+                                                                        updateValue(field, optionId);
+                                                                    }}
+                                                                >
+                                                                    {option.label}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                                {field.allowCustom && (custom || field.type === "text") ? (
+                                                    <input
+                                                        value={custom && values[field.id] !== "other" ? values[field.id] || "" : ""}
+                                                        placeholder={field.placeholder || "输入自定义内容"}
+                                                        disabled={disabled}
+                                                        className="agent-question-input mt-2"
+                                                        onChange={(event) => updateValue(field, event.target.value)}
+                                                        onMouseDown={stop}
+                                                        onPointerDown={stop}
+                                                    />
+                                                ) : null}
                                             </div>
-                                        )}
-                                        {field.allowCustom && (custom || field.type === "text") ? (
-                                            <input
-                                                value={custom && values[field.id] !== "other" ? values[field.id] || "" : ""}
-                                                placeholder={field.placeholder || "输入自定义内容"}
-                                                disabled={disabled}
-                                                className="agent-question-input mt-2"
-                                                onChange={(event) => updateValue(field, event.target.value)}
-                                                onMouseDown={stop}
-                                                onPointerDown={stop}
-                                            />
-                                        ) : null}
-                                    </div>
-                                </div>
-                            </Fragment>
-                        );
-                    })}
+                                        </div>
+                                    </Fragment>
+                                );
+                            })}
+                        </div>
+                        <div className="agent-question-field px-3 pb-2">
+                            <label className="agent-question-field-label" htmlFor="agent-question-additional-notes">
+                                补充说明
+                            </label>
+                            <textarea
+                                id="agent-question-additional-notes"
+                                rows={2}
+                                value={additionalNotes}
+                                placeholder="还有需要特别说明的场景、人物、节奏或限制吗？"
+                                disabled={disabled}
+                                className="agent-question-input agent-question-textarea"
+                                onChange={(event) => setAdditionalNotes(event.target.value)}
+                                onMouseDown={stop}
+                                onPointerDown={stop}
+                            />
+                        </div>
+                    </div>
                 </div>
-                <div className="agent-question-field px-3 pb-2">
-                    <label className="agent-question-field-label" htmlFor="agent-question-additional-notes">
-                        补充说明
-                    </label>
-                    <textarea
-                        id="agent-question-additional-notes"
-                        rows={2}
-                        value={additionalNotes}
-                        placeholder="还有需要特别说明的场景、人物、节奏或限制吗？"
-                        disabled={disabled}
-                        className="agent-question-input agent-question-textarea"
-                        onChange={(event) => setAdditionalNotes(event.target.value)}
-                        onMouseDown={stop}
-                        onPointerDown={stop}
-                    />
-                </div>
-                {validation ? <div className="agent-question-validation px-3 pb-1 text-[var(--fs-label)]">{validation}</div> : null}
+                {validation ? (
+                    <div className="agent-question-validation px-3 pb-1 text-[var(--fs-label)]" role="alert">
+                        {validation}
+                    </div>
+                ) : null}
                 <div className="agent-question-actions px-3 pb-2">
                     <button
                         type="button"
