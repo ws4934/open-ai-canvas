@@ -43,16 +43,6 @@ paths:
       tags: [admin]
       summary: 读取程序更新状态（管理员）
       responses:
-    ProgramUpdate:
-      description: 程序更新状态业务信封
-      content:
-        application/json:
-          schema:
-            allOf:
-              - $ref: "#/components/schemas/Envelope"
-              - type: object
-                properties:
-                  data: {$ref: "#/components/schemas/ProgramUpdateStatus"}
         "200": {$ref: "#/components/responses/ProgramUpdate"}
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
@@ -5115,6 +5105,16 @@ components:
                 - model_catalog_mismatch
                 - invalid_model_selection
   responses:
+    ProgramUpdate:
+      description: 程序更新状态业务信封
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Envelope"
+              - type: object
+                properties:
+                  data: {$ref: "#/components/schemas/ProgramUpdateStatus"}
     ModelQuote:
       description: 当前参数对应的费用报价，位于信封 data.quote
       content:
