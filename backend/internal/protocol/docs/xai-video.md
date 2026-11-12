@@ -1,6 +1,6 @@
 # xAI 视频生成
 
-xAI 视频插件创建异步 generation request，再按 request ID 查询。单张参考图发送为 `image`，多张参考图发送为 `reference_images`；时长、画幅和分辨率使用 xAI 风格字段。
+xAI 视频插件创建异步 generation request，再按 request ID 查询。显式起始帧发送为 `image`，结束帧发送为 `last_frame`，角色或场景参考图发送为 `reference_images`（即使只有一张）；三者可以组合，时长、画幅和分辨率使用 xAI 风格字段。
 
 ## 接口与鉴权
 
@@ -17,11 +17,13 @@ Content-Type: application/json
 
 模型 ID、允许时长、比例、分辨率、参考图数量、审核规则和计费以 xAI 控制台及官方文档为准。当前 adapter 默认 6 秒、`16:9`、`720p`。视频参考、音频参考、音频生成开关和水印均不会发送。
 
+`grok-imagine-video-1.5` 支持首尾帧与参考图组合，每种帧最多一张。旧模型与第三方中转应按实际能力配置渠道，不按模型显示名推断支持范围。未标记的图片保留原有起始图行为；参考素材应显式标记用途。
+
 ## 参数与字段映射
 
 {{PARAMETERS}}
 
-单图结构：`"image":{"url":"..."}`；多图结构：`"reference_images":[{"url":"..."}]`。URL 或 data URL 是否被具体模型接受，应在调用前验证。
+起始帧：`"image":{"url":"..."}`；结束帧：`"last_frame":{"url":"..."}`；参考图：`"reference_images":[{"url":"..."}]`。URL 或 data URL 是否被具体模型接受，应在调用前验证。
 
 ## 请求示例
 
@@ -50,6 +52,7 @@ curl "{channel_base_url}/v1/videos/generations" \
 ## 官方资料
 
 - [xAI Video Generation guide](https://docs.x.ai/docs/guides/video-generation)
+- [xAI 首尾帧与参考图组合](https://docs.x.ai/developers/model-capabilities/video/reference-to-video)
 - [xAI API Reference](https://docs.x.ai/docs/api-reference)
 
 {{CONTRACT}}

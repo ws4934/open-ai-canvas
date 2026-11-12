@@ -279,23 +279,25 @@ func xAIVideosAdapter() Adapter {
 	return videoAdapter(info, func(r GenerationRequest) (RequestSpec, error) {
 		body := map[string]any{"model": r.Model, "prompt": r.Prompt, "duration": defaultInt(r.Duration, 6), "aspect_ratio": defaultValue(r.AspectRatio, "16:9"), "resolution": defaultValue(r.Resolution, "720p")}
 		frameImages, referenceImages, unspecifiedImages := splitVideoImages(r.Images)
-		if len(frameImages) > 0 && len(referenceImages) > 0 {
-			return RequestSpec{}, fmt.Errorf("xAI 视频协议不能同时混用首尾帧和角色参考图")
+		for _, image := range frameImages {
+			field := "image"
+			if image.Role == "last_frame" {
+				field = "last_frame"
+			}
+			if body[field] != nil {
+				return RequestSpec{}, fmt.Errorf("xAI 视频协议每种帧最多一张：%s", image.Role)
+			}
+			body[field] = map[string]any{"url": mediaValue(image)}
 		}
-		if len(frameImages) > 1 {
-			return RequestSpec{}, fmt.Errorf("xAI 视频协议最多支持 1 张起始图，不支持尾帧输入")
-		}
-		if len(frameImages) == 1 {
-			body["image"] = map[string]any{"url": mediaValue(frameImages[0])}
-		} else if len(referenceImages) > 0 {
+		if len(referenceImages) > 0 {
 			refs := make([]any, 0, len(referenceImages))
 			for _, image := range referenceImages {
 				refs = append(refs, map[string]any{"url": mediaValue(image)})
 			}
 			body["reference_images"] = refs
-		} else if len(unspecifiedImages) == 1 {
+		} else if len(frameImages) == 0 && len(unspecifiedImages) == 1 {
 			body["image"] = map[string]any{"url": mediaValue(unspecifiedImages[0])}
-		} else if len(unspecifiedImages) > 1 {
+		} else if len(frameImages) == 0 && len(unspecifiedImages) > 1 {
 			refs := make([]any, 0, len(r.Images))
 			for _, image := range unspecifiedImages {
 				refs = append(refs, map[string]any{"url": mediaValue(image)})

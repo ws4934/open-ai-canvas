@@ -10,6 +10,7 @@ COPY VERSION CHANGELOG.md README.md /src/
 COPY assets /src/assets
 COPY web ./
 COPY backend/internal/ecommerceagent/platform_knowledge.json /src/backend/internal/ecommerceagent/platform_knowledge.json
+COPY backend/internal/app/appearance_theme_packs.json /src/backend/internal/app/appearance_theme_packs.json
 ARG VITE_TLDRAW_LICENSE_KEY
 ARG BUILD_VERSION
 ARG BUILD_COMMIT=unknown

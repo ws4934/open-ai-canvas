@@ -11,22 +11,27 @@ import type { VideoProviderDeps } from "./video-provider-deps";
 export async function createOpenAIVideoTask(deps: VideoProviderDeps, config: ResolvedAiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
     const modelName = modelOptionName(model);
     if (config.interfaceType === "xai-video" || modelName.toLowerCase().includes("grok")) {
-        const images = await Promise.all(references.slice(0, 7).map((image) => imageToDataUrl(image)));
+        const selectedReferences = config.interfaceType === "xai-video" ? references : references.slice(0, 7);
+        const images = await Promise.all(selectedReferences.map((image) => imageToDataUrl(image)));
         const seconds = normalizeVideoSeconds(config.videoSeconds);
         const referenceMode = options?.videoEditOperation === "reference_to_video";
-        const explicitFrameMode = !referenceMode && Boolean(options?.videoStartFrameNodeId || options?.videoEndFrameNodeId);
-        if (config.interfaceType === "xai-video" && explicitFrameMode && (images.length > 1 || options?.videoEndFrameNodeId)) throw new Error("xAI 视频协议最多支持 1 张起始图，不支持尾帧或混合角色参考图");
-        const imagePayload = config.interfaceType === "xai-video"
-            ? referenceMode && images.length
-                ? { reference_images: images.map((url) => ({ url })) }
-                : images.length ? { image: { url: images[0] } } : {}
-            : images.length ? { image: images[0], images } : {};
+        const imagePayload: Record<string, unknown> = {};
+        if (config.interfaceType === "xai-video") {
+            const first = selectedReferences.flatMap((image, index) => (!referenceMode && (image.id === options?.videoStartFrameNodeId || image.role === "first_frame") ? [index] : []));
+            const last = selectedReferences.flatMap((image, index) => (!referenceMode && (image.id === options?.videoEndFrameNodeId || image.role === "last_frame") ? [index] : []));
+            if (first.length > 1 || last.length > 1 || first.some((index) => last.includes(index))) throw new Error("xAI 视频协议每种帧最多一张，请分别指定起始帧和结束帧");
+            if (first.length) imagePayload.image = { url: images[first[0]] };
+            if (last.length) imagePayload.last_frame = { url: images[last[0]] };
+            const refs = images.filter((_, index) => !first.includes(index) && !last.includes(index));
+            if (referenceMode || first.length || last.length || selectedReferences.some((image) => image.role === "reference")) {
+                if (refs.length) imagePayload.reference_images = refs.map((url) => ({ url }));
+            } else if (images.length) imagePayload.image = { url: images[0] };
+        } else if (images.length) Object.assign(imagePayload, { image: images[0], images });
         const payload = {
             model: modelName,
             prompt,
             duration: Number.parseInt(seconds, 10) || 6,
-            seconds,
-            ...(normalizeVideoSize(config.size) ? { size: normalizeVideoSize(config.size) } : {}),
+            ...(config.interfaceType === "xai-video" ? { aspect_ratio: config.size || "16:9", resolution: config.vquality || "720p" } : { seconds, ...(normalizeVideoSize(config.size) ? { size: normalizeVideoSize(config.size) } : {}) }),
             ...imagePayload,
         };
         try {

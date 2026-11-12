@@ -1319,8 +1319,12 @@ func TestRunGeminiImageTaskUsesInlineDataAndImageConfig(t *testing.T) {
 			t.Errorf("responseModalities = %#v", modalities)
 		}
 		imageConfig, _ := generationConfig["imageConfig"].(map[string]interface{})
-		if imageConfig["aspectRatio"] != "16:9" || imageConfig["imageSize"] != "4K" {
+		if imageConfig["aspectRatio"] != "16:9" || imageConfig["imageSize"] != "1K" {
 			t.Errorf("imageConfig = %#v", imageConfig)
+		}
+		thinkingConfig, _ := generationConfig["thinkingConfig"].(map[string]interface{})
+		if thinkingConfig["thinkingLevel"] != "LOW" {
+			t.Errorf("thinkingConfig = %#v", thinkingConfig)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"aGVsbG8="}}]}}]}`))
@@ -1329,7 +1333,7 @@ func TestRunGeminiImageTaskUsesInlineDataAndImageConfig(t *testing.T) {
 
 	result, err := runImageTask(context.Background(), canvasGenerationInput{
 		Prompt:          "edit this image",
-		Config:          providerConfig{BaseURL: server.URL, APIKey: "test-key", APIFormat: "gemini", Model: "gemini-test", InterfaceType: "gemini-image", Size: "16:9", Quality: "high"},
+		Config:          providerConfig{BaseURL: server.URL, APIKey: "test-key", APIFormat: "gemini", Model: "gemini-test", InterfaceType: "gemini-image", Size: "16:9", Quality: "high", ImageResolution: "1K", ImageParameters: map[string]any{"thinkingLevel": "low"}},
 		ReferenceImages: []providerMedia{{DataURL: testGeminiReferenceImageDataURL}},
 	})
 	if err != nil {
@@ -2301,6 +2305,26 @@ func TestXAIVideoPluginMapsUnmarkedImagesToStartFrame(t *testing.T) {
 	image, _ := body["image"].(map[string]any)
 	if image["url"] != testReferenceImageDataURL {
 		t.Fatalf("image = %#v", body["image"])
+	}
+}
+
+func TestXAIVideoPluginPreservesPinnedFramesAndCharacter(t *testing.T) {
+	body := officialVideoCreateBody(t, canvasGenerationInput{
+		Mode:   "video",
+		Config: providerConfig{Model: "muse-video", InterfaceType: "xai-video"},
+		ReferenceImages: []providerMedia{
+			{ID: "first", URL: "https://cdn.example/first.png"},
+			{ID: "last", URL: "https://cdn.example/last.png"},
+			{ID: "character", URL: "https://cdn.example/character.png"},
+		},
+		Metadata: map[string]interface{}{"videoEditOperation": "image_to_video", "videoStartFrameNodeId": "first", "videoEndFrameNodeId": "last"},
+	})
+	if body["image"].(map[string]any)["url"] != "https://cdn.example/first.png" || body["last_frame"].(map[string]any)["url"] != "https://cdn.example/last.png" {
+		t.Fatalf("frame mapping: %#v", body)
+	}
+	refs, _ := body["reference_images"].([]any)
+	if len(refs) != 1 || refs[0].(map[string]any)["url"] != "https://cdn.example/character.png" {
+		t.Fatalf("character mapping: %#v", body)
 	}
 }
 

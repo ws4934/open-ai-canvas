@@ -46,11 +46,11 @@
 | `create.body.duration` | `{"$if":{"condition":{"$gt":[{"$ref":"request.duration"},0]},"then":{"$ref":"request.duration"},"else":6}}` |
 | `create.body.aspect_ratio` | `{"$coalesce":[{"$ref":"request.aspectRatio"},"16:9"]}` |
 | `create.body.resolution` | `{"$coalesce":[{"$ref":"request.resolution"},"720p"]}` |
-| `create.body.image` | `{"$if":{"condition":{"$gt":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["first_frame",""]]}}}},0]},"then":{"url":{"$first":{"$map":{"from":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["first_frame",""]]}}},"as":"media","in":{"$ref":"media.value"}}}}},"else":null}}` |
+| `create.body.image` | `{"$if":{"condition":{"$gt":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["first_frame",""]]}}}},0]},"then":{"url":{"$coalesce":[{"$first":{"$map":{"from":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["first_frame"]]}}},"as":"media","in":{"$ref":"media.value"}}}},{"$first":{"$map":{"from":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},[""]]}}},"as":"media","in":{"$ref":"media.value"}}}}]}},"else":null}}` |
+| `create.body.last_frame` | `{"$if":{"condition":{"$gt":[{"$len":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["last_frame"]]}}}},0]},"then":{"url":{"$first":{"$map":{"from":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$in":[{"$ref":"media.role"},["last_frame"]]}}},"as":"media","in":{"$ref":"media.value"}}}}},"else":null}}` |
 | `create.body.reference_images` | `{"$omitEmpty":{"$map":{"from":{"$filter":{"from":{"$ref":"request.images"},"as":"media","where":{"$in":[{"$ref":"media.role"},["reference_image","subject_reference","style_reference"]]}}},"as":"media","in":{"url":{"$ref":"media.value"}}}}}` |
 | `poll.method` | `"GET"` |
 | `poll.path` | `"/v1/videos/{{taskId}}"` |
-| `poll.contentType` | `"application/json"` |
 
 ## Provider 扩展键
 
@@ -62,7 +62,7 @@
 
 | 映射位置 | 上游路径或转换表达式 |
 | --- | --- |
-| `response.taskId` | `{"$coalesce":[{"$ref":"response.id"},{"$ref":"response.task_id"},{"$ref":"response.taskId"},{"$ref":"response.data.id"},{"$ref":"taskId"}]}` |
+| `response.taskId` | `{"$coalesce":[{"$ref":"response.request_id"},{"$ref":"response.id"},{"$ref":"response.task_id"},{"$ref":"response.taskId"},{"$ref":"response.data.id"},{"$ref":"taskId"}]}` |
 | `response.status` | `{"$coalesce":[{"$ref":"response.status"},{"$ref":"response.state"},{"$ref":"response.data.status"},"pending"]}` |
 | `response.message` | `{"$coalesce":[{"$ref":"response.error.message"},{"$ref":"response.message"},{"$ref":"response.fail_reason"}]}` |
 | `response.videos` | `{"$coalesce":[{"$ref":"response.video.url"},{"$ref":"response.video_url"},{"$ref":"response.videoUrl"},{"$ref":"response.result_url"},{"$ref":"response.url"},{"$ref":"response.data.video_url"},{"$ref":"response.output.url"}]}` |
@@ -75,7 +75,7 @@
 
 ## 兼容边界
 
-该包只代表上述线协议 profile；同一品牌的其他 endpoint、云区域或网关包装必须使用独立插件，不能根据模型名猜测。
+支持首帧 image、尾帧 last_frame 与 reference_images 组合；每种帧最多一张，具体模型能力由渠道配置约束。grok-imagine-video-1.5 官方支持该组合；旧模型或兼容中转需按实际支持能力配置。未标记图片沿用起始图映射。创建响应读取 request_id，查询完成读取 video.url。此 profile 不发送音频或视频参考。官方说明：https://docs.x.ai/developers/model-capabilities/video/reference-to-video
 
 <!-- YINGCE_MANIFEST_CONTRACT_START -->
 ## Manifest 完整接口定义
@@ -87,7 +87,7 @@
   "apiVersion": "yingce.plugin/v2",
   "id": "xai-video",
   "name": "xAI Video",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": "xAI / 影策",
   "description": "xAI Video 独立请求协议插件。",
   "documentation": "<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>",
@@ -213,7 +213,9 @@
                   "$len": {
                     "$filter": {
                       "from": {
-                        "$ref": "request.images"
+                        "$sortByOrder": {
+                          "$ref": "request.images"
+                        }
                       },
                       "as": "media",
                       "where": {
@@ -222,7 +224,36 @@
                             "$ref": "media.role"
                           },
                           [
-                            "first_frame",
+                            "first_frame"
+                          ]
+                        ]
+                      }
+                    }
+                  }
+                },
+                1
+              ]
+            },
+            "message": "xAI Video 最多支持一张起始帧"
+          },
+          {
+            "assert": {
+              "$lte": [
+                {
+                  "$len": {
+                    "$filter": {
+                      "from": {
+                        "$sortByOrder": {
+                          "$ref": "request.images"
+                        }
+                      },
+                      "as": "media",
+                      "where": {
+                        "$in": [
+                          {
+                            "$ref": "media.role"
+                          },
+                          [
                             "last_frame"
                           ]
                         ]
@@ -233,69 +264,7 @@
                 1
               ]
             },
-            "message": "xAI Video 最多支持一个帧输入，当前 profile 不支持尾帧"
-          },
-          {
-            "assert": {
-              "$not": {
-                "$and": [
-                  {
-                    "$gt": [
-                      {
-                        "$len": {
-                          "$filter": {
-                            "from": {
-                              "$ref": "request.images"
-                            },
-                            "as": "media",
-                            "where": {
-                              "$in": [
-                                {
-                                  "$ref": "media.role"
-                                },
-                                [
-                                  "first_frame",
-                                  "last_frame"
-                                ]
-                              ]
-                            }
-                          }
-                        }
-                      },
-                      0
-                    ]
-                  },
-                  {
-                    "$gt": [
-                      {
-                        "$len": {
-                          "$filter": {
-                            "from": {
-                              "$ref": "request.images"
-                            },
-                            "as": "media",
-                            "where": {
-                              "$in": [
-                                {
-                                  "$ref": "media.role"
-                                },
-                                [
-                                  "reference_image",
-                                  "subject_reference",
-                                  "style_reference"
-                                ]
-                              ]
-                            }
-                          }
-                        }
-                      },
-                      0
-                    ]
-                  }
-                ]
-              }
-            },
-            "message": "xAI Video 不能同时混用起始帧和角色参考图"
+            "message": "xAI Video 最多支持一张结束帧"
           }
         ],
         "create": {
@@ -373,6 +342,104 @@
                 },
                 "then": {
                   "url": {
+                    "$coalesce": [
+                      {
+                        "$first": {
+                          "$map": {
+                            "from": {
+                              "$filter": {
+                                "from": {
+                                  "$sortByOrder": {
+                                    "$ref": "request.images"
+                                  }
+                                },
+                                "as": "media",
+                                "where": {
+                                  "$in": [
+                                    {
+                                      "$ref": "media.role"
+                                    },
+                                    [
+                                      "first_frame"
+                                    ]
+                                  ]
+                                }
+                              }
+                            },
+                            "as": "media",
+                            "in": {
+                              "$ref": "media.value"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "$first": {
+                          "$map": {
+                            "from": {
+                              "$filter": {
+                                "from": {
+                                  "$sortByOrder": {
+                                    "$ref": "request.images"
+                                  }
+                                },
+                                "as": "media",
+                                "where": {
+                                  "$in": [
+                                    {
+                                      "$ref": "media.role"
+                                    },
+                                    [
+                                      ""
+                                    ]
+                                  ]
+                                }
+                              }
+                            },
+                            "as": "media",
+                            "in": {
+                              "$ref": "media.value"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "else": null
+              }
+            },
+            "last_frame": {
+              "$if": {
+                "condition": {
+                  "$gt": [
+                    {
+                      "$len": {
+                        "$filter": {
+                          "from": {
+                            "$sortByOrder": {
+                              "$ref": "request.images"
+                            }
+                          },
+                          "as": "media",
+                          "where": {
+                            "$in": [
+                              {
+                                "$ref": "media.role"
+                              },
+                              [
+                                "last_frame"
+                              ]
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    0
+                  ]
+                },
+                "then": {
+                  "url": {
                     "$first": {
                       "$map": {
                         "from": {
@@ -389,8 +456,7 @@
                                   "$ref": "media.role"
                                 },
                                 [
-                                  "first_frame",
-                                  ""
+                                  "last_frame"
                                 ]
                               ]
                             }
@@ -448,6 +514,9 @@
         "response": {
           "taskId": {
             "$coalesce": [
+              {
+                "$ref": "response.request_id"
+              },
               {
                 "$ref": "response.id"
               },

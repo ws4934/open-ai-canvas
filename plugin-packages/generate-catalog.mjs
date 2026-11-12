@@ -593,19 +593,24 @@ add({
 });
 
 add({
-  id: "xai-video", providerId: "xai-video", name: "xAI Video", vendor: "xAI", capability: "video",
+  id: "xai-video", providerId: "xai-video", name: "xAI Video", vendor: "xAI", capability: "video", version: "2.1.0",
   baseUrl: "https://api.x.ai", auth: bearer, params: videoParams, requiresPublicMediaUrls: true,
   validations: [
-    { assert: { $lte: [len(filter(ref("request.images"), "media", { $in: [ref("media.role"), ["first_frame", "last_frame"]] })), 1] }, message: "xAI Video 最多支持一个帧输入，当前 profile 不支持尾帧" },
-    { assert: { $not: { $and: [gt(len(filter(ref("request.images"), "media", { $in: [ref("media.role"), ["first_frame", "last_frame"]] })), 0), gt(len(filter(ref("request.images"), "media", { $in: [ref("media.role"), ["reference_image", "subject_reference", "style_reference"]] })), 0)] } }, message: "xAI Video 不能同时混用起始帧和角色参考图" }
+    { assert: lte(len(mediaWithRoles("request.images", ["first_frame"])), 1), message: "xAI Video 最多支持一张起始帧" },
+    { assert: lte(len(mediaWithRoles("request.images", ["last_frame"])), 1), message: "xAI Video 最多支持一张结束帧" }
   ],
   create: jsonCreate("/v1/videos/generations", {
     model: ref("request.model"), prompt: ref("request.prompt"), duration: conditional(gt(ref("request.duration"), 0), ref("request.duration"), 6),
     aspect_ratio: coalesce(ref("request.aspectRatio"), "16:9"), resolution: coalesce(ref("request.resolution"), "720p"),
-    image: conditional(gt(len(mediaWithRoles("request.images", ["first_frame", ""])), 0), { url: firstMediaFieldWithRoles("request.images", ["first_frame", ""], "value") }),
+    image: conditional(gt(len(mediaWithRoles("request.images", ["first_frame", ""])), 0), { url: coalesce(firstMediaFieldWithRoles("request.images", ["first_frame"], "value"), firstMediaFieldWithRoles("request.images", [""], "value")) }),
+    last_frame: conditional(gt(len(mediaWithRoles("request.images", ["last_frame"])), 0), { url: firstMediaFieldWithRoles("request.images", ["last_frame"], "value") }),
     reference_images: omit(map(filter(ref("request.images"), "media", { $in: [ref("media.role"), ["reference_image", "subject_reference", "style_reference"]] }), "media", { url: ref("media.value") }))
   }),
-  poll: { method: "GET", path: "/v1/videos/{{taskId}}" }, response: asyncResponse("video")
+  poll: { method: "GET", path: "/v1/videos/{{taskId}}" }, response: asyncResponse("video", {
+    taskId: coalesce(ref("response.request_id"), ref("response.id"), ref("response.task_id"), ref("response.taskId"), ref("response.data.id"), ref("taskId")),
+    videos: coalesce(ref("response.video.url"), ref("response.video_url"), ref("response.videoUrl"), ref("response.result_url"), ref("response.url"), ref("response.data.video_url"), ref("response.output.url"))
+  }),
+  notes: "支持首帧 image、尾帧 last_frame 与 reference_images 组合；每种帧最多一张，具体模型能力由渠道配置约束。grok-imagine-video-1.5 官方支持该组合；旧模型或兼容中转需按实际支持能力配置。未标记图片沿用起始图映射。创建响应读取 request_id，查询完成读取 video.url。此 profile 不发送音频或视频参考。官方说明：https://docs.x.ai/developers/model-capabilities/video/reference-to-video"
 });
 
 add({
@@ -1176,7 +1181,7 @@ function manifestFor(spec) {
     apiVersion: "yingce.plugin/v2",
     id: spec.id,
     name: spec.name,
-    version: "2.0.0",
+    version: spec.version || "2.0.0",
     author: `${spec.vendor} / 影策`,
     description: `${spec.name} 独立请求协议插件。`,
     documentation: `# ${spec.name}\n\n完整字段、映射、响应、鉴权和兼容边界见包内 README.md 与 docs/interface.md。\n\n## 影策运行时合同\n\n用户只操作统一的文本、图片或视频能力；插件负责把统一请求转换为 ${spec.name} 上游协议。`,
