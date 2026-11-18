@@ -45,11 +45,10 @@
     transition: opacity 180ms ease-out;
     position: absolute;
     inset: 0;
-    background: color-mix(in srgb, var(--upload-surface) 24%, transparent);
-    backdrop-filter: blur(20px) saturate(0.8);
+    /* 不用 backdrop-filter：漂移动画层很大，逐帧模糊会让画布缩放平移掉帧；改用更不透明的同色面保持雾面感。 */
+    background: color-mix(in srgb, var(--upload-surface) 55%, transparent);
     pointer-events: none;
 }
-
 
 .canvas-file-upload-frost::after {
     content: "";
@@ -71,12 +70,34 @@
     text-align: center;
 }
 
-.canvas-file-upload-copy > svg { color: var(--upload-muted); }
-.canvas-file-upload-label { font-size: var(--fs-caption); font-weight: 500; }
-.canvas-file-upload-detail { max-width: 100%; font-size: var(--fs-tiny); color: var(--upload-muted); overflow-wrap: anywhere; }
-.canvas-file-upload-retry { margin-top: var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: color-mix(in srgb, var(--upload-text) 8%, transparent); font-size: var(--fs-caption); cursor: pointer; }
-.canvas-file-upload-retry:hover { background: color-mix(in srgb, var(--upload-text) 12%, transparent); }
-.canvas-file-upload-retry:focus-visible { outline: 2px solid var(--control-focus-ring); outline-offset: 2px; }
+.canvas-file-upload-copy > svg {
+    color: var(--upload-muted);
+}
+.canvas-file-upload-label {
+    font-size: var(--fs-caption);
+    font-weight: 500;
+}
+.canvas-file-upload-detail {
+    max-width: 100%;
+    font-size: var(--fs-tiny);
+    color: var(--upload-muted);
+    overflow-wrap: anywhere;
+}
+.canvas-file-upload-retry {
+    margin-top: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--r-md);
+    background: color-mix(in srgb, var(--upload-text) 8%, transparent);
+    font-size: var(--fs-caption);
+    cursor: pointer;
+}
+.canvas-file-upload-retry:hover {
+    background: color-mix(in srgb, var(--upload-text) 12%, transparent);
+}
+.canvas-file-upload-retry:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: 2px;
+}
 
 /* 角落进度标签：只显示百分比，不遮挡画面主体。 */
 .canvas-file-upload-chip {
@@ -106,20 +127,62 @@
     animation: canvas-file-upload-pulse 1.2s ease-in-out infinite;
 }
 
-@keyframes canvas-file-upload-drift { from { transform: translate(-8%, -4%) rotate(-8deg); } to { transform: translate(8%, 4%) rotate(12deg); } }
-@keyframes canvas-file-upload-sheen { from { transform: translateX(-35%); } to { transform: translateX(35%); } }
-@keyframes canvas-file-upload-preview-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes canvas-file-upload-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.9; } }
+@keyframes canvas-file-upload-drift {
+    from {
+        transform: translate(-8%, -4%) rotate(-8deg);
+    }
+    to {
+        transform: translate(8%, 4%) rotate(12deg);
+    }
+}
+@keyframes canvas-file-upload-sheen {
+    from {
+        transform: translateX(-35%);
+    }
+    to {
+        transform: translateX(35%);
+    }
+}
+@keyframes canvas-file-upload-preview-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+@keyframes canvas-file-upload-pulse {
+    0%,
+    100% {
+        opacity: 0.3;
+    }
+    50% {
+        opacity: 0.9;
+    }
+}
 
 .canvas-file-upload[data-static] .canvas-file-upload-glow,
 .canvas-file-upload[data-static] .canvas-file-upload-frost::after,
 .canvas-file-upload[data-static] .canvas-file-upload-thumb,
-.canvas-file-upload[data-static] .canvas-file-upload-chip-dot { animation: none; }
+.canvas-file-upload[data-static] .canvas-file-upload-chip-dot {
+    animation: none;
+}
 .canvas-file-upload[data-static] .canvas-file-upload-glow,
 .canvas-file-upload[data-static] .canvas-file-upload-frost,
-.canvas-file-upload[data-static] .canvas-file-upload-preview { transition: none; }
+.canvas-file-upload[data-static] .canvas-file-upload-preview {
+    transition: none;
+}
 
 @media (prefers-reduced-motion: reduce) {
-    .canvas-file-upload-glow, .canvas-file-upload-frost::after, .canvas-file-upload-thumb, .canvas-file-upload-chip-dot { animation: none; }
-    .canvas-file-upload-glow, .canvas-file-upload-frost, .canvas-file-upload-preview { transition: none; }
+    .canvas-file-upload-glow,
+    .canvas-file-upload-frost::after,
+    .canvas-file-upload-thumb,
+    .canvas-file-upload-chip-dot {
+        animation: none;
+    }
+    .canvas-file-upload-glow,
+    .canvas-file-upload-frost,
+    .canvas-file-upload-preview {
+        transition: none;
+    }
 }

@@ -45,6 +45,8 @@ docker compose -f docker-compose.deploy.yml logs --since=15m -f backend
 
 不使用容器、只调试 Go/Vite 时可显式选择 SQLite。以下宿主机命令不改变 Compose 的 PostgreSQL 默认配置。
 
+Agent 为每轮运行设置独立的 `HOME`。如果使用 Volta，在启动后端或运行后端测试的终端先执行 `export PATH="$(dirname "$(volta which node)"):$PATH"`（macOS / Linux），让子进程直接找到 Node 可执行文件，而不依赖用户主目录里的版本管理器配置。
+
 ### Windows PowerShell
 
 在仓库根目录执行：

@@ -178,6 +178,8 @@ test("overwrite requires exact confirmation, or explicit --yes", async t => {
 
 test("overwrite validates before stop, isolates old data, and stops only owned IDs", t => {
     const f = fixture(t, { installed: true });
+    const envFile = path.join(f.install, ".env");
+    writeFileSync(envFile, readFileSync(envFile, "utf8") + "\nYINGCE_AGENT_SESSION_CAP=8\nYINGCE_AGENT_MAX_QUEUE=64\nYINGCE_AGENT_QUEUE_TIMEOUT_SECONDS=60\nYINGCE_AGENT_ORPHAN_TTL_SECONDS=86400\n");
     success(f.run(["--overwrite", "--yes"], { CANVAS_DATA_PATH: "/must-not-override-old-env" }));
     const [backup] = f.backups();
     assert.ok(backup);

@@ -49,7 +49,13 @@ if [[ -d "$INSTALL_DIR" && -n "$(find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 -pr
   for file in .canvas-overwrite-recovery.json .canvas-overwrite-recovery.sh; do
     [[ ! -L "$INSTALL_DIR/$file" && ( ! -e "$INSTALL_DIR/$file" || -f "$INSTALL_DIR/$file" ) ]] || fail "恢复信息必须是普通文件"
   done
-  if [[ -e /etc/systemd/system/open-ai-canvas-updater.service ]] || grep -Eq '^(CANVAS_UPDATER_|YINGCE_AGENT_)' "$INSTALL_DIR/.env"; then
+  # These four limits also apply to the embedded Node process; all other legacy
+  # Agent / Updater settings still require a manual deployment review.
+  if [[ -e /etc/systemd/system/open-ai-canvas-updater.service ]] || awk -F= '
+    /^CANVAS_UPDATER_/ { legacy=1 }
+    /^YINGCE_AGENT_/ && $1 !~ /^YINGCE_AGENT_(SESSION_CAP|MAX_QUEUE|QUEUE_TIMEOUT_SECONDS|ORPHAN_TTL_SECONDS)$/ { legacy=1 }
+    END { exit !legacy }
+  ' "$INSTALL_DIR/.env"; then
     fail "检测到独立 Host Updater / Agent 配置，请先人工停用并核对旧部署；脚本不会接管它"
   fi
 fi
@@ -223,10 +229,15 @@ CANVAS_POSTGRES_DATA_PATH=./postgres-data
 CANVAS_REDIS_DATA_PATH=./redis-data
 CANVAS_AGENT_MAX_PROCESSES=${CANVAS_AGENT_MAX_PROCESSES:-30}
 CANVAS_AGENT_NODE_MEMORY_MB=${CANVAS_AGENT_NODE_MEMORY_MB:-512}
+YINGCE_AGENT_SESSION_CAP=${YINGCE_AGENT_SESSION_CAP:-8}
+YINGCE_AGENT_MAX_QUEUE=${YINGCE_AGENT_MAX_QUEUE:-64}
+YINGCE_AGENT_QUEUE_TIMEOUT_SECONDS=${YINGCE_AGENT_QUEUE_TIMEOUT_SECONDS:-60}
+YINGCE_AGENT_ORPHAN_TTL_SECONDS=${YINGCE_AGENT_ORPHAN_TTL_SECONDS:-86400}
 CANVAS_WORKER_CONCURRENCY=${CANVAS_WORKER_CONCURRENCY:-3}
 CANVAS_CHANNEL_CONCURRENCY=${CANVAS_CHANNEL_CONCURRENCY:-3}
 CANVAS_REGISTRATION_ENABLED=false
 CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS=${CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS:-}
+CANVAS_MCP_ALLOWED_PRIVATE_HOSTS=${CANVAS_MCP_ALLOWED_PRIVATE_HOSTS:-}
 CANVAS_CORS_ORIGINS=${CANVAS_CORS_ORIGINS:-}
 CANVAS_PUBLIC_BASE_URL=${CANVAS_PUBLIC_BASE_URL:-}
 CANVAS_TRUSTED_PROXIES=${CANVAS_TRUSTED_PROXIES:-}

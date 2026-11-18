@@ -218,10 +218,14 @@ func (s *Service) collectAgentServices(_ context.Context) []SystemPerformanceAge
 		configured = policy.Task.AgentMaxSessions
 	}
 	active, limit, queued := agentruntime.ProcessStatus()
+	message := "由后端管理本地 Node 进程，与应用版本一起更新。"
+	if cap := agentruntime.ProcessHardCap(); configured > cap {
+		message = fmt.Sprintf("已保存并发 %d，当前受部署硬上限 %d 限制；调整 YINGCE_AGENT_SESSION_CAP 并重启服务后才可提高。", configured, cap)
+	}
 	return []SystemPerformanceAgent{{
 		ID: "embedded", Name: "画布 Agent", Mode: "embedded", Endpoint: "本进程",
 		Healthy: true, Active: active, Limit: limit, Queued: queued, ConfiguredLimit: configured,
-		StatusMessage: "由后端管理本地 Node 进程，与应用版本一起更新。",
+		StatusMessage: message,
 	}}
 }
 
